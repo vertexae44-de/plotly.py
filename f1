@@ -1,0 +1,67 @@
+import plotly.graph_objects as go
+import numpy as np
+from plotly.subplots import make_subplots
+
+# Create F1 car components
+def create_f1_car_3d():
+    # Main body
+    x_body = np.array([-2, -2, 2, 2, -2])
+    y_body = np.array([-1, 1, 1, -1, -1])
+    z_body = np.array([0, 0, 0, 0, 0])
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add body
+    fig.add_trace(go.Scatter3d(
+        x=x_body, y=y_body, z=z_body,
+        mode='lines',
+        line=dict(color='cyan', width=4),
+        name='Body'
+    ))
+    
+    # Add more components (wings, wheels, etc.)
+    # Front wing
+    x_wing = np.array([-2.5, -2.5, 2.5, 2.5, -2.5])
+    y_wing = np.array([-1.5, 1.5, 1.5, -1.5, -1.5])
+    z_wing = np.array([-0.3, -0.3, -0.3, -0.3, -0.3])
+    
+    fig.add_trace(go.Scatter3d(
+        x=x_wing, y=y_wing, z=z_wing,
+        mode='lines',
+        line=dict(color='#00ffff', width=3),
+        name='Front Wing'
+    ))
+    
+    # Add holographic effect
+    for _ in range(50):
+        x_pts = np.random.uniform(-3, 3, 10)
+        y_pts = np.random.uniform(-2, 2, 10)
+        z_pts = np.random.uniform(-1, 1, 10)
+        
+        fig.add_trace(go.Scatter3d(
+            x=x_pts, y=y_pts, z=z_pts,
+            mode='markers',
+            marker=dict(size=2, color='rgba(0, 255, 255, 0.2)'),
+            showlegend=False
+        ))
+    
+    # Set layout for holographic look
+    fig.update_layout(
+        title='F1 CAR 3D HOLOGRAM',
+        scene=dict(
+            xaxis=dict(showbackground=False, showticklabels=False, title=''),
+            yaxis=dict(showbackground=False, showticklabels=False, title=''),
+            zaxis=dict(showbackground=False, showticklabels=False, title=''),
+            bgcolor='black'
+        ),
+        paper_bgcolor='black',
+        font=dict(color='cyan'),
+        showlegend=False
+    )
+    
+    return fig
+
+# Create and show hologram
+fig = create_f1_car_3d()
+fig.show()
