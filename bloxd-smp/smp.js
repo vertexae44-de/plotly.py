@@ -191,11 +191,14 @@ const CONFIG = {
     // ---- Shield (Bulwark) ------------------------------------------------------
     // Bloxd has no dedicated shield item and no true off-hand inventory slot -
     // there is only ever one selected hand. This rebuilds both from real
-    // primitives: right click to raise it, which shows on your OTHER arm as a
-    // mesh attachment (the closest thing to an off-hand the engine supports)
-    // and a status chip in the top-left HUD strip (the engine's own
-    // headerChips option), while it soaks a fraction of incoming player damage
-    // using Bloxd's own numeric shield resource.
+    // primitives: hold it and right click to raise it manually, OR park it in
+    // a fixed inventory slot (offhandSlotIndex) and it protects you passively,
+    // without needing to be selected - the closest thing to a real off-hand
+    // Bloxd's plain numbered-slot inventory allows. Either way it shows on
+    // your OTHER arm as a mesh attachment and a status chip in the top-left
+    // HUD strip (the engine's own headerChips option), while it soaks a
+    // fraction of incoming player damage using Bloxd's own numeric shield
+    // resource.
     //
     // Scope: blocks player-vs-player hits and NPC attacks. It does not reduce
     // real-mob damage (never hooked to onMobDamagingPlayer) or crystal blasts
@@ -205,6 +208,12 @@ const CONFIG = {
         item: "Brown Paintball Explosive Item",   // a real Bloxd item, held as the visual base
         name: "Bulwark",
         durability: 500,
+
+        // Slot 0 of the inventory grid, reserved by convention as the
+        // "off-hand" - Bloxd has no such slot natively, so this is purely a
+        // rule this script enforces: whatever sits here is checked every
+        // tick and protects you automatically, main-hand item untouched.
+        offhandSlotIndex: 0,
 
         raiseShieldAmount: 30,     // tops shield up to at least this when raised
         maxShieldOption: 60,       // raises the client's shield ceiling so it can show
@@ -1416,11 +1425,15 @@ function useWindChargeItem(playerId, slot) {
 // Shield (Bulwark)
 // -----------------------------------------------------------------------------
 
-/** Raises the shield: tops up the numeric shield, shows it on the off arm, HUD chip. */
-function raiseShield(playerId) {
-    const c = CONFIG.shield;
-    stateOf(playerId).shieldRaised = true;
+/** Reads the fixed "off-hand" slot - a script convention, not a native engine slot. */
+function offhandSlot(playerId) {
+    const item = api.getItemSlot(playerId, CONFIG.shield.offhandSlotIndex);
+    return item ? { index: CONFIG.shield.offhandSlotIndex, item: item } : null;
+}
 
+/** Shows the shield on the off arm and the HUD chip, topping up the numeric shield. */
+function shieldVisualsOn(playerId) {
+    const c = CONFIG.shield;
     if (api.getShieldAmount(playerId) < c.raiseShieldAmount) {
         api.setShieldAmount(playerId, c.raiseShieldAmount);
     }
@@ -1430,14 +1443,28 @@ function raiseShield(playerId) {
         [0, -0.2, 0.15]
     );
     api.setClientOption(playerId, "headerChips", [c.hudChip]);
+}
+
+/** Clears the off-arm mesh and the HUD chip. */
+function shieldVisualsOff(playerId) {
+    api.updateEntityNodeMeshAttachment(playerId, CONFIG.shield.armNode, null);
+    api.setClientOption(playerId, "headerChips", []);
+}
+
+/** Raises the shield by hand: hold it and right click. */
+function raiseShield(playerId) {
+    stateOf(playerId).shieldRaised = true;
+    shieldVisualsOn(playerId);
     tell(playerId, "Shield raised.", "#9fb4c7");
 }
 
-/** Lowers the shield: clears the off-arm mesh and the HUD chip. */
+/** Lowers the hand-raised shield. Leaves a passive off-hand shield's visuals alone. */
 function lowerShield(playerId) {
-    stateOf(playerId).shieldRaised = false;
-    api.updateEntityNodeMeshAttachment(playerId, CONFIG.shield.armNode, null);
-    api.setClientOption(playerId, "headerChips", []);
+    const state = stateOf(playerId);
+    state.shieldRaised = false;
+    if (!state.offhandShieldOn) {
+        shieldVisualsOff(playerId);
+    }
 }
 
 function toggleShield(playerId) {
@@ -1450,25 +1477,34 @@ function toggleShield(playerId) {
 }
 
 /**
- * Applies blocking to an incoming hit on a raised defender: a fraction of the
- * damage is absorbed by their numeric shield instead of their health, and the
- * shield item takes wear. Returns the damage that should actually land.
+ * Checked every tick: a Bulwark parked in the off-hand slot protects its
+ * owner automatically, with no need to hold or click it. The visuals only
+ * come down once neither this nor the hand-raised shield is active.
  */
-function shieldBlock(defenderId, damage) {
+function syncOffhandShield(playerId) {
+    const state = stateOf(playerId);
+    const slot = offhandSlot(playerId);
+    const valid = !!(slot && customAttrs(slot.item)[ATTR_SHIELD]);
+
+    if (valid && !state.offhandShieldOn) {
+        state.offhandShieldOn = true;
+        shieldVisualsOn(playerId);
+    } else if (!valid && state.offhandShieldOn) {
+        state.offhandShieldOn = false;
+        if (!state.shieldRaised) {
+            shieldVisualsOff(playerId);
+        }
+    }
+}
+
+/** Absorbs part of a hit into the numeric shield and wears the item that blocked it. */
+function applyShieldAbsorption(defenderId, slot, damage) {
     const c = CONFIG.shield;
-    if (!c.enabled || !stateOf(defenderId).shieldRaised) {
-        return damage;
-    }
-
-    const slot = heldSlot(defenderId);
-    if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
-        lowerShield(defenderId);   // switched away without lowering it properly
-        return damage;
-    }
-
     const shieldLeft = api.getShieldAmount(defenderId);
     if (shieldLeft <= 0) {
-        lowerShield(defenderId);   // out of shield - the guard breaks
+        if (stateOf(defenderId).shieldRaised) {
+            lowerShield(defenderId);   // the hand-raised guard breaks when empty
+        }
         return damage;
     }
 
@@ -1477,6 +1513,37 @@ function shieldBlock(defenderId, damage) {
     api.setShieldAmount(defenderId, Math.max(0, shieldLeft - absorbed));
     spendDurability(defenderId, slot, c.blockDurabilityCost);
     return reduced;
+}
+
+/**
+ * Applies blocking to an incoming hit: the passive off-hand shield takes
+ * priority, then the manual hand-raised one. Returns the damage that should
+ * actually land.
+ */
+function shieldBlock(defenderId, damage) {
+    const c = CONFIG.shield;
+    if (!c.enabled) {
+        return damage;
+    }
+    const state = stateOf(defenderId);
+
+    if (state.offhandShieldOn) {
+        const off = offhandSlot(defenderId);
+        if (off && customAttrs(off.item)[ATTR_SHIELD]) {
+            return applyShieldAbsorption(defenderId, off, damage);
+        }
+    }
+
+    if (state.shieldRaised) {
+        const held = heldSlot(defenderId);
+        if (!held || !customAttrs(held.item)[ATTR_SHIELD]) {
+            lowerShield(defenderId);   // switched away without lowering it properly
+            return damage;
+        }
+        return applyShieldAbsorption(defenderId, held, damage);
+    }
+
+    return damage;
 }
 
 // -----------------------------------------------------------------------------
@@ -2684,12 +2751,16 @@ function tick() {
 
         // A shield left raised with nothing backing it (swapped away, died
         // and respawned) is lowered automatically - independent of whether
-        // dimensions are enabled, so it always runs.
-        if (CONFIG.shield.enabled && state.shieldRaised) {
-            const slot = heldSlot(playerId);
-            if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
-                lowerShield(playerId);
+        // dimensions are enabled, so it always runs. The passive off-hand
+        // shield is synced the same way, every tick, for every player.
+        if (CONFIG.shield.enabled) {
+            if (state.shieldRaised) {
+                const slot = heldSlot(playerId);
+                if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
+                    lowerShield(playerId);
+                }
             }
+            syncOffhandShield(playerId);
         }
 
         // Catches respawns, admin teleports and simply walking over a border.
@@ -2909,7 +2980,9 @@ function playerCommand(playerId, command) {
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
                 + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
-                + "craft a " + CONFIG.shield.name + " and right click to raise it | "
+                + "craft a " + CONFIG.shield.name + " - hold it and right click to raise it, "
+                + "or park it in inventory slot " + (CONFIG.shield.offhandSlotIndex + 1)
+                + " (top-left) to wear it as an off-hand, no clicking needed | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "

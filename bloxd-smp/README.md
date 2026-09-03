@@ -267,22 +267,33 @@ piece in the game, not only this mod's own gear — and keeps a mace or spear's 
 
 ## Shield (Bulwark)
 
-Bloxd has **no dedicated shield item and no true off-hand inventory slot** — there is only ever one
-selected hand. This rebuilds both from real primitives rather than faking them:
+Bloxd has **no dedicated shield item and no true off-hand inventory slot** — every inventory slot
+(including "slot 0", the top-left cell of the inventory grid) is just plain numbered storage; the
+engine does not treat any of them as an equip slot. This rebuilds a shield and an off-hand from
+real primitives rather than faking a slot that does not exist:
 
 - Craft a **Bulwark** from **6 Maple Wood Planks + 1 Iron Bar**.
-- **Right-click to raise it.** While raised, it tops up your numeric shield (Bloxd's own
-  `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
-  `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
-  shield instead of your health for the part it absorbed.
-- **The "off-hand"** is a real mesh — a small plate — attached to your other arm
-  (`updateEntityNodeMeshAttachment` on `ArmLeftMesh`) for as long as it's raised. That's the closest
-  thing to an off-hand slot the engine actually supports; there is no second, independently
-  equippable item slot underneath it.
+- **Two ways to use it:**
+  - **Hold it and right-click** to raise it manually — the classic weapon-style toggle.
+  - **Or park it in inventory slot 0** (`shield.offhandSlotIndex`, the top-left cell of the
+    inventory grid) and it protects you automatically, every tick, with your main hand free for a
+    weapon — no clicking needed. This is a rule this script enforces on an ordinary slot, not a
+    native engine feature, so it only works because the script checks that exact slot on every
+    tick; putting the Bulwark in any other slot does nothing special.
+  - Either way, while active it tops up your numeric shield (Bloxd's own
+    `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
+    `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
+    shield instead of your health for the part it absorbed. The off-hand slot is checked first, so
+    if both are somehow active the passive one takes priority.
+- **The "off-hand" arm** is a real mesh — a small plate — attached to your other arm
+  (`updateEntityNodeMeshAttachment` on `ArmLeftMesh`) for as long as either mechanism is active.
+  That's the closest thing to a visual off-hand the engine actually supports.
 - **The status shows in the literal top-left corner** of your screen, via Bloxd's own `headerChips`
   client option — the HUD strip that already carries your FPS counter and coordinates.
-- Running out of shield **breaks the guard** (auto-lowers) rather than blocking for free once it
-  hits zero. Switching away from the shield, or dying, also auto-lowers it — checked once a tick.
+- Running out of shield **breaks the hand-raised guard** (auto-lowers it) rather than blocking for
+  free once it hits zero — the off-hand one simply stops absorbing until the numeric shield refills.
+  Switching away from a hand-raised shield, or dying, also auto-lowers it — checked once a tick,
+  same tick that syncs the off-hand slot.
 
 **Scope, stated plainly:** blocking covers player-vs-player hits and this mod's NPCs (both go
 through code this script controls). It does **not** reduce damage from real Bloxd mobs

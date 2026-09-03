@@ -361,6 +361,46 @@ check("a raised shield reduces NPC damage too",
     JSON.stringify(world.damages));
 ctx.stateOf("a").shieldRaised = false;
 
+// ------------------------------------------------------- passive off-hand shield
+// Slot 0 acts as a pseudo off-hand: parking a Bulwark there protects the
+// player automatically, every tick, with no need to hold or click it.
+world.meshAttachments.a = undefined;
+world.opts.a.headerChips = [];
+world.shield.a = 0;
+world.sel.a = 5;   // main hand is a different, unrelated slot
+world.inv.a = [];
+world.inv.a[C.shield.offhandSlotIndex] = shieldItem(C.shield.durability);
+world.inv.a[5] = { name: "Iron Sword", amount: null, attributes: undefined };
+ctx.tick();
+check("parking a shield off-hand raises it without holding it",
+    ctx.stateOf("a").offhandShieldOn === true, "");
+check("the off-hand shield tops up the numeric shield",
+    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
+check("the off-hand shield attaches the off-arm mesh",
+    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode, "");
+check("the off-hand shield sets the HUD chip",
+    world.opts.a.headerChips[0] === C.shield.hudChip, JSON.stringify(world.opts.a.headerChips));
+
+const offhandShieldBefore = world.shield.a;
+const offhandBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("the off-hand shield blocks damage while a different weapon is held",
+    offhandBlockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), offhandBlockedDmg);
+check("the off-hand shield drains the numeric shield",
+    world.shield.a < offhandShieldBefore, world.shield.a);
+check("the off-hand shield wears, the held weapon does not",
+    world.inv.a[C.shield.offhandSlotIndex].attributes.customAttributes.smpDur
+        === C.shield.durability - C.shield.blockDurabilityCost,
+    world.inv.a[C.shield.offhandSlotIndex].attributes.customAttributes.smpDur);
+
+world.inv.a[C.shield.offhandSlotIndex] = null;
+ctx.tick();
+check("removing the off-hand shield clears the flag",
+    ctx.stateOf("a").offhandShieldOn === false, "");
+check("removing the off-hand shield detaches the mesh", world.meshAttachments.a === null, "");
+check("removing the off-hand shield clears the HUD chip",
+    world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
+world.sel.a = 0;
+
 check("/give shield gives a tagged shield", (() => {
     C.commands.adminNames.push("Alice");
     world.inv.a = [];
