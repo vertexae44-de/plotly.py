@@ -13,7 +13,7 @@
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
 //  !anon            hides your nametag and your name in chat
-//  NPCs             wander, notice you, chat, fight back and flee
+//  NPCs             player-model people who wander, chat, fight back and flee
 //  Crafting         mace, spear, apples, portals and crystals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
@@ -362,37 +362,36 @@ const CONFIG = {
     },
 
     // ---- NPCs ---------------------------------------------------------------
-    // Villagers who read as people rather than mobs: they wander their patch,
-    // notice you, talk, fight back when provoked and run when they are losing.
+    // Real player models, not mobs: Bloxd's "Person" mesh entity wearing one of
+    // the game's NPC skins, moved and fought by this script rather than mob AI.
     npcs: {
         enabled: true,
         count: 4,
         home: [0, 0],            // xz they live around
         wanderRadius: 45,
-        spawnY: 70,              // dropped from here; they fall to the ground
         respawnDelayMs: 90000,
-        thinkEveryTicks: 20,     // once a second is plenty for a brain
+        thinkEveryTicks: 20,     // decisions once a second
+        moveEveryTicks: 2,       // footsteps ten times a second
 
-        // Clothed humanoid variations read far more like people than the default.
-        bodies: [
-            { mob: "Draugr Zombie", variation: "shortHairClothed" },
-            { mob: "Draugr Zombie", variation: "longHairClothed" },
-            { mob: "Draugr Huntress", variation: "chainmail" },
-            { mob: "Draugr Knight", variation: "default" },
+        // Full-body NPC skins, applied through the "head" part like the engine does.
+        skins: [
+            "farmer", "trader", "monster_hunter_lorenzo", "wizard",
+            "chef", "painter_spencer", "portal_mage", "trader_blue",
         ],
         names: [
             "Kade", "Milo", "Rin", "Ash", "Juno",
             "Wren", "Otto", "Sable", "Pip", "Vex",
         ],
-        settings: {
-            maxHealth: 100,
-            initialHealth: 100,
-            attackDamage: 8,
-            chaseRadius: 16,
-            hostilityRadius: 0,     // 0 = they do not jump you on sight
-            runAwayRadius: 0,
-            walkingSpeedMultiplier: 1,
-        },
+
+        maxHealth: 100,
+        walkSpeed: 0.16,         // blocks per movement step
+        runSpeedMultiplier: 1.7,
+        stepUp: 1,               // how high a ledge they can walk up
+        arriveRadius: 1.5,
+
+        attackRange: 2.6,
+        attackDamage: 8,
+        attackCooldownMs: 1200,
 
         noticeRadius: 12,
         greetCooldownMs: 60000,
@@ -410,28 +409,24 @@ const CONFIG = {
                 idle: ["nice out here", "anyone seen my pickaxe", "brb mining", "this place is huge"],
                 hurt: ["ow", "what was that for", "hey!!", "im not even armed"],
                 flee: ["nope nope nope", "im out", "not worth it"],
-                kill: ["sorry about that", "gg", "you ok?"],
             },
             cocky: {
                 greet: ["sup", "you again", "look who it is", "yeah?"],
                 idle: ["someone fight me", "bored", "20 hearts by friday", "easy game"],
                 hurt: ["thats it?", "big mistake", "keep going", "cute"],
                 flee: ["ill be back", "lucky hit", "this isnt over"],
-                kill: ["ez", "get better", "gg no re"],
             },
             quiet: {
                 greet: ["...", "hm", "hey.", "oh"],
                 idle: ["...", "hm.", "quiet today"],
                 hurt: ["stop", "why", "..."],
                 flee: ["no", "leaving"],
-                kill: ["...", "hm."],
             },
             trader: {
                 greet: ["got any moonstone?", "trading hearts, interested?", "hey, buying obsidian"],
                 idle: ["wtb moonstone paying well", "selling gapples", "anyone got knight hearts"],
                 hurt: ["hey! im a trader!", "thats bad for business", "rude"],
                 flee: ["fine fine take it", "not paid enough for this"],
-                kill: ["business is business", "pleasure doing trade"],
             },
         },
     },
@@ -1405,10 +1400,10 @@ function explodeCrystal(placerId, x, y, z) {
 // NPCs
 // -----------------------------------------------------------------------------
 
-// One roster entry per NPC. The body dies and respawns; the person persists.
+// One roster entry per NPC. The body is destroyed and rebuilt; the person is not.
 const npcRoster = [];
-const npcByMob = {};
-let npcTickCounter = 0;
+const npcByEntity = {};
+let npcTicks = 0;
 
 function randomOf(list) {
     return list[Math.floor(Math.random() * list.length)];
@@ -1427,58 +1422,96 @@ function buildNpcRoster() {
     const n = CONFIG.npcs;
     const personalities = Object.keys(n.personalities);
     const names = n.names.slice();
+    const skins = n.skins.slice();
 
     for (let i = 0; i < n.count; i++) {
-        // Names are drawn without replacement so no two NPCs share one.
-        const nameIndex = Math.floor(Math.random() * names.length);
-        const name = names.length ? names.splice(nameIndex, 1)[0] : "Villager " + (i + 1);
+        // Names and skins are drawn without replacement, so no two NPCs are twins.
+        const name = names.length
+            ? names.splice(Math.floor(Math.random() * names.length), 1)[0]
+            : "Villager " + (i + 1);
+        const skin = skins.length
+            ? skins.splice(Math.floor(Math.random() * skins.length), 1)[0]
+            : "farmer";
         const angle = (i / n.count) * Math.PI * 2;
 
         npcRoster.push({
             name: name,
+            skin: skin,
             personality: personalities[i % personalities.length],
-            body: n.bodies[i % n.bodies.length],
             // Spread their homes around the centre so they are not all in a pile.
             home: [
                 n.home[0] + Math.cos(angle) * n.wanderRadius * 0.6,
                 n.home[1] + Math.sin(angle) * n.wanderRadius * 0.6,
             ],
-            mobId: null,
+            entityId: null,
+            hp: n.maxHealth,
+            pos: null,
+            target: null,
+            running: false,
             deadUntil: 0,
-            lastGreet: 0,
             lastChat: 0,
+            lastAttack: 0,
             nextChatter: api.now() + n.chatterMinMs,
             provokedBy: null,
             provokedAt: 0,
-            greetedRecently: {},
+            greeted: {},
         });
     }
 }
 
+/** Finds the surface to stand on near a column, so nobody floats or sinks. */
+function groundYNear(x, y, z) {
+    const n = CONFIG.npcs;
+    const fx = Math.floor(x);
+    const fz = Math.floor(z);
+    const from = Math.floor(y) + n.stepUp;
+
+    for (let probe = from; probe > from - 12; probe--) {
+        if (!api.isBlockInLoadedChunk(fx, probe, fz)) {
+            continue;
+        }
+        const here = api.getBlock(fx, probe, fz);
+        const above = api.getBlock(fx, probe + 1, fz);
+        if (here && here !== "Air" && (!above || above === "Air")) {
+            return probe + 1;
+        }
+    }
+    return null;   // nothing to stand on; keep the height we had
+}
+
 function spawnNpc(npc) {
     const n = CONFIG.npcs;
-    const mobId = api.attemptSpawnMob(
-        npc.body.mob,
-        npc.home[0], n.spawnY, npc.home[1],
-        { name: npc.name, variation: npc.body.variation, playSoundOnSpawn: false }
+    const entityId = api.attemptCreateMeshEntity(
+        "Person",
+        { size: 1, pose: "standing", textures: { head: npc.skin } },
+        npc.name
     );
-    if (mobId == null) {
-        // The world is full of mobs, or the spot is protected. Try again later.
+    if (entityId == null) {
+        // The mesh-entity budget is full. Try again shortly rather than give up.
         npc.deadUntil = api.now() + 10000;
         return;
     }
 
-    npc.mobId = mobId;
-    npcByMob[mobId] = npc;
-    for (const setting in n.settings) {
-        api.setMobSetting(mobId, setting, n.settings[setting]);
-    }
-    api.setMobAiState(mobId, "idle", null);
+    npc.entityId = entityId;
+    npc.hp = n.maxHealth;
+    npc.provokedBy = null;
+    npc.target = null;
+    npcByEntity[entityId] = npc;
+
+    const y = groundYNear(npc.home[0], 80, npc.home[1]);
+    npc.pos = [npc.home[0], y == null ? 70 : y, npc.home[1]];
+    api.setPosition(entityId, npc.pos[0], npc.pos[1], npc.pos[2]);
 }
 
-function npcHealthFraction(npc) {
-    const max = CONFIG.npcs.settings.maxHealth || 100;
-    return api.getHealth(npc.mobId) / max;
+function despawnNpc(npc) {
+    if (npc.entityId != null) {
+        api.deleteMeshEntity(npc.entityId);
+        delete npcByEntity[npc.entityId];
+    }
+    npc.entityId = null;
+    npc.pos = null;
+    npc.target = null;
+    npc.provokedBy = null;
 }
 
 function nearestPlayerTo(pos, radius) {
@@ -1502,70 +1535,137 @@ function nearestPlayerTo(pos, radius) {
     return best;
 }
 
-/** One NPC's turn to think. Ordered by urgency: survival, then a fight, then people, then life. */
+function distanceTo(npc, entityId) {
+    const other = api.getPosition(entityId);
+    if (!other || !npc.pos) {
+        return Infinity;
+    }
+    const dx = other[0] - npc.pos[0];
+    const dy = other[1] - npc.pos[1];
+    const dz = other[2] - npc.pos[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/** Walks one step toward the current target and turns to face the way it is going. */
+function stepNpc(npc) {
+    const n = CONFIG.npcs;
+    if (npc.entityId == null || !npc.target || !npc.pos) {
+        return;
+    }
+    const dx = npc.target[0] - npc.pos[0];
+    const dz = npc.target[1] - npc.pos[2];
+    const flat = Math.sqrt(dx * dx + dz * dz);
+    if (flat < n.arriveRadius) {
+        npc.target = null;
+        return;
+    }
+
+    const speed = n.walkSpeed * (npc.running ? n.runSpeedMultiplier : 1);
+    const x = npc.pos[0] + (dx / flat) * speed;
+    const z = npc.pos[2] + (dz / flat) * speed;
+    const ground = groundYNear(x, npc.pos[1], z);
+    const y = ground == null ? npc.pos[1] : ground;
+
+    npc.pos = [x, y, z];
+    api.setPosition(npc.entityId, x, y, z);
+    api.setEntityHeading(npc.entityId, Math.atan2(dx, dz));
+}
+
+function npcAttack(npc, targetId) {
+    const n = CONFIG.npcs;
+    const now = api.now();
+    if (now - npc.lastAttack < n.attackCooldownMs) {
+        return;
+    }
+    if (distanceTo(npc, targetId) > n.attackRange) {
+        return;
+    }
+    npc.lastAttack = now;
+    // Self-inflicted is the documented way for game code to apply damage.
+    api.attemptApplyDamage({
+        eId: targetId,
+        hitEId: targetId,
+        attemptedDmgAmt: n.attackDamage,
+        withItem: npc.name,
+    });
+    api.broadcastSound("hit1", 0.7, 1.0, { playerIdOrPos: npc.pos, maxHearDist: 20 });
+}
+
+/** One NPC's turn to think, ordered by urgency: survival, a fight, people, then life. */
 function thinkNpc(npc) {
     const n = CONFIG.npcs;
     const now = api.now();
 
-    if (npc.mobId == null) {
+    if (npc.entityId == null) {
         if (now >= npc.deadUntil) {
             spawnNpc(npc);
         }
         return;
     }
-
-    const pos = api.getPosition(npc.mobId);
-    if (!pos) {
-        return;   // body is gone but we have not been told yet
+    if (!npc.pos) {
+        return;
     }
 
-    // Losing badly: run, and say so.
-    if (npcHealthFraction(npc) < n.fleeAtHpFraction && npc.provokedBy) {
-        api.setMobAiState(npc.mobId, "runningAway", { targetId: npc.provokedBy });
+    // Losing badly: turn and run, and say so.
+    if (npc.hp < n.maxHealth * n.fleeAtHpFraction && npc.provokedBy) {
+        const away = api.getPosition(npc.provokedBy);
+        if (away) {
+            npc.running = true;
+            npc.target = [
+                npc.pos[0] + (npc.pos[0] - away[0]) * 3,
+                npc.pos[2] + (npc.pos[2] - away[2]) * 3,
+            ];
+        }
         if (now - npc.lastChat > 6000) {
             npcSay(npc, "flee");
         }
         return;
     }
 
-    // Someone hit them recently: fight back until they forget about it.
+    // Someone hit them recently: go after them until they forget about it.
     if (npc.provokedBy && now - npc.provokedAt < n.forgetProvokerMs) {
-        api.setMobAiState(npc.mobId, "chasing", { targetId: npc.provokedBy });
+        const chase = api.getPosition(npc.provokedBy);
+        if (chase) {
+            npc.running = true;
+            npc.target = [chase[0], chase[2]];
+            npcAttack(npc, npc.provokedBy);
+        }
         return;
     }
-    if (npc.provokedBy && now - npc.provokedAt >= n.forgetProvokerMs) {
+    if (npc.provokedBy) {
         npc.provokedBy = null;
+        npc.running = false;
     }
 
-    // Someone walked up: look at them and say hello, but not every time.
-    const nearby = nearestPlayerTo(pos, n.noticeRadius);
+    // Someone walked up: stop, face them, and say hello - but not every time.
+    const nearby = nearestPlayerTo(npc.pos, n.noticeRadius);
     if (nearby) {
-        api.setMobAiState(npc.mobId, "watching", { targetId: nearby });
-        if (now - (npc.greetedRecently[nearby] || 0) > n.greetCooldownMs) {
-            npc.greetedRecently[nearby] = now;
+        const at = api.getPosition(nearby);
+        if (at && npc.entityId != null) {
+            api.setEntityHeading(npc.entityId, Math.atan2(at[0] - npc.pos[0], at[2] - npc.pos[2]));
+        }
+        npc.target = null;
+        if (now - (npc.greeted[nearby] || 0) > n.greetCooldownMs) {
+            npc.greeted[nearby] = now;
             npcSay(npc, "greet");
         }
         return;
     }
 
-    // Otherwise get on with life: wander the patch and mutter occasionally.
+    // Otherwise get on with life: wander the patch, mutter now and then.
     if (now >= npc.nextChatter) {
         npcSay(npc, "idle");
         npc.nextChatter = now + n.chatterMinMs
             + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
     }
-
-    const state = api.getMobAiState(npc.mobId);
-    if (!state || state.state === "idle" || state.state === "watching") {
+    if (!npc.target) {
         const angle = Math.random() * Math.PI * 2;
         const distance = Math.random() * n.wanderRadius;
-        api.setMobAiState(npc.mobId, "walkingToPosition", {
-            pos: [
-                npc.home[0] + Math.cos(angle) * distance,
-                pos[1],
-                npc.home[1] + Math.sin(angle) * distance,
-            ],
-        });
+        npc.running = false;
+        npc.target = [
+            npc.home[0] + Math.cos(angle) * distance,
+            npc.home[1] + Math.sin(angle) * distance,
+        ];
     }
 }
 
@@ -1574,50 +1674,57 @@ function tickNpcs() {
     if (!n.enabled) {
         return;
     }
-    npcTickCounter++;
-    if (npcTickCounter % n.thinkEveryTicks !== 0) {
-        return;
-    }
+    npcTicks++;
     if (npcRoster.length === 0) {
         buildNpcRoster();
     }
-    for (let i = 0; i < npcRoster.length; i++) {
-        thinkNpc(npcRoster[i]);
+
+    if (npcTicks % n.thinkEveryTicks === 0) {
+        for (let i = 0; i < npcRoster.length; i++) {
+            thinkNpc(npcRoster[i]);
+        }
+    }
+    if (npcTicks % n.moveEveryTicks === 0) {
+        for (let i = 0; i < npcRoster.length; i++) {
+            stepNpc(npcRoster[i]);
+        }
     }
 }
 
-function npcWasHurt(mobId, byPlayer) {
-    const npc = npcByMob[mobId];
+function npcHurt(entityId, byPlayer, damage) {
+    const npc = npcByEntity[entityId];
     if (!npc) {
         return;
     }
+    npc.hp -= damage;
     npc.provokedBy = byPlayer;
     npc.provokedAt = api.now();
+
+    if (npc.hp <= 0) {
+        npcKilled(entityId, byPlayer);
+        return;
+    }
     if (api.now() - npc.lastChat > 4000) {
         npcSay(npc, "hurt");
     }
 }
 
-function npcWasKilled(mobId, byPlayer) {
-    const npc = npcByMob[mobId];
+function npcKilled(entityId, byPlayer) {
+    const npc = npcByEntity[entityId];
     if (!npc) {
         return;
     }
-    delete npcByMob[mobId];
-    npc.mobId = null;
-    npc.provokedBy = null;
+    const where = npc.pos;
+    despawnNpc(npc);
     npc.deadUntil = api.now() + CONFIG.npcs.respawnDelayMs;
 
     api.broadcastMessage(npc.name + " was killed by " + displayNameOf(byPlayer),
         { color: CONFIG.npcs.chatColour });
 
-    if (CONFIG.npcs.dropsLifeOrb) {
-        const pos = api.getPosition(byPlayer);
-        if (pos) {
-            api.createItemDrop(pos[0], pos[1] + 1, pos[2], CONFIG.orb.item, 1,
-                false, orbAttributes(CONFIG.orb.hp), CONFIG.orb.despawnMs, byPlayer,
-                { doPhysics: true });
-        }
+    if (CONFIG.npcs.dropsLifeOrb && where) {
+        api.createItemDrop(where[0], where[1] + 1, where[2], CONFIG.orb.item, 1,
+            false, orbAttributes(CONFIG.orb.hp), CONFIG.orb.despawnMs, byPlayer,
+            { doPhysics: true });
     }
 }
 
@@ -2146,12 +2253,15 @@ function onPlayerExitedVehicle(playerId) {
 }
 
 function onPlayerDamagingMob(playerId, mobId, damageDealt) {
-    npcWasHurt(mobId, playerId);
     return handleWeaponHit(playerId, mobId, damageDealt);
 }
 
-function onPlayerKilledMob(playerId, mobId) {
-    npcWasKilled(mobId, playerId);
+function onPlayerDamagingMeshEntity(playerId, damagedId, damageDealt) {
+    npcHurt(damagedId, playerId, damageDealt);
+}
+
+function onPlayerBreakMeshEntity(playerId, entityId) {
+    npcKilled(entityId, playerId);
 }
 
 function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
@@ -2301,8 +2411,8 @@ function playerCommand(playerId, command) {
             const parts2 = [];
             for (let i = 0; i < npcRoster.length; i++) {
                 const npc = npcRoster[i];
-                parts2.push(npc.name + " (" + npc.personality + ") "
-                    + (npc.mobId == null ? "respawning" : "alive"));
+                parts2.push(npc.name + " the " + npc.skin + " (" + npc.personality + ") "
+                    + (npc.entityId == null ? "respawning" : Math.max(0, Math.round(npc.hp)) + " hp"));
             }
             tell(playerId, parts2.length ? parts2.join(" | ") : "No NPCs yet.", "#c9d1d9");
             return true;

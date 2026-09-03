@@ -7,7 +7,7 @@ const world = {
     drops: [], log: [], impulses: [], effects: [], kicks: [], recipes: {},
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
     mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
-    mobSeq: 0, spawnedMobs: [], mobSettings: {}, mobAi: {}, mobSpawnFails: false,
+    mobSeq: 0, meshEntities: [], headings: {}, meshSpawnFails: false,
 };
 const ids = ["a", "b"];
 
@@ -69,18 +69,17 @@ const api = {
     isBlockInLoadedChunk: () => world.chunkLoaded !== false,
 
     attemptApplyDamage: opts => { world.damages.push(opts); return true; },
-    attemptSpawnMob: (type, x, y, z, opts) => {
-        if (world.mobSpawnFails) return null;
-        const id = "mob" + (++world.mobSeq);
-        world.mobs.push(id);
-        world.pos[id] = [x, y, z];
-        world.health[id] = 100;
-        world.spawnedMobs.push({ id, type, opts });
+    attemptCreateMeshEntity: (type, opts, name) => {
+        if (world.meshSpawnFails) return null;
+        const id = "mesh" + (++world.mobSeq);
+        world.meshEntities.push({ id, type, opts, name });
         return id;
     },
-    setMobSetting: (id, k, v) => { (world.mobSettings[id] = world.mobSettings[id] || {})[k] = v; },
-    setMobAiState: (id, state, params) => { world.mobAi[id] = { state, params }; },
-    getMobAiState: id => world.mobAi[id] || null,
+    deleteMeshEntity: id => {
+        world.meshEntities = world.meshEntities.filter(m => m.id !== id);
+        return true;
+    },
+    setEntityHeading: (id, h) => { world.headings[id] = h; },
     setTargetedPlayerSettingForEveryone: (id, setting, value) => {
         (world.entitySettings[id] = world.entitySettings[id] || {})[setting] = value;
     },

@@ -15,7 +15,7 @@
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your nametag and your name in chat. |
-| **NPCs** | Named villagers who wander, notice you, talk, fight back when provoked and flee when losing. |
+| **NPCs** | Player-model people who wander, notice you, talk, fight back when provoked and flee when losing. |
 
 ## Install
 
@@ -203,26 +203,28 @@ Set `ban.mode: "kick"` to go back to permanent bans (`/bans` and `/unban` still 
 
 ## NPCs
 
-Four named villagers live around spawn. They are Bloxd mobs in the game's clothed humanoid
-variations (`Draugr Zombie / shortHairClothed`, `Draugr Huntress / chainmail`), given player-style
-names and a brain that runs once a second.
+Four named people live around spawn. They are **`Person` mesh entities — the engine's actual player
+model** — wearing one of Bloxd's twelve NPC skins, not mobs wearing a nametag. Nothing about them
+runs on mob AI: this script moves them, turns them, fights with them and kills them.
 
-Each gets one of four personalities — **friendly**, **cocky**, **quiet**, **trader** — which decides
-everything they say. Their turn is ordered by urgency:
+- **They walk.** A step every 0.1 s toward wherever they are headed, following the ground beneath
+  them and turning to face their direction of travel. They don't teleport or slide.
+- **They think** once a second, in order of urgency: flee if losing → chase whoever hit them →
+  stop and greet a player who walked up → otherwise wander their patch and mutter.
+- **They fight back.** Provoked, they run you down and hit for 8 on a 1.2 s cooldown, but only from
+  inside 2.6 blocks. They are never hostile first — they only fight people who start it, which is
+  most of what makes them read as people.
+- **They give up.** Under 30% health they turn and run directly away from you.
+- **They stay themselves.** Name, skin, personality and home survive death; `Vex the wizard` comes
+  back as `Vex the wizard` after 90 s.
 
-1. **Losing** (under 30% health, and someone provoked them) → run away, and say so
-2. **Provoked** in the last 20 s → chase whoever hit them
-3. **Someone nearby** (12 blocks) → stop and watch them, and greet them (once a minute per player)
-4. **Otherwise** → wander their own patch, and mutter something every 45–150 s
+Each has one of four personalities — **friendly**, **cocky**, **quiet**, **trader** — which decides
+every line they say. Chat is rate-limited per NPC, and greetings are once a minute per player, so a
+scrap never floods the channel.
 
-They are **not hostile on sight** (`hostilityRadius: 0`) — they only fight people who start it, which
-is most of what makes them read as people rather than mobs. Chat is rate-limited so a scrap doesn't
-flood the channel. Killing one announces it and books a 90 s respawn; they keep their name and
-personality across deaths, so `Vex` is always `Vex`. If the world is too full of mobs to spawn one,
-that NPC just waits and tries again.
-
-`/npcs` lists who is alive. `npcs.dropsLifeOrb` is **off** by default — turning it on makes NPC
-hunting an alternative source of hearts, which weakens the PvP economy.
+`/npcs` lists who is alive, their skin, personality and health. `npcs.dropsLifeOrb` is **off** by
+default — turning it on makes NPC hunting an alternative source of hearts, which weakens the PvP
+economy.
 
 ## Bans
 
@@ -241,7 +243,7 @@ instead of eliminations.
 | `/where` | everyone | Which dimension you are in |
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
-| `/npcs` | everyone | Who is alive, and their personality |
+| `/npcs` | everyone | Who is alive, their skin, personality and health |
 | `/give mace\|spear\|gapple\|egapple\|orb\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
@@ -287,12 +289,13 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-185 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+197 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
 blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
-Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed, NPC spawning, greeting,
-retaliation, fleeing, death and respawn, both apples (heal, shield, regen, fire
+Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed, NPCs being player models rather than
+mobs, walking a step at a time, greeting, retaliating in range and on cooldown, fleeing, dying and
+coming back as the same person, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

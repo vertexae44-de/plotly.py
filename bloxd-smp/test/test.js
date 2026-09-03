@@ -484,36 +484,50 @@ ctx.onPlayerJoin("a");
 const N = C.npcs;
 world.pos.a = [900, 64, 900];   // players far away so nobody is "noticed" yet
 world.pos.b = [900, 64, 900];
+world.blocks["0,63,0"] = "Stone";
 for (let i = 0; i < N.thinkEveryTicks * 2; i++) ctx.tick();
 check("a roster is built once", npcRoster.length === N.count, npcRoster.length);
 
-// Send them all back to the respawn queue so the spawn path is observed fresh.
-world.spawnedMobs.length = 0;
-npcRoster.forEach(x => { x.mobId = null; x.deadUntil = 0; });
+// send them all back to the spawn queue so the spawn path is observed fresh
+world.meshEntities.length = 0;
+npcRoster.forEach(x => { x.entityId = null; x.deadUntil = 0; });
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("every NPC gets a body", world.spawnedMobs.length === N.count, world.spawnedMobs.length);
-check("every NPC holds its body", npcRoster.every(x => x.mobId !== null), "");
+
+check("NPCs are Person mesh entities, not mobs",
+    world.meshEntities.length === N.count && world.meshEntities.every(m => m.type === "Person"),
+    JSON.stringify(world.meshEntities.map(m => m.type)));
+check("NPCs wear a player skin",
+    world.meshEntities.every(m => N.skins.indexOf(m.opts.textures.head) !== -1),
+    JSON.stringify(world.meshEntities.map(m => m.opts.textures)));
+check("NPCs stand upright", world.meshEntities.every(m => m.opts.pose === "standing"), "");
+check("NPCs carry a nametag", world.meshEntities.every(m => !!m.name), "");
 check("NPCs have unique names",
-    new Set(npcRoster.map(n => n.name)).size === N.count, npcRoster.map(n => n.name).join(","));
-check("NPCs get nametags", world.spawnedMobs.every(m => !!m.opts.name), JSON.stringify(world.spawnedMobs[0]));
-check("NPCs use clothed humanoid bodies",
-    world.spawnedMobs.every(m => /Draugr/.test(m.type)), world.spawnedMobs.map(m => m.type).join(","));
-check("NPCs are not hostile on sight",
-    world.mobSettings[npcRoster[0].mobId].hostilityRadius === 0, "");
+    new Set(npcRoster.map(x => x.name)).size === N.count, npcRoster.map(x => x.name).join(","));
+check("NPCs have unique skins",
+    new Set(npcRoster.map(x => x.skin)).size === N.count, npcRoster.map(x => x.skin).join(","));
 check("NPC homes are spread out",
-    new Set(npcRoster.map(n => n.home[0].toFixed(2))).size > 1, "");
+    new Set(npcRoster.map(x => x.home[0].toFixed(2))).size > 1, "");
 
 const npc = npcRoster[0];
-const body = npc.mobId;
-world.pos[body] = [0, 64, 0];
+const body = npc.entityId;
+npc.pos = [0, 64, 0];
 
-// they notice someone walking up, and greet them once
+// they walk toward a target rather than teleporting to it
+npc.target = [10, 0];
+npc.running = false;
+const startX = npc.pos[0];
+for (let i = 0; i < N.moveEveryTicks; i++) ctx.tick();
+const moved = npc.pos[0] - startX;
+check("an NPC walks a step at a time", moved > 0 && moved <= N.walkSpeed + 0.001, moved);
+check("walking turns them to face the way they go", world.headings[body] !== undefined, "");
+
+// they notice someone walking up, greet them once, and stop wandering
 world.log.length = 0;
+npc.pos = [0, 64, 0];
 world.pos.a = [2, 64, 0];
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("an NPC watches a nearby player",
-    world.mobAi[body] && world.mobAi[body].state === "watching", JSON.stringify(world.mobAi[body]));
 check("an NPC greets you", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+check("an NPC stops to talk", npc.target === null, JSON.stringify(npc.target));
 world.log.length = 0;
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
 check("greetings are not spammed", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
@@ -521,58 +535,95 @@ check("greetings are not spammed", !world.log.some(l => l.indexOf("bcast " + npc
 // hit one and it fights back
 world.log.length = 0;
 world.inv.a = [];
-npc.lastChat = 0;          // the anti-spam gate is tested separately below
-ctx.onPlayerDamagingMob("a", body, 10);
+npc.lastChat = 0;
+const hpBefore = npc.hp;
+ctx.onPlayerDamagingMeshEntity("a", body, 10);
+check("hitting an NPC hurts it", npc.hp === hpBefore - 10, npc.hp);
 check("hitting an NPC provokes it", npc.provokedBy === "a", npc.provokedBy);
 check("a hurt NPC says something", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a provoked NPC chases you",
-    world.mobAi[body].state === "chasing" && world.mobAi[body].params.targetId === "a",
-    JSON.stringify(world.mobAi[body]));
-
-// the same NPC hit twice in a row does not narrate every blow
 world.log.length = 0;
-ctx.onPlayerDamagingMob("a", body, 10);
-check("hurt lines are rate limited", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+ctx.onPlayerDamagingMeshEntity("a", body, 10);
+check("hurt lines are rate limited", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), "");
 
-// hurt it badly and it runs
-world.health[body] = C.npcs.settings.maxHealth * 0.1;
+npc.pos = [0, 64, 0];
+world.pos.a = [30, 64, 0];
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("a provoked NPC comes after you",
+    npc.target && Math.abs(npc.target[0] - 30) < 0.001, JSON.stringify(npc.target));
+check("a provoked NPC runs rather than strolls", npc.running === true, "");
+
+// in range, it actually hits back
+world.damages.length = 0;
+npc.pos = [0, 64, 0];
+world.pos.a = [1, 64, 0];
+npc.lastAttack = 0;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("an NPC in range hits back", world.damages.some(d => d.hitEId === "a"), JSON.stringify(world.damages));
+check("its hits name the NPC", world.damages.some(d => d.withItem === npc.name), "");
+world.damages.length = 0;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("attacks are on a cooldown", world.damages.length === 0, JSON.stringify(world.damages));
+
+// out of range it swings at nothing
+world.damages.length = 0;
+world.pos.a = [40, 64, 0];
+npc.lastAttack = 0;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("an NPC out of range does not hit you", world.damages.length === 0, JSON.stringify(world.damages));
+
+// hurt it badly and it runs the other way
+npc.hp = N.maxHealth * 0.1;
+npc.pos = [0, 64, 0];
+world.pos.a = [5, 64, 0];
+npc.provokedBy = "a";
+npc.provokedAt = ctx.api === undefined ? 0 : Date.now();
 npc.lastChat = 0;
 world.log.length = 0;
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a losing NPC runs away",
-    world.mobAi[body].state === "runningAway", JSON.stringify(world.mobAi[body]));
+check("a losing NPC flees away from you", npc.target && npc.target[0] < 0, JSON.stringify(npc.target));
 check("a fleeing NPC says so", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), "");
 
-// kill it: it announces, frees the body and books a respawn
+// enough damage kills it
 world.log.length = 0;
 world.drops.length = 0;
-ctx.onPlayerKilledMob("a", body);
+npc.hp = 5;
+ctx.onPlayerDamagingMeshEntity("a", body, 10);
+check("enough damage kills an NPC", npc.entityId === null, npc.entityId);
 check("a killed NPC is announced", world.log.some(l => /was killed by/.test(l)), JSON.stringify(world.log));
-check("a killed NPC leaves its body behind", npc.mobId === null, npc.mobId);
+check("a killed NPC's body is removed",
+    !world.meshEntities.some(m => m.id === body), JSON.stringify(world.meshEntities.map(m => m.id)));
 check("a killed NPC books a respawn", npc.deadUntil > 0, npc.deadUntil);
 check("NPCs drop no Life Orb by default", world.drops.length === 0, world.drops.length);
 
-// it comes back once the timer is up
+// it comes back, keeping who it is
+const wasName = npc.name, wasSkin = npc.skin, wasPersonality = npc.personality;
 npc.deadUntil = 0;
 world.pos.a = [900, 64, 900];
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a dead NPC respawns", npc.mobId !== null, npc.mobId);
+check("a dead NPC respawns", npc.entityId !== null, npc.entityId);
+check("it comes back as the same person",
+    npc.name === wasName && npc.skin === wasSkin && npc.personality === wasPersonality, "");
+check("it comes back at full health", npc.hp === N.maxHealth, npc.hp);
 
-// a full world just delays them rather than breaking anything
+// breaking the model outright also counts as a kill
 const npc2 = npcRoster[1];
-ctx.onPlayerKilledMob("a", npc2.mobId);
+world.log.length = 0;
+ctx.onPlayerBreakMeshEntity("a", npc2.entityId);
+check("breaking the model kills the NPC", npc2.entityId === null, npc2.entityId);
+
+// a full entity budget only delays them
 npc2.deadUntil = 0;
-world.mobSpawnFails = true;
+world.meshSpawnFails = true;
 for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a full world only delays a respawn", npc2.mobId === null && npc2.deadUntil > 0, npc2.deadUntil);
-world.mobSpawnFails = false;
+check("a full entity budget only delays a respawn",
+    npc2.entityId === null && npc2.deadUntil > 0, npc2.deadUntil);
+world.meshSpawnFails = false;
 
 check("/npcs lists them", ctx.playerCommand("a", "/npcs") === true, "");
-check("a normal mob is not an NPC", (() => {
+check("someone else's mesh entity is not an NPC", (() => {
     const before = world.log.length;
-    ctx.onPlayerDamagingMob("a", "not-an-npc", 5);
-    ctx.onPlayerKilledMob("a", "not-an-npc");
+    ctx.onPlayerDamagingMeshEntity("a", "not-an-npc", 5);
+    ctx.onPlayerBreakMeshEntity("a", "not-an-npc");
     return world.log.length === before;
 })(), "");
 
