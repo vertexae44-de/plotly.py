@@ -8,6 +8,7 @@ const world = {
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
     mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
     mobSeq: 0, meshEntities: [], headings: {}, meshSpawnFails: false,
+    worldChanges: [], protectedBlocks: {},
 };
 const ids = ["a", "b"];
 
@@ -80,6 +81,13 @@ const api = {
         return true;
     },
     setEntityHeading: (id, h) => { world.headings[id] = h; },
+    attemptWorldChangeBlock: (initiator, x, y, z, name) => {
+        const key = x + "," + y + "," + z;
+        if (world.protectedBlocks[key]) return "preventChange";
+        world.blocks[key] = name;
+        world.worldChanges.push({ x, y, z, name });
+        return undefined;
+    },
     setTargetedPlayerSettingForEveryone: (id, setting, value) => {
         (world.entitySettings[id] = world.entitySettings[id] || {})[setting] = value;
     },

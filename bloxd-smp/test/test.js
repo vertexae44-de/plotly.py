@@ -619,6 +619,132 @@ check("a full entity budget only delays a respawn",
     npc2.entityId === null && npc2.deadUntil > 0, npc2.deadUntil);
 world.meshSpawnFails = false;
 
+// ---- they actually work -----------------------------------------------------
+const W = N.work;
+const worker = npcRoster.find(x => x.trade === "lumberjack") || npcRoster[0];
+if (worker.entityId === null) { worker.deadUntil = 0; for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick(); }
+check("NPCs are given a trade",
+    npcRoster.every(x => !!W.trades[x.trade]), npcRoster.map(x => x.trade).join(","));
+check("trades are shared out", new Set(npcRoster.map(x => x.trade)).size > 1, "");
+
+// put a tree in their patch and let them find it
+world.pos.a = [900, 64, 900];
+world.blocks = {};
+const treeX = Math.floor(worker.home[0]) + 3, treeZ = Math.floor(worker.home[1]) + 3;
+worker.pos = [worker.home[0], 64, worker.home[1]];
+// A stand of trees, the way a real world has them - a single log in 3,700
+// columns is not something random probing is meant to find.
+for (let dx = -8; dx <= 8; dx++) for (let dz = -8; dz <= 8; dz++) {
+    for (let y = 64; y < 68; y++) {
+        world.blocks[(Math.floor(worker.home[0]) + dx) + "," + y + "," + (Math.floor(worker.home[1]) + dz)] = "Maple Log";
+    }
+}
+worker.stash = 0; worker.restUntil = 0; worker.workBlock = null; worker.plan = null; worker.provokedBy = null;
+let found = null;
+for (let i = 0; i < 40 && !found; i++) found = ctx.findWorkBlock(worker);
+check("a lumberjack finds a log in a wood",
+    found && world.blocks[found.join(",")] === "Maple Log", JSON.stringify(found));
+// Probing downward means they always take the top of a trunk first, and the
+// next pass finds the one below it - trees come down from the top, not the base.
+check("they take the top of a trunk first", found && found[1] === 67, found && found[1]);
+check("the next pass takes the one below", (() => {
+    delete world.blocks[found[0] + ",67," + found[2]];
+    for (let i = 0; i < 60; i++) {
+        const f = ctx.findWorkBlock(worker);
+        if (f && f[0] === found[0] && f[2] === found[2]) return f[1] === 66;
+    }
+    return true;   // never re-probed that column; nothing to disprove
+})(), "");
+world.blocks = {};
+world.blocks[treeX + ",64," + treeZ] = "Maple Log";
+check("a miner does not want logs",
+    W.trades.miner.gathers.indexOf("Maple Log") === -1, "");
+
+// standing next to it, they chop it down
+worker.job = "gather";
+worker.workBlock = [treeX, 64, treeZ];
+worker.pos = [treeX + 0.5, 64, treeZ + 0.5];
+world.worldChanges.length = 0;
+ctx.workNpc(worker);
+check("chopping clears the block",
+    world.worldChanges.some(c => c.x === treeX && c.name === "Air"), JSON.stringify(world.worldChanges));
+check("chopping fills the stash", worker.stash === 1, worker.stash);
+
+// they will not reach outside their own patch
+worker.job = "gather";
+const farX = Math.floor(worker.home[0]) + W.radius + 40;
+world.blocks[farX + ",64,0"] = "Maple Log";
+worker.workBlock = [farX, 64, 0];
+worker.pos = [farX + 0.5, 64, 0.5];
+world.worldChanges.length = 0;
+ctx.workNpc(worker);
+check("they never break blocks outside their patch", world.worldChanges.length === 0, JSON.stringify(world.worldChanges));
+
+// out of reach they swing at nothing
+worker.workBlock = [treeX, 64, treeZ];
+worker.pos = [treeX + 20, 64, treeZ];
+world.worldChanges.length = 0;
+ctx.workNpc(worker);
+check("they must stand next to a block to break it", world.worldChanges.length === 0, "");
+
+// with material in hand they build their hut
+world.blocks = {};
+for (let dx = -6; dx <= 6; dx++) for (let dz = -6; dz <= 6; dz++) {
+    world.blocks[(Math.floor(worker.home[0]) + dx) + ",63," + (Math.floor(worker.home[1]) + dz)] = "Stone";
+}
+worker.pos = [worker.home[0], 64, worker.home[1]];
+worker.plan = null; worker.planIndex = 0;
+const plan = ctx.buildPlanFor(worker);
+check("a hut plan is drawn up", plan && plan.length > 40, plan && plan.length);
+check("the hut has a doorway", (() => {
+    const cx = Math.floor(worker.home[0]), cz = Math.floor(worker.home[1]);
+    const edge = W.hut.half;
+    return !plan.some(pp => pp[0] === cx && pp[2] === cz - edge && pp[1] === 63 + 1);
+})(), "no gap found");
+
+worker.stash = 200;
+worker.restUntil = 0;
+worker.provokedBy = null;
+world.worldChanges.length = 0;
+const material = W.trades[worker.trade].buildsWith;
+for (let i = 0; i < 400; i++) {
+    ctx.thinkNpc(worker);
+    if (worker.buildSpot) worker.pos = [worker.buildSpot[0] + 0.5, worker.buildSpot[1], worker.buildSpot[2] + 0.5];
+    ctx.workNpc(worker);
+}
+const placed = world.worldChanges.filter(c => c.name === material).length;
+check("they build with their trade's material", placed > 20, placed);
+check("building spends the stash", worker.stash < 200, worker.stash);
+check("the hut is finished", ctx.nextBuildSpot(worker) === null, ctx.nextBuildSpot(worker));
+check("finishing earns them a rest", worker.restUntil > 0, worker.restUntil);
+
+// a protected spot is skipped rather than retried forever
+const other = npcRoster.find(x => x !== worker);
+other.plan = null; other.planIndex = 0; other.stash = 50; other.restUntil = 0; other.provokedBy = null;
+other.pos = [other.home[0], 64, other.home[1]];
+const otherPlan = ctx.buildPlanFor(other);
+if (otherPlan) {
+    world.protectedBlocks[otherPlan[0].join(",")] = true;
+    other.plan = otherPlan; other.planIndex = 0;
+    other.job = "build"; other.buildSpot = otherPlan[0];
+    other.pos = [otherPlan[0][0] + 0.5, otherPlan[0][1], otherPlan[0][2] + 0.5];
+    const idxBefore = other.planIndex;
+    ctx.workNpc(other);
+    check("a protected spot is skipped, not retried", other.planIndex === idxBefore + 1, other.planIndex);
+    check("a skipped spot costs no material", other.stash === 50, other.stash);
+    world.protectedBlocks = {};
+}
+
+// a fight interrupts work
+worker.provokedBy = "a";
+world.worldChanges.length = 0;
+worker.job = "gather"; worker.workBlock = [treeX, 64, treeZ];
+worker.pos = [treeX + 0.5, 64, treeZ + 0.5];
+world.blocks[treeX + ",64," + treeZ] = "Maple Log";
+ctx.workNpc(worker);
+check("they stop working when attacked", world.worldChanges.length === 0, JSON.stringify(world.worldChanges));
+worker.provokedBy = null;
+
 check("/npcs lists them", ctx.playerCommand("a", "/npcs") === true, "");
 check("someone else's mesh entity is not an NPC", (() => {
     const before = world.log.length;

@@ -15,7 +15,7 @@
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your nametag and your name in chat. |
-| **NPCs** | Player-model people who wander, notice you, talk, fight back when provoked and flee when losing. |
+| **NPCs** | Player-model people with trades — they chop, mine, build their own huts, talk, fight back and flee. |
 
 ## Install
 
@@ -210,7 +210,12 @@ runs on mob AI: this script moves them, turns them, fights with them and kills t
 - **They walk.** A step every 0.1 s toward wherever they are headed, following the ground beneath
   them and turning to face their direction of travel. They don't teleport or slide.
 - **They think** once a second, in order of urgency: flee if losing → chase whoever hit them →
-  stop and greet a player who walked up → otherwise wander their patch and mutter.
+  stop and greet a player who walked up → **go to work** → otherwise wander and mutter.
+- **They work for real.** Every NPC has a trade. A **lumberjack** hunts logs; a **miner** hunts
+  Stone, Coal, Iron and Gravel. They walk to what they found, break it — an actual block change in
+  your world — and bank it. With material in hand they build a **hut** at their own plot: floor,
+  four walls with a doorway, roof, one block every half second, lumberjacks in planks and miners in
+  stone. When it's finished they say so and take a break.
 - **They fight back.** Provoked, they run you down and hit for 8 on a 1.2 s cooldown, but only from
   inside 2.6 blocks. They are never hostile first — they only fight people who start it, which is
   most of what makes them read as people.
@@ -222,7 +227,12 @@ Each has one of four personalities — **friendly**, **cocky**, **quiet**, **tra
 every line they say. Chat is rate-limited per NPC, and greetings are once a minute per player, so a
 scrap never floods the channel.
 
-`/npcs` lists who is alive, their skin, personality and health. `npcs.dropsLifeOrb` is **off** by
+**Three rules keep them from griefing you.** They only break blocks on their own trade's list
+(logs, or stone and ore — never your builds), never outside their own 30-block patch, and every
+change goes through `attemptWorldChangeBlock`, so spawn protection and any other plugin can refuse
+it. A refused spot is skipped rather than retried forever. Being attacked stops work immediately.
+
+`/npcs` lists who is alive, their trade, what they're doing, what they've stashed and their health. `npcs.dropsLifeOrb` is **off** by
 default — turning it on makes NPC hunting an alternative source of hearts, which weakens the PvP
 economy.
 
@@ -289,13 +299,15 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-197 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+214 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
 blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
 Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed, NPCs being player models rather than
 mobs, walking a step at a time, greeting, retaliating in range and on cooldown, fleeing, dying and
-coming back as the same person, both apples (heal, shield, regen, fire
+coming back as the same person, finding and chopping timber from the top of a
+trunk down, refusing to reach outside their patch, building a hut with the right material and
+skipping protected spots, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

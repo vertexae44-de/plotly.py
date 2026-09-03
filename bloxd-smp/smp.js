@@ -13,7 +13,7 @@
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
 //  !anon            hides your nametag and your name in chat
-//  NPCs             player-model people who wander, chat, fight back and flee
+//  NPCs             player-model people who chop, mine, build huts, chat and fight
 //  Crafting         mace, spear, apples, portals and crystals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
@@ -393,6 +393,36 @@ const CONFIG = {
         attackDamage: 8,
         attackCooldownMs: 1200,
 
+        // ---- Work -----------------------------------------------------------
+        // They earn their keep: gather their trade's material, then spend it
+        // building a hut at their own plot, one block at a time.
+        work: {
+            enabled: true,
+            workEveryTicks: 10,      // one block action every half second
+            radius: 30,              // how far from home they will work
+            searchSamples: 12,       // random probes per hunt for something to do
+            searchDepth: 14,         // how tall a column each probe reads
+            reach: 3.2,              // how close they must stand to a block
+            hut: { half: 2, height: 3 },
+            restAfterHutMs: 60000,
+
+            trades: {
+                lumberjack: {
+                    gathers: [
+                        "Maple Log", "Pine Log", "Plum Log", "Cedar Log", "Aspen Log",
+                        "Jungle Log", "Palm Log", "Pear Log", "Cherry Log",
+                    ],
+                    buildsWith: "Maple Wood Planks",
+                    working: ["timber", "few more logs and im set", "this axe is blunt"],
+                },
+                miner: {
+                    gathers: ["Stone", "Coal Ore", "Iron Ore", "Gravel"],
+                    buildsWith: "Stone",
+                    working: ["found a vein", "digging down", "just stone again"],
+                },
+            },
+        },
+
         noticeRadius: 12,
         greetCooldownMs: 60000,
         chatterMinMs: 45000,
@@ -409,24 +439,28 @@ const CONFIG = {
                 idle: ["nice out here", "anyone seen my pickaxe", "brb mining", "this place is huge"],
                 hurt: ["ow", "what was that for", "hey!!", "im not even armed"],
                 flee: ["nope nope nope", "im out", "not worth it"],
+                built: ["hut's done", "not bad if i say so myself", "home sweet home"],
             },
             cocky: {
                 greet: ["sup", "you again", "look who it is", "yeah?"],
                 idle: ["someone fight me", "bored", "20 hearts by friday", "easy game"],
                 hurt: ["thats it?", "big mistake", "keep going", "cute"],
                 flee: ["ill be back", "lucky hit", "this isnt over"],
+                built: ["built that in a day", "better than yours", "done already"],
             },
             quiet: {
                 greet: ["...", "hm", "hey.", "oh"],
                 idle: ["...", "hm.", "quiet today"],
                 hurt: ["stop", "why", "..."],
                 flee: ["no", "leaving"],
+                built: ["done.", "hm. finished"],
             },
             trader: {
                 greet: ["got any moonstone?", "trading hearts, interested?", "hey, buying obsidian"],
                 idle: ["wtb moonstone paying well", "selling gapples", "anyone got knight hearts"],
                 hurt: ["hey! im a trader!", "thats bad for business", "rude"],
                 flee: ["fine fine take it", "not paid enough for this"],
+                built: ["shop's open", "come see the new place"],
             },
         },
     },
@@ -1434,9 +1468,11 @@ function buildNpcRoster() {
             : "farmer";
         const angle = (i / n.count) * Math.PI * 2;
 
+        const trades = Object.keys(n.work.trades);
         npcRoster.push({
             name: name,
             skin: skin,
+            trade: trades[i % trades.length],
             personality: personalities[i % personalities.length],
             // Spread their homes around the centre so they are not all in a pile.
             home: [
@@ -1455,6 +1491,11 @@ function buildNpcRoster() {
             provokedBy: null,
             provokedAt: 0,
             greeted: {},
+            stash: 0,
+            workBlock: null,      // the block they are walking over to break
+            plan: null,           // their hut, as a list of positions
+            planIndex: 0,
+            restUntil: 0,
         });
     }
 }
@@ -1591,6 +1632,148 @@ function npcAttack(npc, targetId) {
     api.broadcastSound("hit1", 0.7, 1.0, { playerIdOrPos: npc.pos, maxHearDist: 20 });
 }
 
+function tradeOf(npc) {
+    return CONFIG.npcs.work.trades[npc.trade];
+}
+
+function withinWorkArea(npc, x, z) {
+    const r = CONFIG.npcs.work.radius;
+    return Math.abs(x - npc.home[0]) <= r && Math.abs(z - npc.home[1]) <= r;
+}
+
+/**
+ * Hunts for something of their trade to break, by probing random columns near
+ * home. Bounded on purpose: a handful of probes a second, never a full scan.
+ */
+function findWorkBlock(npc) {
+    const w = CONFIG.npcs.work;
+    const wanted = tradeOf(npc).gathers;
+
+    for (let i = 0; i < w.searchSamples; i++) {
+        const x = Math.floor(npc.home[0] + (Math.random() * 2 - 1) * w.radius);
+        const z = Math.floor(npc.home[1] + (Math.random() * 2 - 1) * w.radius);
+        // Start above head height so a probe landing on a tree sees its trunk.
+        const from = Math.floor(npc.pos ? npc.pos[1] : 64) + 5;
+
+        for (let y = from; y > from - w.searchDepth; y--) {
+            if (!api.isBlockInLoadedChunk(x, y, z)) {
+                continue;
+            }
+            if (wanted.indexOf(api.getBlock(x, y, z)) !== -1) {
+                return [x, y, z];
+            }
+        }
+    }
+    return null;
+}
+
+/** Lays out a small hut around the NPC's plot: floor, walls with a doorway, roof. */
+function buildPlanFor(npc) {
+    const hut = CONFIG.npcs.work.hut;
+    const cx = Math.floor(npc.home[0]);
+    const cz = Math.floor(npc.home[1]);
+    const groundY = groundYNear(cx, npc.pos ? npc.pos[1] : 70, cz);
+    if (groundY == null) {
+        return null;
+    }
+    const base = groundY - 1;
+    const plan = [];
+
+    for (let dx = -hut.half; dx <= hut.half; dx++) {
+        for (let dz = -hut.half; dz <= hut.half; dz++) {
+            plan.push([cx + dx, base, cz + dz]);                    // floor
+            plan.push([cx + dx, base + hut.height + 1, cz + dz]);   // roof
+        }
+    }
+    for (let level = 1; level <= hut.height; level++) {
+        for (let d = -hut.half; d <= hut.half; d++) {
+            const edge = hut.half;
+            // A doorway: leave the middle of one wall open at head height and below.
+            const isDoor = d === 0 && level <= 2;
+            if (!isDoor) {
+                plan.push([cx + d, base + level, cz - edge]);
+            }
+            plan.push([cx + d, base + level, cz + edge]);
+            plan.push([cx - edge, base + level, cz + d]);
+            plan.push([cx + edge, base + level, cz + d]);
+        }
+    }
+    return plan;
+}
+
+function nextBuildSpot(npc) {
+    if (!npc.plan) {
+        npc.plan = buildPlanFor(npc);
+        npc.planIndex = 0;
+    }
+    if (!npc.plan) {
+        return null;
+    }
+    const material = tradeOf(npc).buildsWith;
+
+    // Skip anything already standing, so a rebuilt NPC does not redo finished work.
+    while (npc.planIndex < npc.plan.length) {
+        const spot = npc.plan[npc.planIndex];
+        if (!api.isBlockInLoadedChunk(spot[0], spot[1], spot[2])
+            || api.getBlock(spot[0], spot[1], spot[2]) !== material) {
+            return spot;
+        }
+        npc.planIndex++;
+    }
+    return null;
+}
+
+function nearEnough(npc, spot) {
+    if (!npc.pos) {
+        return false;
+    }
+    const dx = spot[0] + 0.5 - npc.pos[0];
+    const dy = spot[1] - npc.pos[1];
+    const dz = spot[2] + 0.5 - npc.pos[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz) <= CONFIG.npcs.work.reach;
+}
+
+/** The actual swing: one block broken or placed, only ever inside their own patch. */
+function workNpc(npc) {
+    const w = CONFIG.npcs.work;
+    if (!w.enabled || npc.entityId == null || !npc.pos || npc.provokedBy) {
+        return;
+    }
+
+    if (npc.job === "build" && npc.buildSpot && nearEnough(npc, npc.buildSpot)) {
+        const spot = npc.buildSpot;
+        const result = api.attemptWorldChangeBlock(null, spot[0], spot[1], spot[2],
+            tradeOf(npc).buildsWith, {});
+        npc.buildSpot = null;
+        if (result === "preventChange") {
+            npc.planIndex++;   // something is protecting that spot; move on
+            return;
+        }
+        npc.stash--;
+        npc.planIndex++;
+        if (nextBuildSpot(npc) == null) {
+            npcSay(npc, "built");
+            npc.restUntil = api.now() + w.restAfterHutMs;
+        }
+        return;
+    }
+
+    if (npc.job === "gather" && npc.workBlock && nearEnough(npc, npc.workBlock)) {
+        const spot = npc.workBlock;
+        npc.workBlock = null;
+        if (!withinWorkArea(npc, spot[0], spot[2])) {
+            return;   // never reach outside their own patch
+        }
+        if (tradeOf(npc).gathers.indexOf(api.getBlock(spot[0], spot[1], spot[2])) === -1) {
+            return;   // someone beat them to it
+        }
+        const result = api.attemptWorldChangeBlock(null, spot[0], spot[1], spot[2], "Air", {});
+        if (result !== "preventChange") {
+            npc.stash++;
+        }
+    }
+}
+
 /** One NPC's turn to think, ordered by urgency: survival, a fight, people, then life. */
 function thinkNpc(npc) {
     const n = CONFIG.npcs;
@@ -1652,7 +1835,41 @@ function thinkNpc(npc) {
         return;
     }
 
-    // Otherwise get on with life: wander the patch, mutter now and then.
+    // Nobody around: get to work. Build if there is material and hut left to
+    // raise, otherwise go and gather more of the trade's material.
+    if (n.work.enabled && now >= npc.restUntil) {
+        const spot = npc.stash > 0 ? nextBuildSpot(npc) : null;
+        if (spot) {
+            npc.job = "build";
+            npc.buildSpot = spot;
+            npc.running = false;
+            npc.target = [spot[0] + 0.5, spot[2] + 0.5];
+            if (now >= npc.nextChatter) {
+                npcSay(npc, "working");
+                npc.nextChatter = now + n.chatterMinMs
+                    + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
+            }
+            return;
+        }
+
+        npc.job = "gather";
+        if (!npc.workBlock) {
+            npc.workBlock = findWorkBlock(npc);
+        }
+        if (npc.workBlock) {
+            npc.running = false;
+            npc.target = [npc.workBlock[0] + 0.5, npc.workBlock[2] + 0.5];
+            if (now >= npc.nextChatter) {
+                npcSay(npc, "working");
+                npc.nextChatter = now + n.chatterMinMs
+                    + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
+            }
+            return;
+        }
+    }
+
+    // Nothing to do: wander the patch, mutter now and then.
+    npc.job = "idle";
     if (now >= npc.nextChatter) {
         npcSay(npc, "idle");
         npc.nextChatter = now + n.chatterMinMs
@@ -1687,6 +1904,11 @@ function tickNpcs() {
     if (npcTicks % n.moveEveryTicks === 0) {
         for (let i = 0; i < npcRoster.length; i++) {
             stepNpc(npcRoster[i]);
+        }
+    }
+    if (n.work.enabled && npcTicks % n.work.workEveryTicks === 0) {
+        for (let i = 0; i < npcRoster.length; i++) {
+            workNpc(npcRoster[i]);
         }
     }
 }
@@ -2411,8 +2633,11 @@ function playerCommand(playerId, command) {
             const parts2 = [];
             for (let i = 0; i < npcRoster.length; i++) {
                 const npc = npcRoster[i];
-                parts2.push(npc.name + " the " + npc.skin + " (" + npc.personality + ") "
-                    + (npc.entityId == null ? "respawning" : Math.max(0, Math.round(npc.hp)) + " hp"));
+                parts2.push(npc.name + " the " + npc.trade
+                    + (npc.entityId == null
+                        ? " (respawning)"
+                        : " (" + (npc.job || "idle") + ", " + npc.stash + " stashed, "
+                            + Math.max(0, Math.round(npc.hp)) + " hp)"));
             }
             tell(playerId, parts2.length ? parts2.join(" | ") : "No NPCs yet.", "#c9d1d9");
             return true;
