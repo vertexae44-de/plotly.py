@@ -6,7 +6,7 @@ const world = {
     db: {}, lobbyDb: {}, opts: {}, health: {}, shield: {}, inv: {}, sel: {}, pos: {},
     drops: [], log: [], impulses: [], effects: [], kicks: [], recipes: {},
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
-    mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true,
+    mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
 };
 const ids = ["a", "b"];
 
@@ -60,8 +60,17 @@ const api = {
     setClientOptions: (id, obj) => Object.assign(world.opts[id] = world.opts[id] || {}, obj),
     setPosition: (id, x, y, z) => { world.pos[id] = Array.isArray(x) ? x.slice() : [x, y, z]; },
     getBlock: (x, y, z) => (world.blocks[x + "," + y + "," + z] || "Air"),
-    setBlockRect: (p1, p2, name) => world.rects.push({ p1, p2, name }),
+    setBlockRect: (p1, p2, name) => {
+        world.rects.push({ p1, p2, name });
+        for (let y = p1[1]; y <= p2[1]; y++) world.blocks[p1[0] + "," + y + "," + p1[2]] = name;
+    },
+    setBlock: (x, y, z, name) => { world.blocks[x + "," + y + "," + z] = name; world.sets++; },
     isBlockInLoadedChunk: () => world.chunkLoaded !== false,
+
+    attemptApplyDamage: opts => { world.damages.push(opts); return true; },
+    setTargetedPlayerSettingForEveryone: (id, setting, value) => {
+        (world.entitySettings[id] = world.entitySettings[id] || {})[setting] = value;
+    },
 
     kickPlayer: (id, reason) => world.kicks.push({ id, reason }),
     sendMessage: (id, m) => world.log.push(`msg[${id}] ${m}`),
@@ -77,5 +86,7 @@ vm.runInContext(src, ctx);
 const CONFIG = vm.runInContext("CONFIG", ctx);
 // `const` declarations do not land on the context object, so pull them out by name.
 const durabilityCache = vm.runInContext("durabilityCache", ctx);
+const genDone = vm.runInContext("genDone", ctx);
+const genQueue = vm.runInContext("genQueue", ctx);
 
-module.exports = { ctx, world, api, CONFIG, durabilityCache };
+module.exports = { ctx, world, api, CONFIG, durabilityCache, genDone, genQueue };

@@ -10,7 +10,10 @@
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
-//  Crafting         mace, spear, both apples and both portals have recipes
+//  Crystal PvP      place a Crystal, hit it, everything nearby is launched
+//  Cart PvP         catch someone in a boat and they take extra damage
+//  !anon            hides your nametag and your name in chat
+//  Crafting         mace, spear, apples, portals and crystals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
 //  so one "heart" here is hpPerHeart points.
@@ -192,10 +195,10 @@ const CONFIG = {
                 portalBlock: "Purple Portal",
                 platformBlock: "Magma",
                 clientOptions: {
-                    fogColourOverride: "#3a0b06",
-                    fogChunkDistanceOverride: 6,
-                    ambientLightColourOverride: "#40140c",
-                    skyLightColourOverride: "#792a16",
+                    fogColourOverride: "#6b1105",       // thick red haze
+                    fogChunkDistanceOverride: 5,        // you cannot see far in here
+                    ambientLightColourOverride: "#5a1a0d",
+                    skyLightColourOverride: "#a8331a",
                     gravityMultiplier: 1,
                 },
             },
@@ -206,11 +209,57 @@ const CONFIG = {
                 portalBlock: "Black Portal",
                 platformBlock: "Obsidian",
                 clientOptions: {
-                    fogColourOverride: "#0d0a1a",
-                    fogChunkDistanceOverride: 10,
-                    ambientLightColourOverride: "#1b1630",
-                    skyLightColourOverride: "#3a2f57",
-                    gravityMultiplier: 0.7,
+                    fogColourOverride: "#2e0f52",       // deep purple void
+                    fogChunkDistanceOverride: 8,
+                    ambientLightColourOverride: "#2a1247",
+                    skyLightColourOverride: "#7d4fd1",
+                    gravityMultiplier: 0.7,             // floatier, like the End
+                },
+            },
+        },
+
+        // ---- Terrain generation ---------------------------------------------
+        // The Nether and End regions start as empty void. This fills chunks in
+        // around players as they explore, so the dimensions are real places.
+        generation: {
+            enabled: true,
+            chunkSize: 16,
+            radius: 2,             // chunks generated around each player (2 = 5x5)
+            columnsPerTick: 24,    // work budget, spread over ticks to avoid lag
+            markerY: 0,            // one marker block per chunk records "generated"
+            markerBlock: "Bedrock",
+
+            nether: {
+                seed: 1337,
+                floorY: 20,
+                ceilingY: 92,
+                groundBase: 36, groundAmp: 12, groundScale: 26,
+                ceilingBase: 78, ceilingAmp: 9, ceilingScale: 31,
+                lavaLevel: 32,
+                accentChance: 0.06,   // magma blotches on the surface
+                blocks: {
+                    floor: "Bedrock",
+                    base: "Red Sandstone",
+                    top: "Red Sand",
+                    accent: "Magma",
+                    liquid: "Lava",
+                    ceiling: "Red Sandstone Bricks",
+                },
+            },
+
+            end: {
+                seed: 90210,
+                baseY: 56,
+                // Noise alone can leave the arrival point over open void, so the
+                // centre of the region is always solid ground.
+                centreIslandRadius: 24,
+                islandScale: 44, islandThreshold: 0.5,
+                thickness: 9, driftScale: 30, drift: 7,
+                pillarChance: 0.004, pillarHeight: 14,
+                blocks: {
+                    base: "Bone Block",
+                    top: "White Concrete",
+                    pillar: "Obsidian",
                 },
             },
         },
@@ -228,8 +277,47 @@ const CONFIG = {
         },
     },
 
+    // ---- Crystal PvP --------------------------------------------------------
+    // Place a Crystal, hit it, everything nearby gets blown apart.
+    crystal: {
+        enabled: true,
+        block: "Crystal",
+        damage: 45,
+        radius: 6,
+        knockback: 14,
+        knockbackUp: 6,
+        selfDamageFraction: 0.5,   // your own crystal hurts you less
+        hitsMobs: true,
+        breakBlocks: false,        // true lets crystals crater the terrain
+        recipe: [
+            { items: ["Obsidian"], amt: 4 },
+            { items: ["Moonstone"], amt: 2 },
+        ],
+    },
+
+    // ---- Cart PvP -----------------------------------------------------------
+    // Bloxd has no minecarts or rails, so this rides on the vehicles it does
+    // have: boats. Catch someone while they are in one and they pay for it.
+    cart: {
+        enabled: true,
+        bonusDamage: 12,
+        ejectOnHit: true,
+        ejectImpulse: 13,
+        ejectUp: 7,
+    },
+
+    // ---- Anonymous mode -----------------------------------------------------
+    anonymous: {
+        enabled: true,
+        chatCommand: "!anon",
+        displayName: "Anonymous",
+        hideNameTag: true,
+        hideInChat: true,
+        colour: "#9aa0a6",
+    },
+
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where"],
+        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where", "anon"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -238,6 +326,7 @@ const DB_MAX_HP = "smpMaxHp";
 const DB_BANS = "smpBans";
 const DB_ORBS_EATEN = "smpOrbsEaten";
 const DB_DIMENSION = "smpDimension";
+const DB_ANON = "smpAnon";
 
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
@@ -502,6 +591,13 @@ function registerRecipes(playerId) {
         produces: 1,
         attributes: spearAttributes(CONFIG.spear.durability),
     }]);
+
+    if (CONFIG.crystal.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.crystal.block, [{
+            requires: CONFIG.crystal.recipe,
+            produces: 1,
+        }]);
+    }
 
     // Both apples craft into the same base item, told apart by their tag.
     api.editItemCraftingRecipes(playerId, "Apple", [
@@ -892,27 +988,42 @@ function isLunging(playerId) {
 // Shared weapon hit handling
 // -----------------------------------------------------------------------------
 
+/** Extra damage, and a launch, for catching someone while they are in a boat. */
+function cartBonus(targetId) {
+    const c = CONFIG.cart;
+    if (!c.enabled || !isPlayer(targetId) || !stateOf(targetId).inVehicle) {
+        return 0;
+    }
+    if (c.ejectOnHit) {
+        api.applyImpulse(targetId, 0, c.ejectUp, 0);
+        api.applyImpulse(targetId, c.ejectImpulse * 0.5, 0, c.ejectImpulse * 0.5);
+    }
+    return c.bonusDamage;
+}
+
 function handleWeaponHit(attacker, targetId, damageDealt) {
     const slot = heldSlot(attacker);
     if (!slot) {
         return;
     }
     const custom = customAttrs(slot.item);
+    const cart = cartBonus(targetId);
 
     if (custom[ATTR_MACE]) {
-        return maceSmash(attacker, targetId, damageDealt, slot);
+        return maceSmash(attacker, targetId, damageDealt + cart, slot);
     }
 
     if (custom[ATTR_SPEAR]) {
         spendDurability(attacker, slot, CONFIG.durability.costPerHit);
         if (isLunging(attacker)) {
             stateOf(attacker).lastLunge = 0;   // the bonus lands once per lunge
-            return Math.round(damageDealt + CONFIG.spear.lungeBonusDamage);
+            return Math.round(damageDealt + cart + CONFIG.spear.lungeBonusDamage);
         }
-        return;
+        return cart > 0 ? Math.round(damageDealt + cart) : undefined;
     }
 
     spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+    return cart > 0 ? Math.round(damageDealt + cart) : undefined;
 }
 
 // -----------------------------------------------------------------------------
@@ -1019,6 +1130,10 @@ function travelTo(playerId, toKey) {
     ensureArrivalGround(x, pos[1], z, to.platformBlock);
     api.setPosition(playerId, x, pos[1], z);
     enterDimension(playerId, toKey, true);
+    // Start filling the world in around them straight away rather than waiting
+    // for the next tick's movement check.
+    stateOf(playerId).lastGenChunk = null;
+    queueChunksAround(toKey, [x, pos[1], z]);
 
     api.playSound(playerId, "magicAccent2", 0.9, 0.8);
     return true;
@@ -1055,6 +1170,296 @@ function registerPortalRecipes(playerId) {
 }
 
 // -----------------------------------------------------------------------------
+// Crystal PvP
+// -----------------------------------------------------------------------------
+
+/** Everything the blast can reach: players always, mobs when enabled. */
+function blastTargets() {
+    const ids = api.getPlayerIds();
+    return CONFIG.crystal.hitsMobs ? ids.concat(api.getMobIds()) : ids;
+}
+
+/**
+ * Detonates at a block position. Damage and knockback both fall off linearly,
+ * so standing at the edge of the blast is survivable and point blank is not.
+ */
+function explodeCrystal(placerId, x, y, z) {
+    const c = CONFIG.crystal;
+    const centre = [x + 0.5, y + 0.5, z + 0.5];
+    const targets = blastTargets();
+
+    for (let i = 0; i < targets.length; i++) {
+        const victim = targets[i];
+        const pos = api.getPosition(victim);
+        if (!pos) {
+            continue;
+        }
+        const dx = pos[0] - centre[0];
+        const dy = pos[1] - centre[1];
+        const dz = pos[2] - centre[2];
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > c.radius) {
+            continue;
+        }
+
+        const falloff = 1 - distance / c.radius;
+        let damage = c.damage * falloff;
+        if (victim === placerId) {
+            damage *= c.selfDamageFraction;
+        }
+
+        api.attemptApplyDamage({
+            eId: placerId,
+            hitEId: victim,
+            attemptedDmgAmt: Math.max(1, Math.round(damage)),
+            withItem: c.block,
+        });
+
+        // Push them out of the crater. A direct overlap still goes somewhere.
+        const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
+        api.applyImpulse(
+            victim,
+            (dx / length) * c.knockback * falloff,
+            c.knockbackUp * falloff,
+            (dz / length) * c.knockback * falloff
+        );
+        if (isPlayer(victim)) {
+            api.shakePlayerCamera(victim, Math.min(1, falloff), 500);
+        }
+    }
+
+    if (c.breakBlocks) {
+        const r = Math.max(1, Math.round(c.radius / 2));
+        api.setBlockRect([x - r, y - r, z - r], [x + r, y + r, z + r], "Air");
+    }
+
+    api.broadcastSound("ominousBellHit", 1.0, 0.7, { playerIdOrPos: centre, maxHearDist: 60 });
+    api.playParticleEffect({
+        presetId: "stomp",
+        pos1: [centre[0] - c.radius / 2, centre[1], centre[2] - c.radius / 2],
+        pos2: [centre[0] + c.radius / 2, centre[1] + 2, centre[2] + c.radius / 2],
+    });
+}
+
+// -----------------------------------------------------------------------------
+// Anonymous mode
+// -----------------------------------------------------------------------------
+
+function isAnon(playerId) {
+    return api.getPlayerDbValue(playerId, DB_ANON) === 1;
+}
+
+/** Blanks or restores the floating nametag everyone else sees above them. */
+function applyAnonNameTag(playerId, anon) {
+    if (!CONFIG.anonymous.hideNameTag) {
+        return;
+    }
+    api.setTargetedPlayerSettingForEveryone(
+        playerId,
+        "nameTagInfo",
+        anon ? { content: [{ str: CONFIG.anonymous.displayName }] } : null,
+        true   // new joiners see it too, or anonymity leaks on every join
+    );
+}
+
+function setAnon(playerId, anon) {
+    api.setPlayerDbValue(playerId, DB_ANON, anon ? 1 : 0);
+    applyAnonNameTag(playerId, anon);
+    tell(playerId, anon
+        ? "You are now " + CONFIG.anonymous.displayName + ". Type "
+            + CONFIG.anonymous.chatCommand + " again to reveal yourself."
+        : "You are no longer anonymous.", CONFIG.anonymous.colour);
+}
+
+// -----------------------------------------------------------------------------
+// Terrain generation
+// -----------------------------------------------------------------------------
+
+// Deterministic value noise. Nothing here may use Math.random: the same column
+// must always produce the same blocks, or chunk edges would not line up and a
+// regenerated chunk would come back different.
+
+function hash2(x, z, seed) {
+    let h = (Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263) ^ Math.imul(seed | 0, 1274126177)) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h = h ^ (h >>> 16);
+    return (h >>> 0) / 4294967296;
+}
+
+/** Smoothed value noise in 0..1, sampled on a grid `scale` blocks wide. */
+function noise2(x, z, scale, seed) {
+    const gx = x / scale;
+    const gz = z / scale;
+    const x0 = Math.floor(gx);
+    const z0 = Math.floor(gz);
+    const fx = gx - x0;
+    const fz = gz - z0;
+    const sx = fx * fx * (3 - 2 * fx);   // smoothstep, so islands have soft edges
+    const sz = fz * fz * (3 - 2 * fz);
+
+    const n00 = hash2(x0, z0, seed);
+    const n10 = hash2(x0 + 1, z0, seed);
+    const n01 = hash2(x0, z0 + 1, seed);
+    const n11 = hash2(x0 + 1, z0 + 1, seed);
+
+    return (n00 * (1 - sx) + n10 * sx) * (1 - sz) + (n01 * (1 - sx) + n11 * sx) * sz;
+}
+
+const genQueue = [];      // chunks waiting to be built, oldest first
+const genQueued = {};     // key -> in the queue right now
+const genDone = {};       // key -> known built this session
+
+function chunkKey(dimKey, cx, cz) {
+    return dimKey + ":" + cx + "," + cz;
+}
+
+/**
+ * A chunk is "already built" if we built it this session, or if its marker
+ * block is still there from a previous one. Never rebuild: that would wipe
+ * whatever players have made.
+ */
+function chunkGenerated(dimKey, cx, cz) {
+    const g = CONFIG.dimensions.generation;
+    const key = chunkKey(dimKey, cx, cz);
+    if (genDone[key]) {
+        return true;
+    }
+    const wx = cx * g.chunkSize;
+    const wz = cz * g.chunkSize;
+    if (api.isBlockInLoadedChunk(wx, g.markerY, wz)
+        && api.getBlock(wx, g.markerY, wz) === g.markerBlock) {
+        genDone[key] = true;
+        return true;
+    }
+    return false;
+}
+
+function queueChunksAround(dimKey, pos) {
+    const g = CONFIG.dimensions.generation;
+    if (!g.enabled || !g[dimKey]) {
+        return;   // the overworld is left alone
+    }
+    const cx0 = Math.floor(pos[0] / g.chunkSize);
+    const cz0 = Math.floor(pos[2] / g.chunkSize);
+
+    for (let dx = -g.radius; dx <= g.radius; dx++) {
+        for (let dz = -g.radius; dz <= g.radius; dz++) {
+            const cx = cx0 + dx;
+            const cz = cz0 + dz;
+            const key = chunkKey(dimKey, cx, cz);
+            if (genQueued[key] || chunkGenerated(dimKey, cx, cz)) {
+                continue;
+            }
+            genQueued[key] = true;
+            genQueue.push({ dimKey: dimKey, cx: cx, cz: cz, column: 0 });
+        }
+    }
+}
+
+function fill(x, y1, y2, z, blockName) {
+    if (y2 < y1) {
+        return;
+    }
+    api.setBlockRect([x, y1, z], [x, y2, z], blockName);
+}
+
+/** A closed cavern: bedrock floor, rolling ground, a lava sea and a ceiling. */
+function buildNetherColumn(x, z, localX, localZ) {
+    const c = CONFIG.dimensions.generation.nether;
+    const b = c.blocks;
+
+    const ground = Math.round(c.groundBase
+        + (noise2(localX, localZ, c.groundScale, c.seed) - 0.5) * 2 * c.groundAmp);
+    const ceiling = Math.round(c.ceilingBase
+        - (noise2(localX, localZ, c.ceilingScale, c.seed + 7) - 0.5) * 2 * c.ceilingAmp);
+
+    fill(x, c.floorY, c.floorY, z, b.floor);
+    fill(x, c.floorY + 1, ground - 1, z, b.base);
+
+    const surface = hash2(localX, localZ, c.seed + 31) < c.accentChance ? b.accent : b.top;
+    fill(x, ground, ground, z, surface);
+
+    // Lava pools wherever the ground dips below the sea level.
+    fill(x, ground + 1, c.lavaLevel, z, b.liquid);
+
+    fill(x, ceiling, c.ceilingY, z, b.ceiling);
+}
+
+/** Floating islands over open void, thinning out towards their edges. */
+function buildEndColumn(x, z, localX, localZ) {
+    const c = CONFIG.dimensions.generation.end;
+    const b = c.blocks;
+
+    const island = noise2(localX, localZ, c.islandScale, c.seed);
+
+    // The guaranteed centre island, fading out into the noise at its rim.
+    const fromCentre = Math.sqrt(localX * localX + localZ * localZ);
+    const centreStrength = fromCentre >= c.centreIslandRadius
+        ? 0
+        : 1 - fromCentre / c.centreIslandRadius;
+
+    let strength = (island - c.islandThreshold) / (1 - c.islandThreshold);
+    if (centreStrength > strength) {
+        strength = centreStrength;
+    }
+    if (strength <= 0) {
+        return;   // void, and it stays void
+    }
+    const half = Math.max(1, Math.round(strength * c.thickness));
+    const centre = Math.round(c.baseY
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
+
+    const top = centre + half - 1;
+    fill(x, centre - half, top - 1, z, b.base);
+    fill(x, top, top, z, b.top);
+
+    if (strength > 0.5 && hash2(localX, localZ, c.seed + 77) < c.pillarChance) {
+        fill(x, top + 1, top + c.pillarHeight, z, b.pillar);
+    }
+}
+
+/** Builds a slice of the queue each tick so a big reveal never stalls the server. */
+function processGeneration() {
+    const g = CONFIG.dimensions.generation;
+    if (!g.enabled) {
+        return;
+    }
+    let budget = g.columnsPerTick;
+    const perChunk = g.chunkSize * g.chunkSize;
+
+    while (budget > 0 && genQueue.length > 0) {
+        const job = genQueue[0];
+        const originX = dimension(job.dimKey).origin[0];
+        const originZ = dimension(job.dimKey).origin[1];
+
+        while (budget > 0 && job.column < perChunk) {
+            const lx = job.column % g.chunkSize;
+            const lz = (job.column / g.chunkSize) | 0;
+            const x = job.cx * g.chunkSize + lx;
+            const z = job.cz * g.chunkSize + lz;
+
+            // Noise is sampled in dimension-local space so the huge region
+            // offsets do not shift the terrain between dimensions.
+            if (job.dimKey === "nether") {
+                buildNetherColumn(x, z, x - originX, z - originZ);
+            } else if (job.dimKey === "end") {
+                buildEndColumn(x, z, x - originX, z - originZ);
+            }
+
+            job.column++;
+            budget--;
+        }
+
+        if (job.column >= perChunk) {
+            api.setBlock(job.cx * g.chunkSize, g.markerY, job.cz * g.chunkSize, g.markerBlock);
+            genDone[chunkKey(job.dimKey, job.cx, job.cz)] = true;
+            delete genQueued[chunkKey(job.dimKey, job.cx, job.cz)];
+            genQueue.shift();
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Callbacks
 // -----------------------------------------------------------------------------
 
@@ -1073,6 +1478,10 @@ function onPlayerJoin(playerId) {
         const key = dimensionAt(api.getPosition(playerId));
         stateOf(playerId).dimension = null;
         enterDimension(playerId, key, false);
+    }
+
+    if (CONFIG.anonymous.enabled && isAnon(playerId)) {
+        applyAnonNameTag(playerId, true);
     }
 
     const hp = getMaxHp(playerId);
@@ -1107,7 +1516,19 @@ function tick() {
             if (key !== state.dimension) {
                 enterDimension(playerId, key, true);
             }
+
+            // Only look for new chunks when the player actually moves chunk.
+            const size = CONFIG.dimensions.generation.chunkSize;
+            const here = Math.floor(pos[0] / size) + "," + Math.floor(pos[2] / size);
+            if (here !== state.lastGenChunk) {
+                state.lastGenChunk = here;
+                queueChunksAround(key, pos);
+            }
         }
+    }
+
+    if (CONFIG.dimensions.enabled) {
+        processGeneration();
     }
 }
 
@@ -1180,6 +1601,14 @@ function onPlayerDamagingOtherPlayer(attackingPlayer, damagedPlayer, damageDealt
     return handleWeaponHit(attackingPlayer, damagedPlayer, damageDealt);
 }
 
+function onPlayerEnteredVehicle(playerId) {
+    stateOf(playerId).inVehicle = true;
+}
+
+function onPlayerExitedVehicle(playerId) {
+    stateOf(playerId).inVehicle = false;
+}
+
 function onPlayerDamagingMob(playerId, mobId, damageDealt) {
     return handleWeaponHit(playerId, mobId, damageDealt);
 }
@@ -1189,9 +1618,33 @@ function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
     if (toBlock !== "Air" || fromBlock === "Air") {
         return;
     }
+
+    // Breaking a crystal is what sets it off.
+    if (CONFIG.crystal.enabled && fromBlock === CONFIG.crystal.block) {
+        explodeCrystal(playerId, x, y, z);
+    }
     const slot = heldSlot(playerId);
     if (slot) {
         spendDurability(playerId, slot, CONFIG.durability.costPerBlockBroken);
+    }
+}
+
+function onPlayerChat(playerId, chatMessage) {
+    if (!CONFIG.anonymous.enabled) {
+        return;
+    }
+    const text = String(chatMessage).trim();
+
+    if (text.toLowerCase() === CONFIG.anonymous.chatCommand) {
+        setAnon(playerId, !isAnon(playerId));
+        return false;   // the command itself is never shown to anyone
+    }
+
+    if (CONFIG.anonymous.hideInChat && isAnon(playerId)) {
+        // Swallow the real message and re-send it with the name stripped off.
+        api.broadcastMessage(CONFIG.anonymous.displayName + ": " + text,
+            { color: CONFIG.anonymous.colour });
+        return false;
     }
 }
 
@@ -1231,6 +1684,8 @@ function playerCommand(playerId, command) {
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + ") and "
                 + CONFIG.spear.name + " | craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
+                + "craft a Crystal, place it and hit it to blow up everything nearby | "
+                + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "
                 + "hit 0 hearts and you are banned for good.",
                 "#70a1ff");
             return true;
@@ -1286,6 +1741,10 @@ function playerCommand(playerId, command) {
             }
             return true;
         }
+
+        case "anon":
+            setAnon(playerId, !isAnon(playerId));
+            return true;
 
         case "where":
             tell(playerId, "You are in " + dimension(dimensionAt(api.getPosition(playerId))).name + ".",

@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C, durabilityCache } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -331,6 +331,152 @@ check("tick restores the overworld", ctx.stateOf("a").dimension === "overworld",
 check("portal blocks are craftable", !!world.recipes.a[DIM.nether.portalBlock]
     && !!world.recipes.a[DIM.end.portalBlock], Object.keys(world.recipes.a));
 check("/where is public", ctx.playerCommand("a", "/where") === true, "");
+
+// ------------------------------------------------------------- terrain generation
+const NDIM = C.dimensions.list.nether, EDIM = C.dimensions.list.end, GEN = C.dimensions.generation;
+check("noise is deterministic",
+    ctx.noise2(12, 34, 26, 7) === ctx.noise2(12, 34, 26, 7), "");
+check("noise stays in 0..1", (() => {
+    for (let i = 0; i < 500; i++) {
+        const n = ctx.noise2(i * 7, i * 13, 26, 3);
+        if (n < 0 || n > 1) return false;
+    }
+    return true;
+})(), "");
+check("different seeds give different terrain",
+    ctx.noise2(12, 34, 26, 1) !== ctx.noise2(12, 34, 26, 2), "");
+
+// run a player around the nether until the first chunk finishes
+world.blocks = {}; world.rects.length = 0;
+world.pos.a = [NDIM.origin[0], 60, NDIM.origin[1]];
+ctx.stateOf("a").dimension = null;
+ctx.stateOf("a").lastGenChunk = null;
+let genTicks = 0;
+while (genTicks < 3000 && world.blocks[NDIM.origin[0] + ",0," + NDIM.origin[1]] !== GEN.markerBlock) {
+    ctx.tick();
+    genTicks++;
+}
+const nAt = y => world.blocks[NDIM.origin[0] + "," + y + "," + NDIM.origin[1]];
+check("nether chunk generates", genTicks < 3000, genTicks + " ticks");
+check("nether has a bedrock floor", nAt(GEN.nether.floorY) === GEN.nether.blocks.floor, nAt(GEN.nether.floorY));
+check("nether has a ceiling", nAt(GEN.nether.ceilingY) === GEN.nether.blocks.ceiling, nAt(GEN.nether.ceilingY));
+check("nether has a lava sea", nAt(GEN.nether.lavaLevel) === GEN.nether.blocks.liquid, nAt(GEN.nether.lavaLevel));
+check("chunk is marked generated", ctx.chunkGenerated("nether", Math.floor(NDIM.origin[0] / GEN.chunkSize), Math.floor(NDIM.origin[1] / GEN.chunkSize)), "");
+const netherSets = world.sets;
+ctx.tick();
+check("a generated chunk is never rebuilt", world.sets === netherSets, world.sets + " vs " + netherSets);
+
+// the end builds islands over void
+world.blocks = {};
+world.pos.a = [EDIM.origin[0], 60, EDIM.origin[1]];
+ctx.stateOf("a").dimension = null;
+ctx.stateOf("a").lastGenChunk = null;
+let endTicks = 0;
+while (endTicks < 3000 && world.blocks[EDIM.origin[0] + ",0," + EDIM.origin[1]] !== GEN.markerBlock) {
+    ctx.tick();
+    endTicks++;
+}
+check("end chunk generates", endTicks < 3000, endTicks + " ticks");
+const endSolid = Object.keys(world.blocks).filter(k => world.blocks[k] === GEN.end.blocks.base).length;
+check("end has island blocks", endSolid > 0, endSolid);
+// Voidness is asserted per column below; a whole 5x5 of chunks is generated here.
+check("end arrival point is solid ground",
+    ctx.buildEndColumn === undefined || (() => {
+        world.blocks = {};
+        ctx.buildEndColumn(EDIM.origin[0], EDIM.origin[1], 0, 0);
+        return Object.keys(world.blocks).length > 0;
+    })(), "centre island missing");
+check("far end columns can still be void", (() => {
+    world.blocks = {};
+    let anyVoid = false;
+    for (let i = 1; i < 60 && !anyVoid; i++) {
+        world.blocks = {};
+        ctx.buildEndColumn(0, 0, i * 37, i * 53);
+        if (Object.keys(world.blocks).length === 0) anyVoid = true;
+    }
+    return anyVoid;
+})(), "every column was solid");
+check("overworld chunks are never queued", (() => {
+    world.pos.a = [0, 64, 0];
+    ctx.stateOf("a").lastGenChunk = null;
+    ctx.queueChunksAround("overworld", [0, 64, 0]);
+    for (let i = 0; i < 200; i++) ctx.tick();
+    return !Object.keys(genDone).some(k => k.indexOf("overworld:") === 0);
+})(), Object.keys(genDone).join(" "));
+
+// ------------------------------------------------------------------ dimension look
+check("nether fog is red", /^#[6-9a-f]/.test(NDIM.clientOptions.fogColourOverride), NDIM.clientOptions.fogColourOverride);
+check("end fog is purple", EDIM.clientOptions.fogColourOverride === "#2e0f52", EDIM.clientOptions.fogColourOverride);
+
+// ------------------------------------------------------------------- crystal pvp
+world.damages.length = 0;
+world.impulses.length = 0;
+world.pos.a = [0, 64, 0];
+world.pos.b = [2, 64, 0];
+ctx.onPlayerChangeBlock("a", 0, 64, 0, C.crystal.block, "Air");
+check("crystal explodes on break", world.damages.length > 0, world.damages.length);
+check("nearby player takes damage", world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+check("crystal knocks players back", world.impulses.some(i => i[0] === "b"), "");
+const selfHit = world.damages.find(d => d.hitEId === "a");
+const otherHit = world.damages.find(d => d.hitEId === "b");
+check("your own crystal hurts you less",
+    selfHit && otherHit && selfHit.attemptedDmgAmt < C.crystal.damage * C.crystal.selfDamageFraction + 1,
+    JSON.stringify(selfHit));
+check("damage is credited to the breaker", world.damages.every(d => d.eId === "a"), "");
+
+world.damages.length = 0;
+world.pos.b = [C.crystal.radius + 5, 64, 0];
+ctx.onPlayerChangeBlock("a", 0, 64, 0, C.crystal.block, "Air");
+check("players outside the radius are safe", !world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+world.rects.length = 0;
+ctx.onPlayerChangeBlock("a", 0, 64, 0, C.crystal.block, "Air");
+check("crystals do not crater by default", !world.rects.some(r => r.name === "Air"), JSON.stringify(world.rects));
+world.damages.length = 0;
+ctx.onPlayerChangeBlock("a", 0, 64, 0, "Stone", "Air");
+check("an ordinary block does not explode", world.damages.length === 0, "");
+check("crystal is craftable", !!world.recipes.a[C.crystal.block], Object.keys(world.recipes.a));
+
+// ---------------------------------------------------------------------- cart pvp
+world.pos.a = [0, 64, 0]; world.pos.b = [1, 64, 0];
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+ctx.onPlayerExitedVehicle("b");
+let plain = ctx.onPlayerDamagingOtherPlayer("a", "b", 20);
+check("no cart bonus on foot", plain === undefined, plain);
+ctx.onPlayerEnteredVehicle("b", "Boat", "v1");
+world.impulses.length = 0;
+const inCart = ctx.onPlayerDamagingOtherPlayer("a", "b", 20);
+check("hitting someone in a boat adds damage", inCart === 20 + C.cart.bonusDamage, inCart);
+check("hitting them in a boat ejects them", world.impulses.some(i => i[0] === "b"), "");
+ctx.onPlayerExitedVehicle("b");
+check("leaving the boat drops the bonus", ctx.onPlayerDamagingOtherPlayer("a", "b", 20) === undefined, "");
+
+// ------------------------------------------------------------------- anonymous
+world.log.length = 0;
+check("!anon is swallowed", ctx.onPlayerChat("a", "!anon", "global") === false, "");
+check("anon flag persisted", world.db.a.smpAnon === 1, world.db.a.smpAnon);
+check("nametag replaced",
+    world.entitySettings.a.nameTagInfo
+        && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName,
+    JSON.stringify(world.entitySettings.a));
+world.log.length = 0;
+check("anon chat is suppressed", ctx.onPlayerChat("a", "hello there", "global") === false, "");
+check("anon chat is rebroadcast without the name",
+    world.log.some(l => l.indexOf("bcast " + C.anonymous.displayName + ": hello there") === 0), JSON.stringify(world.log));
+check("anon chat never leaks the real name", !world.log.some(l => /Alice/.test(l)), JSON.stringify(world.log));
+check("a normal player's chat is untouched", ctx.onPlayerChat("b", "hi", "global") === undefined, "");
+check("!anon toggles back off", ctx.onPlayerChat("a", "!anon", "global") === false, "");
+check("anon flag cleared", world.db.a.smpAnon === 0, world.db.a.smpAnon);
+check("nametag restored", world.entitySettings.a.nameTagInfo === null, JSON.stringify(world.entitySettings.a));
+check("chat is normal again", ctx.onPlayerChat("a", "hello", "global") === undefined, "");
+// anonymity must survive a relog
+world.db.a.smpAnon = 1;
+world.entitySettings.a.nameTagInfo = null;
+ctx.onPlayerJoin("a");
+check("anon survives a rejoin",
+    world.entitySettings.a.nameTagInfo
+        && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName, "");
+world.db.a.smpAnon = 0;
+ctx.onPlayerJoin("a");
 
 // -------------------------------------------------------------------- commands
 world.inv.a = [];

@@ -11,7 +11,10 @@
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Durability** | Bloxd has none natively. This gives **every** tool, weapon, bow and armour piece a durability worked out from its name. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
-| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals. |
+| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
+| **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
+| **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
+| **`!anon`** | Hides your nametag and your name in chat. |
 
 ## Install
 
@@ -117,13 +120,48 @@ a short one back. `/where` tells you which dimension you are in; admins get `/di
 Crossing a region border on foot also re-dresses the world, so respawns and teleports are handled
 without a portal.
 
-**What this does not do:** it does not generate Nether or End *terrain*. Those regions start empty,
-so arriving builds a small platform under you (`platformBlock`, `platformRadius`) rather than
-dropping you through the void. Building the landscape is up to you and your players.
+### Terrain
+
+Both regions **generate as you explore them**. Chunks fill in around every player in a Nether or End
+region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the server.
+
+- **Nether** — a closed cavern: bedrock floor, rolling red-sandstone ground with magma blotches, a
+  lava sea in the dips, and a ceiling overhead.
+- **The End** — floating islands over open void, tapering at their edges, with occasional obsidian
+  spires. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players
+  always have ground under them.
+
+Terrain is **deterministic value noise**, not `Math.random`: the same column always produces the same
+blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one
+block at `markerY` and **never rebuilt**, so anything players construct there is safe.
 
 **Before you use this, check your world is big enough for a 30000-block offset** — lower
 `dimensions.list.*.origin` if it is not, keeping the regions at least `2 × regionHalfSize` apart.
 Set `dimensions.enabled: false` to turn the whole system off.
+
+## Crystal PvP
+
+Craft a **Crystal** (4 Obsidian + 2 Moonstone), place it, and break it. Everything within 6 blocks
+takes up to 45 damage and gets launched, both falling off linearly with distance — point blank is
+lethal, the rim is survivable. Your own crystal does half damage to you (`selfDamageFraction`), and
+the kill is credited to whoever set it off. Crystals do **not** crater the terrain unless you set
+`crystal.breakBlocks: true`.
+
+## Cart PvP
+
+**Bloxd has no minecarts or rails**, so this rides on the vehicle it does have: boats. Hit a player
+while they are in one and the blow does `cart.bonusDamage` extra and ejects them out of it. The bonus
+stacks with the mace smash and the spear lunge.
+
+## Anonymous mode
+
+Type **`!anon`** in chat (or `/anon`). Your floating nametag is replaced with "Anonymous" for
+everyone, including players who join later, and your chat messages are re-sent with your name
+stripped off. Type it again to reveal yourself. The setting is saved per player, so it survives a
+relog.
+
+**One leak to know about:** the kill feed is drawn by the engine and still shows your real name when
+you kill someone. Nothing in the API suppresses it.
 
 ## Bans
 
@@ -140,6 +178,7 @@ instead of eliminations.
 | `/withdraw <hearts>` | everyone | Turn your hearts into Life Orbs to trade |
 | `/smphelp` | everyone | Short in-game reminder |
 | `/where` | everyone | Which dimension you are in |
+| `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/give mace\|spear\|gapple\|egapple\|orb\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
@@ -185,8 +224,10 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-118 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
-scaling both ways, portals and their cooldown, arrival platforms, both apples (heal, shield, regen, fire
+159 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
+lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
+blast falloff and kill credit, the boat bonus, anonymity in chat and on nametags, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.
