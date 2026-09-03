@@ -5,11 +5,11 @@
 | Feature | What it does |
 | --- | --- |
 | **Life Orbs** | A player kill costs the victim a heart and drops it as an **Aura XP Orb**. Right-click to absorb it — **once per player, ever**. |
-| **Permanent ban at 0 hearts** | Lose your last heart and you are kicked and locked out of the world for good. |
+| **Exile to the Void at 0 hearts** | Lose your last heart and you are stranded in a fourth dimension until you mine 3 Orbs of Resurrection. |
 | **Moonstone Mace** | Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. Expensive to craft. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
-| **Durability** | Bloxd has none natively. This gives **every** tool, weapon, bow and armour piece a durability worked out from its name. |
+| **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -97,6 +97,15 @@ gear (blocks, food, materials) never wears out.
   that item unbreakable.**
 - Gear with an unrecognised material word falls back to `durability.defaultMaterialUses` (200).
 
+The tooltip shows a 12-segment wear bar rather than a bare number:
+
+```
+Moonstone Mace
+Wind Burst 3 - smash launches you skyward.
+Density 3 - the further you fall, the harder it hits.
+▰▰▰▰▰▰▰▰▱▱▱▱  2100 / 2640  (80%)
+```
+
 Wear is spent on **hits and blocks broken**, so it applies to what you are holding. Armour gets a
 durability value and shows it in the tooltip, but does not tick down when you take a hit — Bloxd's
 API does not expose the armour slots, so there is nothing to hook.
@@ -130,6 +139,7 @@ region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the se
 - **The End** — floating islands over open void, tapering at their edges, with occasional obsidian
   spires. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players
   always have ground under them.
+- **The Void** — far sparser black platforms in the dark, some carrying an Orb of Resurrection.
 
 Terrain is **deterministic value noise**, not `Math.random`: the same column always produces the same
 blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one
@@ -160,8 +170,35 @@ everyone, including players who join later, and your chat messages are re-sent w
 stripped off. Type it again to reveal yourself. The setting is saved per player, so it survives a
 relog.
 
-**One leak to know about:** the kill feed is drawn by the engine and still shows your real name when
-you kill someone. Nothing in the API suppresses it.
+**The killfeed leak is handled.** The engine's killfeed prints real names and offers no way to
+rewrite them — so while *anyone* is anonymous it is switched off for everybody
+(`showKillfeed: false`) and kills are announced in chat instead, where the name is ours to choose.
+The moment nobody is anonymous, the normal killfeed comes back. Set `anonymous.hideKillfeed: false`
+if you would rather keep the killfeed and accept the leak.
+
+## The Void, and the way out
+
+Running out of hearts no longer ends your run — it **exiles you**. You are dropped into a fourth
+region, the Void: near-black fog, three-chunk view distance, half gravity, and sparse black platforms
+in the dark. You keep 3 hearts so you can move, and dying there costs nothing.
+
+Scattered on those platforms are **Orbs of Resurrection** — green portal blocks. Mine **3** of them
+and the Void spits you back into the overworld with 5 hearts. `/orbs` shows your count. There is no
+portal out; the orbs are the only exit.
+
+```js
+ban: {
+    mode: "void",       // or "kick" for the old permanent ban
+    voidHearts: 30,     // 3 hearts while stranded
+},
+resurrection: {
+    item: "Green Portal",
+    required: 3,
+    heartsOnReturn: 50, // 5 hearts
+},
+```
+
+Set `ban.mode: "kick"` to go back to permanent bans (`/bans` and `/unban` still work in that mode).
 
 ## Bans
 
@@ -179,6 +216,7 @@ instead of eliminations.
 | `/smphelp` | everyone | Short in-game reminder |
 | `/where` | everyone | Which dimension you are in |
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
+| `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
 | `/give mace\|spear\|gapple\|egapple\|orb\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
@@ -224,10 +262,11 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-159 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+160 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
-blast falloff and kill credit, the boat bonus, anonymity in chat and on nametags, both apples (heal, shield, regen, fire
+blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
+Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

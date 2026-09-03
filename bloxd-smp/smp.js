@@ -4,7 +4,7 @@
 //  Paste this whole file into World Settings -> Code -> World Code.
 //
 //  Life Orbs        a player kill drops Aura XP Orbs. One per player, ever
-//  Permanent ban    hit 0 hearts and you are banned from the world for good
+//  The Void         hit 0 hearts and you are exiled until you find 3 orbs
 //  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
 //  Moonstone Spear  right click to lunge, hit hard while lunging
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
@@ -30,10 +30,22 @@ const CONFIG = {
 
     ban: {
         enabled: true,
-        // Reaching 0 hearts is permanent. Bans are stored on the world, so an
-        // admin can lift one with /unban <name> even while the player is offline.
+        // What happens when you run out of hearts.
+        //   "void" - exiled to the Void until you find 3 Orbs of Resurrection
+        //   "kick" - permanently banned from the world (an admin can /unban)
+        mode: "void",
         reason: "You hit 0 hearts. You are eliminated from this SMP.",
+        voidReason: "You ran out of hearts. Find 3 Orbs of Resurrection to escape the Void.",
         announce: true,
+        voidHearts: 30,      // HP you get while stranded, so you can move around
+    },
+
+    // ---- Escaping the Void --------------------------------------------------
+    resurrection: {
+        item: "Green Portal",           // a real block, mined out of the Void
+        name: "Orb of Resurrection",
+        required: 3,
+        heartsOnReturn: 50,             // 5 hearts, a second chance not a reset
     },
 
     death: {
@@ -202,6 +214,20 @@ const CONFIG = {
                     gravityMultiplier: 1,
                 },
             },
+            "void": {
+                name: "The Void",
+                origin: [30000, 30000],
+                scale: 1,
+                platformBlock: "Obsidian",
+                // No portalBlock: the only way out is the resurrection orbs.
+                clientOptions: {
+                    fogColourOverride: "#050508",
+                    fogChunkDistanceOverride: 3,      // you can barely see
+                    ambientLightColourOverride: "#0a0a12",
+                    skyLightColourOverride: "#15151f",
+                    gravityMultiplier: 0.5,
+                },
+            },
             end: {
                 name: "The End",
                 origin: [0, 30000],
@@ -244,6 +270,20 @@ const CONFIG = {
                     accent: "Magma",
                     liquid: "Lava",
                     ceiling: "Red Sandstone Bricks",
+                },
+            },
+
+            "void": {
+                seed: 4242,
+                baseY: 60,
+                centreIslandRadius: 10,
+                islandScale: 30, islandThreshold: 0.72,   // far rarer than the End
+                thickness: 3, driftScale: 24, drift: 12,
+                orbChance: 0.006,     // how often a platform top carries an orb
+                blocks: {
+                    base: "Black Concrete",
+                    top: "Obsidian",
+                    orb: "Green Portal",
                 },
             },
 
@@ -313,11 +353,15 @@ const CONFIG = {
         displayName: "Anonymous",
         hideNameTag: true,
         hideInChat: true,
+        // The engine's own killfeed prints real names and cannot be rewritten.
+        // So while anyone is anonymous the killfeed is switched off for everyone
+        // and kills are announced in chat instead, where names can be swapped.
+        hideKillfeed: true,
         colour: "#9aa0a6",
     },
 
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where", "anon"],
+        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where", "anon", "orbs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -498,7 +542,7 @@ function maceAttributes(durabilityLeft) {
     }
     lines.push("Works on players and mobs.");
     lines.push("Right click in mid-air to wind charge.");
-    lines.push("Durability: " + left + " / " + max);
+    lines.push(durabilityBar(left, max));
 
     return {
         customDisplayName: CONFIG.mace.name,
@@ -515,7 +559,7 @@ function spearAttributes(durabilityLeft) {
         customDescription:
             "Right click to lunge forward.\n" +
             "Hits during a lunge deal +" + CONFIG.spear.lungeBonusDamage + " damage.\n" +
-            "Durability: " + left + " / " + max,
+            durabilityBar(left, max),
         customAttributes: { [ATTR_SPEAR]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
     };
 }
@@ -564,11 +608,51 @@ function writeSlot(playerId, index, item, amount, attributes) {
     api.setItemSlot(playerId, index, item.name, amount, attributes, true);
 }
 
+/** A 12-segment wear bar, e.g. "durability 280/400  [!!!!!!!!....]". */
+function durabilityBar(left, max) {
+    const segments = 12;
+    const filled = Math.max(0, Math.min(segments, Math.round((left / max) * segments)));
+    let bar = "";
+    for (let i = 0; i < segments; i++) {
+        bar += i < filled ? "\u25B0" : "\u25B1";   // filled / empty parallelogram
+    }
+    const percent = Math.round((left / max) * 100);
+    return bar + "  " + left + " / " + max + "  (" + percent + "%)";
+}
+
 function displayName(item) {
     if (item.attributes && item.attributes.customDisplayName) {
         return item.attributes.customDisplayName;
     }
     return item.name;
+}
+
+function countItem(playerId, itemName) {
+    const amount = api.getInventoryItemAmount(playerId, itemName);
+    return amount < 0 ? Infinity : amount;   // a negative count means infinite
+}
+
+/** Removes `amount` of an item, across however many stacks it is spread over. */
+function consumeItems(playerId, itemName, amount) {
+    if (countItem(playerId, itemName) < amount) {
+        return false;   // never take a partial payment
+    }
+    let left = amount;
+    for (let guard = 0; guard < 64 && left > 0; guard++) {
+        const index = api.findItem(playerId, itemName);
+        if (index == null) {
+            break;
+        }
+        const slot = api.getItemSlot(playerId, index);
+        if (!slot) {
+            break;
+        }
+        const have = slot.amount == null ? 1 : slot.amount;
+        const take = Math.min(have, left);
+        writeSlot(playerId, index, slot, have - take, slot.attributes);
+        left -= take;
+    }
+    return left <= 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -698,7 +782,7 @@ function spendDurability(playerId, slot, cost) {
     } else {
         attributes = {
             customDisplayName: item.attributes && item.attributes.customDisplayName,
-            customDescription: "Durability: " + left + " / " + max,
+            customDescription: durabilityBar(left, max),
             customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
         };
     }
@@ -1242,6 +1326,56 @@ function explodeCrystal(placerId, x, y, z) {
 }
 
 // -----------------------------------------------------------------------------
+// Exile to the Void, and the way back
+// -----------------------------------------------------------------------------
+
+function inVoid(playerId) {
+    return dimensionAt(api.getPosition(playerId)) === "void";
+}
+
+/** Running out of hearts strands you in the Void instead of ending your run. */
+function exileToVoid(playerId) {
+    const b = CONFIG.ban;
+    applyMaxHp(playerId, b.voidHearts, b.voidHearts);
+    travelTo(playerId, "void");
+    tell(playerId, b.voidReason, "#b39ddb");
+    api.sendFlyingMiddleMessage(playerId, "Exiled to the Void", 0, 3000);
+
+    if (b.announce) {
+        api.broadcastMessage(displayNameOf(playerId) + " ran out of hearts and fell into the Void.",
+            { color: "#b39ddb" });
+    }
+}
+
+/**
+ * Checked while a player is stranded. Once they are holding enough orbs the
+ * orbs are spent and they are put back in the overworld with a few hearts.
+ */
+function checkResurrection(playerId) {
+    const r = CONFIG.resurrection;
+    const held = countItem(playerId, r.item);
+    if (held < r.required) {
+        return false;
+    }
+    if (!consumeItems(playerId, r.item, r.required)) {
+        return false;
+    }
+
+    travelTo(playerId, "overworld");
+    applyMaxHp(playerId, clampHp(r.heartsOnReturn), r.heartsOnReturn);
+
+    tell(playerId, "The orbs burn away and the Void spits you out. You return with "
+        + hearts(getMaxHp(playerId)) + " hearts.", "#7bed9f");
+    api.sendFlyingMiddleMessage(playerId, "Resurrected", 0, 3000);
+    api.playSound(playerId, "levelup", 1.0, 0.9);
+    if (CONFIG.ban.announce) {
+        api.broadcastMessage(displayNameOf(playerId) + " clawed their way out of the Void.",
+            { color: "#7bed9f" });
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
 // Anonymous mode
 // -----------------------------------------------------------------------------
 
@@ -1262,9 +1396,48 @@ function applyAnonNameTag(playerId, anon) {
     );
 }
 
+/** The name everyone else should see for this player, anonymity included. */
+function displayNameOf(playerId) {
+    if (CONFIG.anonymous.enabled && isAnon(playerId)) {
+        return CONFIG.anonymous.displayName;
+    }
+    return api.getEntityName(playerId);
+}
+
+function anyoneAnonymous() {
+    const ids = api.getPlayerIds();
+    for (let i = 0; i < ids.length; i++) {
+        if (isAnon(ids[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * The engine's killfeed prints real names and offers no way to rewrite them, so
+ * while anyone is anonymous it is switched off for everybody and kills are
+ * announced in chat instead - where the name is ours to choose.
+ */
+function refreshKillfeed() {
+    if (!CONFIG.anonymous.enabled || !CONFIG.anonymous.hideKillfeed) {
+        return;
+    }
+    const hide = anyoneAnonymous();
+    const ids = api.getPlayerIds();
+    for (let i = 0; i < ids.length; i++) {
+        if (hide) {
+            api.setClientOption(ids[i], "showKillfeed", false);
+        } else {
+            api.setClientOptionToDefault(ids[i], "showKillfeed");
+        }
+    }
+}
+
 function setAnon(playerId, anon) {
     api.setPlayerDbValue(playerId, DB_ANON, anon ? 1 : 0);
     applyAnonNameTag(playerId, anon);
+    refreshKillfeed();
     tell(playerId, anon
         ? "You are now " + CONFIG.anonymous.displayName + ". Type "
             + CONFIG.anonymous.chatCommand + " again to reveal yourself."
@@ -1418,6 +1591,39 @@ function buildEndColumn(x, z, localX, localZ) {
     }
 }
 
+/** Sparse black platforms in the dark, some carrying an Orb of Resurrection. */
+function buildVoidColumn(x, z, localX, localZ) {
+    const c = CONFIG.dimensions.generation["void"];
+    const b = c.blocks;
+
+    const island = noise2(localX, localZ, c.islandScale, c.seed);
+    const fromCentre = Math.sqrt(localX * localX + localZ * localZ);
+    const centreStrength = fromCentre >= c.centreIslandRadius
+        ? 0
+        : 1 - fromCentre / c.centreIslandRadius;
+
+    let strength = (island - c.islandThreshold) / (1 - c.islandThreshold);
+    if (centreStrength > strength) {
+        strength = centreStrength;
+    }
+    if (strength <= 0) {
+        return;
+    }
+
+    const half = Math.max(1, Math.round(strength * c.thickness));
+    const centre = Math.round(c.baseY
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
+    const top = centre + half - 1;
+
+    fill(x, centre - half, top - 1, z, b.base);
+    fill(x, top, top, z, b.top);
+
+    // The orbs are the whole point of the place, so they sit on top in plain sight.
+    if (hash2(localX, localZ, c.seed + 99) < c.orbChance) {
+        fill(x, top + 1, top + 1, z, b.orb);
+    }
+}
+
 /** Builds a slice of the queue each tick so a big reveal never stalls the server. */
 function processGeneration() {
     const g = CONFIG.dimensions.generation;
@@ -1444,6 +1650,8 @@ function processGeneration() {
                 buildNetherColumn(x, z, x - originX, z - originZ);
             } else if (job.dimKey === "end") {
                 buildEndColumn(x, z, x - originX, z - originZ);
+            } else if (job.dimKey === "void") {
+                buildVoidColumn(x, z, x - originX, z - originZ);
             }
 
             job.column++;
@@ -1480,8 +1688,11 @@ function onPlayerJoin(playerId) {
         enterDimension(playerId, key, false);
     }
 
-    if (CONFIG.anonymous.enabled && isAnon(playerId)) {
-        applyAnonNameTag(playerId, true);
+    if (CONFIG.anonymous.enabled) {
+        if (isAnon(playerId)) {
+            applyAnonNameTag(playerId, true);
+        }
+        refreshKillfeed();
     }
 
     const hp = getMaxHp(playerId);
@@ -1491,6 +1702,10 @@ function onPlayerJoin(playerId) {
 
 function onPlayerLeave(playerId) {
     delete players[playerId];
+    // Their anonymity left with them, so the killfeed may be safe to restore.
+    if (CONFIG.anonymous.enabled) {
+        refreshKillfeed();
+    }
 }
 
 function tick() {
@@ -1515,6 +1730,11 @@ function tick() {
             const key = dimensionAt(pos);
             if (key !== state.dimension) {
                 enterDimension(playerId, key, true);
+            }
+
+            // Stranded players are watched for their way out.
+            if (key === "void" && CONFIG.ban.mode === "void") {
+                checkResurrection(playerId);
             }
 
             // Only look for new chunks when the player actually moves chunk.
@@ -1548,13 +1768,22 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
     const before = getMaxHp(killedPlayer);
     const shouldDrop = CONFIG.death.dropOrbs && (byPlayer || CONFIG.death.dropOrbsOnWorldDeath);
 
-    // Elimination: dropping to 0 hearts is permanent.
+    // Dying in the Void must not strand you deeper: exile is a state, not a loop.
+    if (CONFIG.dimensions.enabled && inVoid(killedPlayer)) {
+        return;
+    }
+
+    // Elimination: running out of hearts.
     if (CONFIG.ban.enabled && before - loss <= 0) {
         if (shouldDrop) {
             dropOrbs(killedPlayer, before);
         }
-        applyMaxHp(killedPlayer, 0, 0);
-        banPlayer(killedPlayer, CONFIG.ban.reason);
+        if (CONFIG.ban.mode === "void" && CONFIG.dimensions.enabled) {
+            exileToVoid(killedPlayer);
+        } else {
+            applyMaxHp(killedPlayer, 0, 0);
+            banPlayer(killedPlayer, CONFIG.ban.reason);
+        }
         return;
     }
 
@@ -1599,6 +1828,16 @@ function onPlayerAltAction(playerId) {
 
 function onPlayerDamagingOtherPlayer(attackingPlayer, damagedPlayer, damageDealt) {
     return handleWeaponHit(attackingPlayer, damagedPlayer, damageDealt);
+}
+
+function onPlayerKilledOtherPlayer(attackingPlayer, killedPlayer, damageDealt, withItem) {
+    // Only announce while the killfeed is hidden, or every kill would show twice.
+    if (CONFIG.anonymous.enabled && CONFIG.anonymous.hideKillfeed && anyoneAnonymous()) {
+        api.broadcastMessage(
+            displayNameOf(attackingPlayer) + " killed " + displayNameOf(killedPlayer)
+                + (withItem ? " with " + withItem : ""),
+            { color: "#ff7675" });
+    }
 }
 
 function onPlayerEnteredVehicle(playerId) {
@@ -1686,7 +1925,8 @@ function playerCommand(playerId, command) {
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
                 + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "
-                + "hit 0 hearts and you are banned for good.",
+                + "hit 0 hearts and you are exiled to the Void - mine 3 "
+                + CONFIG.resurrection.name + "s there to get out (/orbs).",
                 "#70a1ff");
             return true;
 
@@ -1745,6 +1985,15 @@ function playerCommand(playerId, command) {
         case "anon":
             setAnon(playerId, !isAnon(playerId));
             return true;
+
+        case "orbs": {
+            const r = CONFIG.resurrection;
+            const held = countItem(playerId, r.item);
+            tell(playerId, inVoid(playerId)
+                ? r.name + "s: " + held + " / " + r.required + " - mine the green blocks."
+                : "You are not in the Void.", "#b39ddb");
+            return true;
+        }
 
         case "where":
             tell(playerId, "You are in " + dimension(dimensionAt(api.getPosition(playerId))).name + ".",

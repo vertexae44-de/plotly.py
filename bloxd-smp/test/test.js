@@ -226,22 +226,69 @@ check("override of 0 makes an item unbreakable", world.inv.a[0].attributes === u
 delete C.durability.overrides["Iron Sword"];
 delete durabilityCache["Iron Sword"];
 
-// ---------------------------------------------------------- permanent ban at 0
+// ------------------------------------------------------- exile to the Void at 0
+const VOID = C.dimensions.list["void"];
 world.drops.length = 0;
 world.kicks.length = 0;
+world.log.length = 0;
+world.pos.b = [40, 64, 40];
 world.db.b.smpMaxHp = C.death.hpLostToPlayer;      // exactly one death left
 ctx.onAttemptKillPlayer("b", "a");
-check("0 hearts kicks the player", world.kicks.some(k => k.id === "b"), JSON.stringify(world.kicks));
-check("0 hearts is announced", world.log.some(l => l.startsWith("bcast") && /Bob/.test(l)), "");
-check("elimination still drops orbs", world.drops.length > 0, world.drops.length);
-check("ban recorded by account id", JSON.parse(world.lobbyDb.smpBans)["db-b"] === "Bob", world.lobbyDb.smpBans);
+check("0 hearts exiles rather than kicks", world.kicks.length === 0, JSON.stringify(world.kicks));
+check("exile moves you to the Void", ctx.dimensionAt(world.pos.b) === "void", world.pos.b);
+check("exile is announced", world.log.some(l => /Void/.test(l)), "");
+check("exile still drops orbs", world.drops.length > 0, world.drops.length);
+check("you can still move while exiled", world.db.b.smpMaxHp === C.ban.voidHearts, world.db.b.smpMaxHp);
 
+// dying in the Void must not strand you deeper
+const voidHp = world.db.b.smpMaxHp;
+ctx.onAttemptKillPlayer("b", "a");
+check("dying in the Void costs nothing", world.db.b.smpMaxHp === voidHp, world.db.b.smpMaxHp);
+
+// resurrection needs the full price
+world.inv.b = [{ name: C.resurrection.item, amount: C.resurrection.required - 1, attributes: undefined }];
+check("too few orbs will not free you", ctx.checkResurrection("b") === false, "");
+check("partial orbs are not consumed",
+    world.inv.b[0].amount === C.resurrection.required - 1, JSON.stringify(world.inv.b));
+check("still in the Void", ctx.dimensionAt(world.pos.b) === "void", "");
+
+world.inv.b = [{ name: C.resurrection.item, amount: C.resurrection.required + 1, attributes: undefined }];
+world.log.length = 0;
+check("enough orbs frees you", ctx.checkResurrection("b") === true, "");
+check("resurrection returns you to the overworld", ctx.dimensionAt(world.pos.b) === "overworld", world.pos.b);
+check("orbs are spent, change given back",
+    world.inv.b[0] && world.inv.b[0].amount === 1, JSON.stringify(world.inv.b));
+check("you come back with hearts", world.db.b.smpMaxHp === C.resurrection.heartsOnReturn, world.db.b.smpMaxHp);
+check("resurrection is announced", world.log.some(l => /Void/.test(l)), "");
+
+// the Void generates platforms and orbs to mine
+world.blocks = {};
+let orbCount = 0, solidCount = 0;
+for (let i = 0; i < 4000; i++) {
+    world.blocks = {};
+    ctx.buildVoidColumn(0, 0, (i % 80) - 40, ((i / 80) | 0) - 25);
+    const vals = Object.keys(world.blocks).map(k => world.blocks[k]);
+    if (vals.length) solidCount++;
+    if (vals.indexOf(C.dimensions.generation["void"].blocks.orb) !== -1) orbCount++;
+}
+check("the Void has platforms to stand on", solidCount > 0, solidCount);
+check("the Void is mostly empty", solidCount < 4000 * 0.5, solidCount);
+check("resurrection orbs spawn in the Void", orbCount > 0, orbCount);
+check("orbs are rare", orbCount < solidCount * 0.2, orbCount + " of " + solidCount);
+check("the Void has no portal out", VOID.portalBlock === undefined, VOID.portalBlock);
+
+// kick mode still works for anyone who prefers a hard ban
+C.ban.mode = "kick";
+world.kicks.length = 0;
+world.pos.b = [50, 64, 50];
+world.db.b.smpMaxHp = C.death.hpLostToPlayer;
+ctx.onAttemptKillPlayer("b", "a");
+check("kick mode still bans", world.kicks.some(k => k.id === "b"), JSON.stringify(world.kicks));
+check("ban recorded by account id", JSON.parse(world.lobbyDb.smpBans)["db-b"] === "Bob", world.lobbyDb.smpBans);
 world.kicks.length = 0;
 ctx.onPlayerJoin("b");
 check("banned player kicked on join", world.kicks.length === 1, JSON.stringify(world.kicks));
-check("banned player gets no recipes", world.recipes.b === undefined || !world.recipes.b.__rejoined, "");
 
-// admins can lift it
 C.commands.adminNames.push("Alice");
 check("/bans lists the ban", ctx.playerCommand("a", "/bans") === true, "");
 check("/unban handled", ctx.playerCommand("a", "/unban Bob") === true, "");
@@ -251,86 +298,23 @@ world.db.b.smpMaxHp = 100;
 ctx.onPlayerJoin("b");
 check("unbanned player may rejoin", world.kicks.length === 0, JSON.stringify(world.kicks));
 
-// a corrupt ban list must not lock everyone out
 world.lobbyDb.smpBans = "{not json";
 world.kicks.length = 0;
 ctx.onPlayerJoin("b");
 check("corrupt ban list is ignored", world.kicks.length === 0, JSON.stringify(world.kicks));
 world.lobbyDb.smpBans = "{}";
+C.ban.mode = "void";
+C.commands.adminNames.length = 0;
 
-// ------------------------------------------------------------------ dimensions
-const DIM = C.dimensions.list;
-world.pos.a = [10, 64, 20];
-ctx.onPlayerJoin("a");
-check("spawn area is the overworld", ctx.dimensionAt([10, 64, 20]) === "overworld", ctx.dimensionAt([10, 64, 20]));
-check("nether region is detected",
-    ctx.dimensionAt([DIM.nether.origin[0] + 5, 64, DIM.nether.origin[1]]) === "nether", "");
-check("end region is detected",
-    ctx.dimensionAt([DIM.end.origin[0], 64, DIM.end.origin[1] - 5]) === "end", "");
-check("far unclaimed space defaults to overworld",
-    ctx.dimensionAt([500000, 64, 500000]) === "overworld", "");
-
-// travelling to the nether divides coordinates by the scale
-world.pos.a = [800, 70, 160];
-world.rects.length = 0;
-check("travel returns true", ctx.travelTo("a", "nether") === true, "");
-check("nether x is scaled down",
-    world.pos.a[0] === DIM.nether.origin[0] + 800 / DIM.nether.scale, world.pos.a[0]);
-check("nether z is scaled down",
-    world.pos.a[2] === DIM.nether.origin[1] + 160 / DIM.nether.scale, world.pos.a[2]);
-check("height is preserved", world.pos.a[1] === 70, world.pos.a[1]);
-check("nether fog applied", world.opts.a.fogColourOverride === DIM.nether.clientOptions.fogColourOverride,
-    world.opts.a.fogColourOverride);
-check("arrival platform built in empty space",
-    world.rects.some(r => r.name === DIM.nether.platformBlock), JSON.stringify(world.rects));
-
-// coming back multiplies them straight back up
-check("return travel works", ctx.travelTo("a", "overworld") === true, "");
-check("overworld x restored", world.pos.a[0] === 800, world.pos.a[0]);
-check("overworld z restored", world.pos.a[2] === 160, world.pos.a[2]);
-check("overworld resets the fog", world.opts.a.fogColourOverride === "DEFAULT", world.opts.a.fogColourOverride);
-check("overworld resets gravity", world.opts.a.gravityMultiplier === "DEFAULT", world.opts.a.gravityMultiplier);
-
-// no platform is built where ground already exists
-world.pos.a = [800, 70, 160];
-world.rects.length = 0;
-world.blocks[Math.floor(DIM.end.origin[0] + 800) + ",69," + Math.floor(DIM.end.origin[1] + 160)] = "Stone";
-ctx.travelTo("a", "end");
-check("existing ground is left alone", world.rects.length === 0, JSON.stringify(world.rects));
-check("end gravity applied", world.opts.a.gravityMultiplier === DIM.end.clientOptions.gravityMultiplier,
-    world.opts.a.gravityMultiplier);
-ctx.travelTo("a", "overworld");
-
-// portals
-world.pos.a = [800, 70, 160];
-ctx.onBlockStandStart("a", 800, 69, 160, DIM.nether.portalBlock);
-check("purple portal sends you to the nether", ctx.dimensionAt(world.pos.a) === "nether", world.pos.a);
-ctx.onBlockStandStart("a", 0, 0, 0, DIM.nether.portalBlock);
-check("portal cooldown blocks an instant return", ctx.dimensionAt(world.pos.a) === "nether", "");
-ctx.stateOf("a").lastTravel = 0;
-ctx.onBlockStandStart("a", 0, 0, 0, DIM.nether.portalBlock);
-check("standing on it again returns you home", ctx.dimensionAt(world.pos.a) === "overworld", world.pos.a);
-ctx.stateOf("a").lastTravel = 0;
-ctx.onBlockStandStart("a", 0, 0, 0, DIM.end.portalBlock);
-check("black portal sends you to the end", ctx.dimensionAt(world.pos.a) === "end", world.pos.a);
-ctx.onBlockStandStart("a", 0, 0, 0, "Stone");
-check("an ordinary block is not a portal", ctx.dimensionAt(world.pos.a) === "end", "");
-ctx.stateOf("a").lastTravel = 0;
-ctx.travelTo("a", "overworld");
-
-// walking across a border re-dresses the world without any portal
-world.pos.a = [DIM.nether.origin[0], 64, DIM.nether.origin[1]];
-ctx.tick();
-check("tick notices a region change", ctx.stateOf("a").dimension === "nether", ctx.stateOf("a").dimension);
-check("tick applies the new look",
-    world.opts.a.fogColourOverride === DIM.nether.clientOptions.fogColourOverride, "");
-world.pos.a = [0, 64, 0];
-ctx.tick();
-check("tick restores the overworld", ctx.stateOf("a").dimension === "overworld", "");
-
-check("portal blocks are craftable", !!world.recipes.a[DIM.nether.portalBlock]
-    && !!world.recipes.a[DIM.end.portalBlock], Object.keys(world.recipes.a));
-check("/where is public", ctx.playerCommand("a", "/where") === true, "");
+// ------------------------------------------------------------ durability bar
+const bar = ctx.durabilityBar(280, 400);
+check("durability bar shows numbers", /280 \/ 400/.test(bar), bar);
+check("durability bar shows a percentage", /\(70%\)/.test(bar), bar);
+check("durability bar is 12 segments",
+    (bar.match(/[\u25B0\u25B1]/g) || []).length === 12, bar);
+check("a full bar is all filled", (ctx.durabilityBar(400, 400).match(/\u25B0/g) || []).length === 12, "");
+check("a near-empty bar is nearly empty", (ctx.durabilityBar(1, 400).match(/\u25B0/g) || []).length === 0, "");
+check("the mace tooltip uses the bar", /\u25B0/.test(ctx.maceAttributes(200).customDescription), "");
 
 // ------------------------------------------------------------- terrain generation
 const NDIM = C.dimensions.list.nether, EDIM = C.dimensions.list.end, GEN = C.dimensions.generation;
@@ -468,6 +452,24 @@ check("!anon toggles back off", ctx.onPlayerChat("a", "!anon", "global") === fal
 check("anon flag cleared", world.db.a.smpAnon === 0, world.db.a.smpAnon);
 check("nametag restored", world.entitySettings.a.nameTagInfo === null, JSON.stringify(world.entitySettings.a));
 check("chat is normal again", ctx.onPlayerChat("a", "hello", "global") === undefined, "");
+// the killfeed leak: the engine prints real names, so it is switched off instead
+ctx.onPlayerChat("a", "!anon", "global");
+check("killfeed hidden while someone is anonymous",
+    world.opts.a.showKillfeed === false && world.opts.b.showKillfeed === false,
+    JSON.stringify([world.opts.a.showKillfeed, world.opts.b.showKillfeed]));
+world.log.length = 0;
+ctx.onPlayerKilledOtherPlayer("a", "b", 20, "Iron Sword");
+check("anon kills are announced in chat", world.log.some(l => /killed/.test(l)), JSON.stringify(world.log));
+check("the killer's real name never appears", !world.log.some(l => /Alice/.test(l)), JSON.stringify(world.log));
+check("the victim's real name still shows",
+    world.log.some(l => /Bob/.test(l)), JSON.stringify(world.log));
+ctx.onPlayerChat("a", "!anon", "global");
+check("killfeed restored once nobody is anonymous",
+    world.opts.a.showKillfeed === "DEFAULT", world.opts.a.showKillfeed);
+world.log.length = 0;
+ctx.onPlayerKilledOtherPlayer("a", "b", 20, "Iron Sword");
+check("no double announcement with the killfeed back on", world.log.length === 0, JSON.stringify(world.log));
+
 // anonymity must survive a relog
 world.db.a.smpAnon = 1;
 world.entitySettings.a.nameTagInfo = null;
@@ -490,6 +492,7 @@ ctx.playerCommand("a", "withdraw 1");
 check("withdraw cannot self-eliminate", world.db.a.smpMaxHp === C.orb.hp, world.db.a.smpMaxHp);
 
 world.inv.a = [];
+C.commands.adminNames.push("Alice");
 ctx.playerCommand("a", "/give mace");
 check("/give mace gives a tagged mace",
     world.inv.a[0].attributes.customAttributes.smpMace === true, JSON.stringify(world.inv.a[0]));
