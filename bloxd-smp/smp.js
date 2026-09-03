@@ -216,8 +216,8 @@ const CONFIG = {
         hudChip: "\uD83D\uDEE1 Shield raised",
 
         recipe: [
-            { items: ["Brown Paintball Explosive Item"], amt: 1 },
-            { items: ["Iron Fragment"], amt: 4 },
+            { items: ["Maple Wood Planks"], amt: 6 },
+            { items: ["Iron Bar"], amt: 1 },
         ],
     },
 

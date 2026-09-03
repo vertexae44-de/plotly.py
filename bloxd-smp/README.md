@@ -37,7 +37,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
 | **Repair Kit** ×2 | 4 Iron Fragment + 2 Stick |
-| **Bulwark shield** | 1 Brown Paintball Explosive Item + 4 Iron Fragment |
+| **Bulwark shield** | 6 Maple Wood Planks + 1 Iron Bar |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
@@ -270,7 +270,7 @@ piece in the game, not only this mod's own gear — and keeps a mace or spear's 
 Bloxd has **no dedicated shield item and no true off-hand inventory slot** — there is only ever one
 selected hand. This rebuilds both from real primitives rather than faking them:
 
-- Craft a **Bulwark** from **1 Brown Paintball Explosive Item + 4 Iron Fragment**.
+- Craft a **Bulwark** from **6 Maple Wood Planks + 1 Iron Bar**.
 - **Right-click to raise it.** While raised, it tops up your numeric shield (Bloxd's own
   `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
   `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
