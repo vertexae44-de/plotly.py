@@ -9,7 +9,10 @@
 //  Moonstone Spear  right click to lunge, hit hard while lunging
 //  Wind Charge      craft from Mango + Iron Fragment, right click to launch
 //  Repair Kit       craft from Iron Fragment + Stick, /repair to restore wear
-//  Bulwark shield   right click to raise: blocks damage, shows on your off arm
+//  Bulwark shield   right click it into your off-hand: blocks 60% while you
+//                   fight with a sword. /shield raises one by hand instead
+//  Off-hand         slot 0 carries a second item. Right click, the touchscreen
+//                   button, or a drag puts it there. /offhand from chat
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
