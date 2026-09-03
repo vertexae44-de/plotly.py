@@ -258,6 +258,80 @@ ctx.onPlayerJoin("b");
 check("corrupt ban list is ignored", world.kicks.length === 0, JSON.stringify(world.kicks));
 world.lobbyDb.smpBans = "{}";
 
+// ------------------------------------------------------------------ dimensions
+const DIM = C.dimensions.list;
+world.pos.a = [10, 64, 20];
+ctx.onPlayerJoin("a");
+check("spawn area is the overworld", ctx.dimensionAt([10, 64, 20]) === "overworld", ctx.dimensionAt([10, 64, 20]));
+check("nether region is detected",
+    ctx.dimensionAt([DIM.nether.origin[0] + 5, 64, DIM.nether.origin[1]]) === "nether", "");
+check("end region is detected",
+    ctx.dimensionAt([DIM.end.origin[0], 64, DIM.end.origin[1] - 5]) === "end", "");
+check("far unclaimed space defaults to overworld",
+    ctx.dimensionAt([500000, 64, 500000]) === "overworld", "");
+
+// travelling to the nether divides coordinates by the scale
+world.pos.a = [800, 70, 160];
+world.rects.length = 0;
+check("travel returns true", ctx.travelTo("a", "nether") === true, "");
+check("nether x is scaled down",
+    world.pos.a[0] === DIM.nether.origin[0] + 800 / DIM.nether.scale, world.pos.a[0]);
+check("nether z is scaled down",
+    world.pos.a[2] === DIM.nether.origin[1] + 160 / DIM.nether.scale, world.pos.a[2]);
+check("height is preserved", world.pos.a[1] === 70, world.pos.a[1]);
+check("nether fog applied", world.opts.a.fogColourOverride === DIM.nether.clientOptions.fogColourOverride,
+    world.opts.a.fogColourOverride);
+check("arrival platform built in empty space",
+    world.rects.some(r => r.name === DIM.nether.platformBlock), JSON.stringify(world.rects));
+
+// coming back multiplies them straight back up
+check("return travel works", ctx.travelTo("a", "overworld") === true, "");
+check("overworld x restored", world.pos.a[0] === 800, world.pos.a[0]);
+check("overworld z restored", world.pos.a[2] === 160, world.pos.a[2]);
+check("overworld resets the fog", world.opts.a.fogColourOverride === "DEFAULT", world.opts.a.fogColourOverride);
+check("overworld resets gravity", world.opts.a.gravityMultiplier === "DEFAULT", world.opts.a.gravityMultiplier);
+
+// no platform is built where ground already exists
+world.pos.a = [800, 70, 160];
+world.rects.length = 0;
+world.blocks[Math.floor(DIM.end.origin[0] + 800) + ",69," + Math.floor(DIM.end.origin[1] + 160)] = "Stone";
+ctx.travelTo("a", "end");
+check("existing ground is left alone", world.rects.length === 0, JSON.stringify(world.rects));
+check("end gravity applied", world.opts.a.gravityMultiplier === DIM.end.clientOptions.gravityMultiplier,
+    world.opts.a.gravityMultiplier);
+ctx.travelTo("a", "overworld");
+
+// portals
+world.pos.a = [800, 70, 160];
+ctx.onBlockStandStart("a", 800, 69, 160, DIM.nether.portalBlock);
+check("purple portal sends you to the nether", ctx.dimensionAt(world.pos.a) === "nether", world.pos.a);
+ctx.onBlockStandStart("a", 0, 0, 0, DIM.nether.portalBlock);
+check("portal cooldown blocks an instant return", ctx.dimensionAt(world.pos.a) === "nether", "");
+ctx.stateOf("a").lastTravel = 0;
+ctx.onBlockStandStart("a", 0, 0, 0, DIM.nether.portalBlock);
+check("standing on it again returns you home", ctx.dimensionAt(world.pos.a) === "overworld", world.pos.a);
+ctx.stateOf("a").lastTravel = 0;
+ctx.onBlockStandStart("a", 0, 0, 0, DIM.end.portalBlock);
+check("black portal sends you to the end", ctx.dimensionAt(world.pos.a) === "end", world.pos.a);
+ctx.onBlockStandStart("a", 0, 0, 0, "Stone");
+check("an ordinary block is not a portal", ctx.dimensionAt(world.pos.a) === "end", "");
+ctx.stateOf("a").lastTravel = 0;
+ctx.travelTo("a", "overworld");
+
+// walking across a border re-dresses the world without any portal
+world.pos.a = [DIM.nether.origin[0], 64, DIM.nether.origin[1]];
+ctx.tick();
+check("tick notices a region change", ctx.stateOf("a").dimension === "nether", ctx.stateOf("a").dimension);
+check("tick applies the new look",
+    world.opts.a.fogColourOverride === DIM.nether.clientOptions.fogColourOverride, "");
+world.pos.a = [0, 64, 0];
+ctx.tick();
+check("tick restores the overworld", ctx.stateOf("a").dimension === "overworld", "");
+
+check("portal blocks are craftable", !!world.recipes.a[DIM.nether.portalBlock]
+    && !!world.recipes.a[DIM.end.portalBlock], Object.keys(world.recipes.a));
+check("/where is public", ctx.playerCommand("a", "/where") === true, "");
+
 // -------------------------------------------------------------------- commands
 world.inv.a = [];
 check("/hp handled", ctx.playerCommand("a", "/hp") === true, "");

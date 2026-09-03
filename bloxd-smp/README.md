@@ -10,7 +10,8 @@
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Durability** | Bloxd has none natively. This gives **every** tool, weapon, bow and armour piece a durability worked out from its name. |
-| **Crafting** | The mace, the spear and both apples all have real recipes. |
+| **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
+| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals. |
 
 ## Install
 
@@ -28,6 +29,8 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
+| **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
+| **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 
 Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
 
@@ -95,6 +98,33 @@ Wear is spent on **hits and blocks broken**, so it applies to what you are holdi
 durability value and shows it in the tooltip, but does not tick down when you take a hit — Bloxd's
 API does not expose the armour slots, so there is nothing to hook.
 
+## Nether and the End
+
+**Bloxd has one world — there is no dimension API.** So these are built the only way the engine
+allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
+light, sky light and gravity through per-player client options.
+
+| | Region centre | Scale | Portal | Feel |
+| --- | --- | --- | --- | --- |
+| Overworld | `0, 0` | 1× | — | normal |
+| The Nether | `30000, 0` | 8× | Purple Portal | red fog, short view distance |
+| The End | `0, 30000` | 1× | Black Portal | dark violet fog, 0.7× gravity |
+
+Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
+brings you home. Nether coordinates are divided by 8 exactly like Minecraft, so a long walk there is
+a short one back. `/where` tells you which dimension you are in; admins get `/dim <name>`.
+
+Crossing a region border on foot also re-dresses the world, so respawns and teleports are handled
+without a portal.
+
+**What this does not do:** it does not generate Nether or End *terrain*. Those regions start empty,
+so arriving builds a small platform under you (`platformBlock`, `platformRadius`) rather than
+dropping you through the void. Building the landscape is up to you and your players.
+
+**Before you use this, check your world is big enough for a 30000-block offset** — lower
+`dimensions.list.*.origin` if it is not, keeping the regions at least `2 × regionHalfSize` apart.
+Set `dimensions.enabled: false` to turn the whole system off.
+
 ## Bans
 
 Reaching 0 hearts is permanent. The ban is stored on the world keyed by the player's **account id**,
@@ -109,7 +139,9 @@ instead of eliminations.
 | `/hp`, `/hearts` | everyone | Show your hearts |
 | `/withdraw <hearts>` | everyone | Turn your hearts into Life Orbs to trade |
 | `/smphelp` | everyone | Short in-game reminder |
-| `/give mace\|spear\|gapple\|egapple\|orb` | admins | Spawn any custom item |
+| `/where` | everyone | Which dimension you are in |
+| `/give mace\|spear\|gapple\|egapple\|orb\|netherportal\|endportal` | admins | Spawn any custom item |
+| `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
 
@@ -153,7 +185,8 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-91 assertions covering hearts, the one-orb-per-player cap, both apples (heal, shield, regen, fire
+118 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+scaling both ways, portals and their cooldown, arrival platforms, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

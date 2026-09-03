@@ -165,8 +165,70 @@ const CONFIG = {
         costPerBlockBroken: 1,
     },
 
+    // ---- Dimensions ---------------------------------------------------------
+    // Bloxd has ONE world, so these are far-apart regions of it dressed up with
+    // their own fog, light and gravity. Check your world is big enough for the
+    // offsets below and lower them if it is not.
+    dimensions: {
+        enabled: true,
+        regionHalfSize: 10000,     // how wide each region's "claim" is
+        buildArrivalPlatform: true,
+        platformRadius: 3,
+        travelCooldownMs: 1500,    // stops portals ping-ponging you
+
+        list: {
+            overworld: {
+                name: "Overworld",
+                origin: [0, 0],        // x, z centre of the region
+                scale: 1,
+                platformBlock: "Stone",
+                clientOptions: {},     // empty = the normal look
+            },
+            nether: {
+                name: "The Nether",
+                origin: [30000, 0],
+                scale: 8,              // 1 block here covers 8 in the overworld
+                portalBlock: "Purple Portal",
+                platformBlock: "Magma",
+                clientOptions: {
+                    fogColourOverride: "#3a0b06",
+                    fogChunkDistanceOverride: 6,
+                    ambientLightColourOverride: "#40140c",
+                    skyLightColourOverride: "#792a16",
+                    gravityMultiplier: 1,
+                },
+            },
+            end: {
+                name: "The End",
+                origin: [0, 30000],
+                scale: 1,
+                portalBlock: "Black Portal",
+                platformBlock: "Obsidian",
+                clientOptions: {
+                    fogColourOverride: "#0d0a1a",
+                    fogChunkDistanceOverride: 10,
+                    ambientLightColourOverride: "#1b1630",
+                    skyLightColourOverride: "#3a2f57",
+                    gravityMultiplier: 0.7,
+                },
+            },
+        },
+
+        // Craftable portal blocks, so players can open their own gateways.
+        portalRecipes: {
+            "Purple Portal": [
+                { items: ["Obsidian"], amt: 8 },
+                { items: ["Magma"], amt: 1 },
+            ],
+            "Black Portal": [
+                { items: ["Obsidian"], amt: 8 },
+                { items: ["Moonstone"], amt: 1 },
+            ],
+        },
+    },
+
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "smphelp"],
+        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -174,6 +236,7 @@ const CONFIG = {
 const DB_MAX_HP = "smpMaxHp";
 const DB_BANS = "smpBans";
 const DB_ORBS_EATEN = "smpOrbsEaten";
+const DB_DIMENSION = "smpDimension";
 
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
@@ -852,6 +915,145 @@ function handleWeaponHit(attacker, targetId, damageDealt) {
 }
 
 // -----------------------------------------------------------------------------
+// Dimensions
+// -----------------------------------------------------------------------------
+
+// Every option a dimension may override. Anything a dimension does not set is
+// put back to its default, so leaving one never bleeds into the next.
+const LOOK_OPTIONS = [
+    "fogColourOverride",
+    "fogChunkDistanceOverride",
+    "ambientLightColourOverride",
+    "skyLightColourOverride",
+    "lightingOverride",
+    "gravityMultiplier",
+];
+
+function dimension(key) {
+    return CONFIG.dimensions.list[key];
+}
+
+/** Which region a world position falls in. Anything unclaimed is the overworld. */
+function dimensionAt(pos) {
+    const half = CONFIG.dimensions.regionHalfSize;
+    for (const key in CONFIG.dimensions.list) {
+        const d = dimension(key);
+        if (Math.abs(pos[0] - d.origin[0]) <= half && Math.abs(pos[2] - d.origin[1]) <= half) {
+            return key;
+        }
+    }
+    return "overworld";
+}
+
+function applyDimensionLook(playerId, key) {
+    const opts = (dimension(key) || {}).clientOptions || {};
+    for (let i = 0; i < LOOK_OPTIONS.length; i++) {
+        const option = LOOK_OPTIONS[i];
+        if (opts[option] !== undefined) {
+            api.setClientOption(playerId, option, opts[option]);
+        } else {
+            api.setClientOptionToDefault(playerId, option);
+        }
+    }
+}
+
+/** Called whenever a player's region changes, however they got there. */
+function enterDimension(playerId, key, announce) {
+    const state = stateOf(playerId);
+    if (state.dimension === key) {
+        return;
+    }
+    state.dimension = key;
+    applyDimensionLook(playerId, key);
+    api.setPlayerDbValue(playerId, DB_DIMENSION, key);
+    if (announce) {
+        api.sendFlyingMiddleMessage(playerId, dimension(key).name, 0, 2000);
+    }
+}
+
+/**
+ * Makes sure there is something to land on. An arriving player would otherwise
+ * drop through empty air in a region nobody has built in yet.
+ */
+function ensureArrivalGround(x, y, z, blockName) {
+    if (!CONFIG.dimensions.buildArrivalPlatform) {
+        return;
+    }
+    const fx = Math.floor(x);
+    const fy = Math.floor(y);
+    const fz = Math.floor(z);
+
+    if (api.isBlockInLoadedChunk(fx, fy, fz)) {
+        for (let dy = 1; dy <= 8; dy++) {
+            const below = api.getBlock(fx, fy - dy, fz);
+            if (below && below !== "Air") {
+                return;   // there is already ground here
+            }
+        }
+    }
+
+    const r = CONFIG.dimensions.platformRadius;
+    api.setBlockRect([fx - r, fy - 1, fz - r], [fx + r, fy - 1, fz + r], blockName);
+}
+
+/** Moves a player between regions, scaling coordinates the way Nether travel does. */
+function travelTo(playerId, toKey) {
+    const to = dimension(toKey);
+    if (!to) {
+        return false;
+    }
+    const pos = api.getPosition(playerId);
+    const fromKey = dimensionAt(pos);
+    if (fromKey === toKey) {
+        return false;
+    }
+    const from = dimension(fromKey);
+
+    // Go via overworld-equivalent coordinates so any pair of regions lines up.
+    const overworldX = (pos[0] - from.origin[0]) * from.scale;
+    const overworldZ = (pos[2] - from.origin[1]) * from.scale;
+    const x = to.origin[0] + overworldX / to.scale;
+    const z = to.origin[1] + overworldZ / to.scale;
+
+    ensureArrivalGround(x, pos[1], z, to.platformBlock);
+    api.setPosition(playerId, x, pos[1], z);
+    enterDimension(playerId, toKey, true);
+
+    api.playSound(playerId, "magicAccent2", 0.9, 0.8);
+    return true;
+}
+
+/** A portal block sends you to its dimension, or home again if you are in it. */
+function usePortal(playerId, blockName) {
+    const state = stateOf(playerId);
+    const now = api.now();
+    if (now - (state.lastTravel || 0) < CONFIG.dimensions.travelCooldownMs) {
+        return;
+    }
+
+    for (const key in CONFIG.dimensions.list) {
+        const d = dimension(key);
+        if (d.portalBlock !== blockName) {
+            continue;
+        }
+        const here = dimensionAt(api.getPosition(playerId));
+        state.lastTravel = now;
+        travelTo(playerId, here === key ? "overworld" : key);
+        return;
+    }
+}
+
+function registerPortalRecipes(playerId) {
+    const recipes = CONFIG.dimensions.portalRecipes;
+    for (const blockName in recipes) {
+        api.editItemCraftingRecipes(playerId, blockName, [{
+            requires: recipes[blockName],
+            produces: 2,
+        }]);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Callbacks
 // -----------------------------------------------------------------------------
 
@@ -863,6 +1065,14 @@ function onPlayerJoin(playerId) {
 
     stateOf(playerId);
     registerRecipes(playerId);
+
+    if (CONFIG.dimensions.enabled) {
+        registerPortalRecipes(playerId);
+        // Re-dress the world for wherever they actually are, not where they logged out.
+        const key = dimensionAt(api.getPosition(playerId));
+        stateOf(playerId).dimension = null;
+        enterDimension(playerId, key, false);
+    }
 
     const hp = getMaxHp(playerId);
     applyMaxHp(playerId, hp, 0);
@@ -889,6 +1099,20 @@ function tick() {
             state.fallDistance = dropped > 0.05 ? state.fallDistance + dropped : 0;
         }
         state.lastY = pos[1];
+
+        // Catches respawns, admin teleports and simply walking over a border.
+        if (CONFIG.dimensions.enabled) {
+            const key = dimensionAt(pos);
+            if (key !== state.dimension) {
+                enterDimension(playerId, key, true);
+            }
+        }
+    }
+}
+
+function onBlockStandStart(playerId, x, y, z, blockName) {
+    if (CONFIG.dimensions.enabled) {
+        usePortal(playerId, blockName);
     }
 }
 
@@ -1004,7 +1228,9 @@ function playerCommand(playerId, command) {
                 "/hp - your hearts | /withdraw <hearts> - turn hearts into Life Orbs | "
                 + "right click a Life Orb or Golden Apple to eat it | "
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + ") and "
-                + CONFIG.spear.name + " | hit 0 hearts and you are banned for good.",
+                + CONFIG.spear.name + " | craft and place a Purple Portal for the Nether or a "
+                + "Black Portal for the End, then stand on it | /where shows your dimension | "
+                + "hit 0 hearts and you are banned for good.",
                 "#70a1ff");
             return true;
 
@@ -1037,11 +1263,33 @@ function playerCommand(playerId, command) {
                 api.giveItem(playerId, "Apple", 1, appleAttributes("enchanted"));
             } else if (what === "orb") {
                 api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
+            } else if (what === "netherportal") {
+                api.giveItem(playerId, CONFIG.dimensions.list.nether.portalBlock, 8);
+            } else if (what === "endportal") {
+                api.giveItem(playerId, CONFIG.dimensions.list.end.portalBlock, 8);
             } else {
-                tell(playerId, "Usage: /give mace|spear|gapple|egapple|orb", "#ff4757");
+                tell(playerId, "Usage: /give mace|spear|gapple|egapple|orb|netherportal|endportal",
+                    "#ff4757");
             }
             return true;
         }
+
+        case "dim": {
+            const wanted = (args[0] || "").toLowerCase();
+            if (!dimension(wanted)) {
+                tell(playerId, "Usage: /dim " + Object.keys(CONFIG.dimensions.list).join("|"), "#ff4757");
+                return true;
+            }
+            if (!travelTo(playerId, wanted)) {
+                tell(playerId, "You are already in " + dimension(wanted).name + ".", "#ffa502");
+            }
+            return true;
+        }
+
+        case "where":
+            tell(playerId, "You are in " + dimension(dimensionAt(api.getPosition(playerId))).name + ".",
+                "#70a1ff");
+            return true;
 
         case "sethp": {
             const target = findPlayerByName(args[0]);

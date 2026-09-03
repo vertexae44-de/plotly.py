@@ -6,7 +6,7 @@ const world = {
     db: {}, lobbyDb: {}, opts: {}, health: {}, shield: {}, inv: {}, sel: {}, pos: {},
     drops: [], log: [], impulses: [], effects: [], kicks: [], recipes: {},
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
-    mobs: [], facing: [0, 0, 1],
+    mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true,
 };
 const ids = ["a", "b"];
 
@@ -55,6 +55,13 @@ const api = {
     applyImpulse: (id, x, y, z) => world.impulses.push([id, x, y, z]),
     preventFallDamageNextGrounding: () => {},
     getPlayerFacingInfo: () => ({ dir: world.facing }),
+
+    setClientOptionToDefault: (id, o) => { (world.opts[id] = world.opts[id] || {})[o] = "DEFAULT"; },
+    setClientOptions: (id, obj) => Object.assign(world.opts[id] = world.opts[id] || {}, obj),
+    setPosition: (id, x, y, z) => { world.pos[id] = Array.isArray(x) ? x.slice() : [x, y, z]; },
+    getBlock: (x, y, z) => (world.blocks[x + "," + y + "," + z] || "Air"),
+    setBlockRect: (p1, p2, name) => world.rects.push({ p1, p2, name }),
+    isBlockInLoadedChunk: () => world.chunkLoaded !== false,
 
     kickPlayer: (id, reason) => world.kicks.push({ id, reason }),
     sendMessage: (id, m) => world.log.push(`msg[${id}] ${m}`),
