@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue, npcRoster } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -479,6 +479,102 @@ check("anon survives a rejoin",
         && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName, "");
 world.db.a.smpAnon = 0;
 ctx.onPlayerJoin("a");
+
+// -------------------------------------------------------------------------- NPCs
+const N = C.npcs;
+world.pos.a = [900, 64, 900];   // players far away so nobody is "noticed" yet
+world.pos.b = [900, 64, 900];
+for (let i = 0; i < N.thinkEveryTicks * 2; i++) ctx.tick();
+check("a roster is built once", npcRoster.length === N.count, npcRoster.length);
+
+// Send them all back to the respawn queue so the spawn path is observed fresh.
+world.spawnedMobs.length = 0;
+npcRoster.forEach(x => { x.mobId = null; x.deadUntil = 0; });
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("every NPC gets a body", world.spawnedMobs.length === N.count, world.spawnedMobs.length);
+check("every NPC holds its body", npcRoster.every(x => x.mobId !== null), "");
+check("NPCs have unique names",
+    new Set(npcRoster.map(n => n.name)).size === N.count, npcRoster.map(n => n.name).join(","));
+check("NPCs get nametags", world.spawnedMobs.every(m => !!m.opts.name), JSON.stringify(world.spawnedMobs[0]));
+check("NPCs use clothed humanoid bodies",
+    world.spawnedMobs.every(m => /Draugr/.test(m.type)), world.spawnedMobs.map(m => m.type).join(","));
+check("NPCs are not hostile on sight",
+    world.mobSettings[npcRoster[0].mobId].hostilityRadius === 0, "");
+check("NPC homes are spread out",
+    new Set(npcRoster.map(n => n.home[0].toFixed(2))).size > 1, "");
+
+const npc = npcRoster[0];
+const body = npc.mobId;
+world.pos[body] = [0, 64, 0];
+
+// they notice someone walking up, and greet them once
+world.log.length = 0;
+world.pos.a = [2, 64, 0];
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("an NPC watches a nearby player",
+    world.mobAi[body] && world.mobAi[body].state === "watching", JSON.stringify(world.mobAi[body]));
+check("an NPC greets you", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+world.log.length = 0;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("greetings are not spammed", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+
+// hit one and it fights back
+world.log.length = 0;
+world.inv.a = [];
+npc.lastChat = 0;          // the anti-spam gate is tested separately below
+ctx.onPlayerDamagingMob("a", body, 10);
+check("hitting an NPC provokes it", npc.provokedBy === "a", npc.provokedBy);
+check("a hurt NPC says something", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("a provoked NPC chases you",
+    world.mobAi[body].state === "chasing" && world.mobAi[body].params.targetId === "a",
+    JSON.stringify(world.mobAi[body]));
+
+// the same NPC hit twice in a row does not narrate every blow
+world.log.length = 0;
+ctx.onPlayerDamagingMob("a", body, 10);
+check("hurt lines are rate limited", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
+
+// hurt it badly and it runs
+world.health[body] = C.npcs.settings.maxHealth * 0.1;
+npc.lastChat = 0;
+world.log.length = 0;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("a losing NPC runs away",
+    world.mobAi[body].state === "runningAway", JSON.stringify(world.mobAi[body]));
+check("a fleeing NPC says so", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), "");
+
+// kill it: it announces, frees the body and books a respawn
+world.log.length = 0;
+world.drops.length = 0;
+ctx.onPlayerKilledMob("a", body);
+check("a killed NPC is announced", world.log.some(l => /was killed by/.test(l)), JSON.stringify(world.log));
+check("a killed NPC leaves its body behind", npc.mobId === null, npc.mobId);
+check("a killed NPC books a respawn", npc.deadUntil > 0, npc.deadUntil);
+check("NPCs drop no Life Orb by default", world.drops.length === 0, world.drops.length);
+
+// it comes back once the timer is up
+npc.deadUntil = 0;
+world.pos.a = [900, 64, 900];
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("a dead NPC respawns", npc.mobId !== null, npc.mobId);
+
+// a full world just delays them rather than breaking anything
+const npc2 = npcRoster[1];
+ctx.onPlayerKilledMob("a", npc2.mobId);
+npc2.deadUntil = 0;
+world.mobSpawnFails = true;
+for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
+check("a full world only delays a respawn", npc2.mobId === null && npc2.deadUntil > 0, npc2.deadUntil);
+world.mobSpawnFails = false;
+
+check("/npcs lists them", ctx.playerCommand("a", "/npcs") === true, "");
+check("a normal mob is not an NPC", (() => {
+    const before = world.log.length;
+    ctx.onPlayerDamagingMob("a", "not-an-npc", 5);
+    ctx.onPlayerKilledMob("a", "not-an-npc");
+    return world.log.length === before;
+})(), "");
 
 // -------------------------------------------------------------------- commands
 world.inv.a = [];
