@@ -11,8 +11,8 @@
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
 | **Repair Kit** | Craftable. `/repair` restores half of whatever you're holding's max durability. |
-| **Bulwark shield** | `/offhand` it and fight with a sword at the same time — it blocks 60% passively. Or hold it and right-click to raise it by hand. |
-| **Off-hand slot** | Slot 0 carries a second item: right-click to swap anything in, `/offhand` for tagged items, shown as a status icon. |
+| **Bulwark shield** | Right-click it into your off-hand and fight with a sword at the same time — it blocks 60% passively. Or hold it and right-click to raise it by hand. |
+| **Off-hand slot** | Slot 0 carries a second item: right-click, the touchscreen button, or a drag swaps it in. Shown as a status icon. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
@@ -273,13 +273,19 @@ plain numbered storage the engine treats identically; there is no equip slot any
 So slot 0 is reserved *by convention*: a rule this script enforces by re-reading that one slot
 every tick. Whatever sits there is "off-handed".
 
-- **Right-click any ordinary item** → it swaps into the off-hand, and whatever was there lands
-  back in your hand. **Right-click with an empty hand** → your off-hand item comes back out.
-- **`/offhand`** does the same swap but works on *anything*, including items whose right-click is
-  already spoken for — Hearts, apples, the mace, the spear, and **the shield**. This is how you get
-  a Bulwark off-hand.
-- **Dragging an item into slot 0** in the inventory screen works too, since the sync reads the slot
-  rather than only reacting to swaps.
+Three ways in, **none of which need the chat box**:
+
+- **Right-click** whatever you're holding → it swaps into the off-hand, and whatever was there
+  lands back in your hand. **Right-click with an empty hand** → your off-hand item comes back out.
+  This is how you equip a shield: hold it, right-click, done — the same gesture as Minecraft's F.
+- **The on-screen action button** (labelled `🛡 Off-hand`) does the same swap for touchscreen
+  players, via Bloxd's own `touchscreenActionButton` option and `onTouchscreenActionButton`.
+- **Dragging an item into slot 0** in the inventory screen.
+
+`/offhand` is still there as a chat fallback, and `/shield` raises a held shield by hand for anyone
+who'd rather time their own blocks than let the off-hand one soak automatically.
+- The sync reads the slot itself every tick, so any of the three routes above end up in the same
+  state — nothing depends on catching the swap as it happens.
 - Whatever is off-handed shows as a **status effect icon** using the item's own icon
   (`applyEffect` with a custom `icon`), so you can see what you're carrying there.
 - The item genuinely **stays in your inventory**, so a rejoin or a server restart can't lose it —
@@ -292,8 +298,10 @@ off-hand above:
 
 - Craft a **Bulwark** from **6 Maple Wood Planks + 1 Iron Bar**.
 - **Two ways to use it:**
-  - **Hold it and right-click** to raise it manually — the classic weapon-style toggle.
-  - **Or `/offhand` it into slot 0** (`offhand.slotIndex`, the top-left cell of the
+  - **Hold it and right-click** → it goes into your off-hand and guards you passively. No chat.
+  - **`/shield`** raises a held shield manually instead — the classic weapon-style toggle, for
+    timing your own blocks.
+  - Either route parks it in slot 0 (`offhand.slotIndex`, the top-left cell of the
     inventory grid) and it protects you automatically, every tick, with your main hand free for a
     weapon — no clicking needed. This is a rule this script enforces on an ordinary slot, not a
     native engine feature, so it only works because the script checks that exact slot on every
@@ -303,7 +311,7 @@ off-hand above:
     `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
     shield instead of your health for the part it absorbed. The off-hand slot is checked first, so
     if both are somehow active the passive one takes priority.
-- **For PvP that means shield + sword at once:** `/offhand` the Bulwark, select your sword, and you
+- **For PvP that means shield + sword at once:** right-click the Bulwark, select your sword, and you
   swing with the sword while the shield keeps soaking 60% of what hits you. You never have to choose
   between carrying a weapon and carrying a guard.
 - **The "off-hand" arm** is a real mesh — a small plate — attached to your other arm
@@ -376,6 +384,7 @@ instead of eliminations.
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
 | `/repair` | everyone | Repair whatever you're holding using a Repair Kit |
 | `/offhand` | everyone | Swap what you're holding into the off-hand slot (works on the shield too) |
+| `/shield` | everyone | Raise or lower a held shield by hand, instead of off-handing it |
 | `/npcs` | everyone | Who is alive, their skin, personality and health |
 | `/give mace\|spear\|windcharge\|repairkit\|shield\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |

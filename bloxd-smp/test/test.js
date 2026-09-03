@@ -294,8 +294,8 @@ world.shield.a = 0;
 world.inv.a = [shieldItem(C.shield.durability)];
 world.sel.a = 0;
 world.meshAttachments.a = undefined;
-ctx.onPlayerAltAction("a");
-check("raising the shield sets the flag", ctx.stateOf("a").shieldRaised === true, "");
+ctx.playerCommand("a", "/shield");
+check("/shield raises it by hand and sets the flag", ctx.stateOf("a").shieldRaised === true, "");
 check("raising the shield tops up the numeric shield",
     world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
 check("raising the shield attaches a mesh to the off arm",
@@ -320,7 +320,7 @@ check("blocking wears the shield item",
     world.inv.a[0].attributes.customAttributes.smpDur);
 
 // lowering it removes the mesh and the HUD chip
-ctx.onPlayerAltAction("a");
+ctx.playerCommand("a", "/shield");
 check("lowering the shield clears the flag", ctx.stateOf("a").shieldRaised === false, "");
 check("lowering the shield detaches the mesh", world.meshAttachments.a === null, world.meshAttachments.a);
 check("lowering the shield clears the HUD chip", world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
@@ -448,7 +448,7 @@ world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
 ctx.playerCommand("a", "/offhand");
-check("/offhand puts a shield in the off-hand even though right-click raises it",
+check("/offhand puts a shield in the off-hand from chat too",
     world.inv.a[OFF] && world.inv.a[OFF].attributes.customAttributes.smpShield === true,
     JSON.stringify(world.inv.a[OFF]));
 check("/offhand frees your main hand for a weapon", world.inv.a[3] === null, "");
@@ -456,14 +456,35 @@ ctx.tick();
 check("a shield put there by /offhand protects passively",
     ctx.stateOf("a").offhandShieldOn === true, "");
 
-// right-clicking a shield still raises it by hand rather than swapping it
+// right-clicking a held shield equips it off-hand - no chat needed
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
 ctx.stateOf("a").shieldRaised = false;
 ctx.onPlayerAltAction("a");
-check("right-clicking a held shield still raises it instead of swapping",
-    ctx.stateOf("a").shieldRaised === true && world.inv.a[3] !== null, "");
+check("right-clicking a held shield equips it off-hand without any chat command",
+    world.inv.a[OFF] && world.inv.a[OFF].attributes.customAttributes.smpShield === true,
+    JSON.stringify(world.inv.a[OFF]));
+check("right-clicking a shield off-hand does not also raise it by hand",
+    ctx.stateOf("a").shieldRaised === false, "");
+check("right-clicking a shield off-hand frees the main hand", world.inv.a[3] === null, "");
+ctx.tick();
+check("a shield equipped by right-click protects passively",
+    ctx.stateOf("a").offhandShieldOn === true, "");
+
+// the touchscreen action button does the same swap, for phone players
+world.inv.a = [];
+world.sel.a = 3;
+world.inv.a[3] = { name: "Torch", amount: 1, attributes: undefined };
+ctx.onTouchscreenActionButton("a", true);
+check("the touchscreen button swaps into the off-hand",
+    world.inv.a[OFF] && world.inv.a[OFF].name === "Torch", JSON.stringify(world.inv.a[OFF]));
+ctx.onTouchscreenActionButton("a", false);
+check("releasing the touchscreen button does not swap back",
+    world.inv.a[OFF] && world.inv.a[OFF].name === "Torch", JSON.stringify(world.inv.a[OFF]));
+check("joining sets up the touchscreen off-hand button",
+    world.opts.a.touchscreenActionButton === C.offhand.touchButton,
+    world.opts.a.touchscreenActionButton);
 ctx.stateOf("a").shieldRaised = false;
 world.inv.a = [];
 world.sel.a = 0;

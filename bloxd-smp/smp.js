@@ -207,6 +207,12 @@ const CONFIG = {
         particles: true,     // a glint puff on every swap
         swapSound: "swoosh",
         colour: "#9fe6a0",
+
+        // Bloxd has no key-binding hook, so these are the no-chat ways in:
+        // right click whatever you are holding, or - on touchscreens - the
+        // engine's own action button, labelled here.
+        swapOnRightClick: true,
+        touchButton: "🛡 Off-hand",   // null hides the button
     },
 
     // ---- Shield (Bulwark) ------------------------------------------------------
@@ -584,8 +590,8 @@ const CONFIG = {
     },
 
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "repair", "offhand", "smphelp", "where",
-            "anon", "orbs", "npcs"],
+        publicCommands: ["hp", "hearts", "withdraw", "repair", "offhand", "shield", "smphelp",
+            "where", "anon", "orbs", "npcs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -2847,6 +2853,12 @@ function onPlayerJoin(playerId) {
         api.setClientOption(playerId, "maxShield", CONFIG.shield.maxShieldOption);
     }
 
+    // Gives touchscreen players a real button for the off-hand swap, since
+    // they have neither a right mouse button nor an easy chat box.
+    if (CONFIG.offhand.enabled && CONFIG.offhand.touchButton) {
+        api.setClientOption(playerId, "touchscreenActionButton", CONFIG.offhand.touchButton);
+    }
+
     const hp = getMaxHp(playerId);
     applyMaxHp(playerId, hp, 0);
     tell(playerId, "You have " + hearts(hp) + " hearts. Type /smphelp for commands.", "#7bed9f");
@@ -3001,11 +3013,26 @@ function onPlayerAltAction(playerId) {
         spearLunge(playerId, slot);
     } else if (custom[ATTR_WINDCHARGE]) {
         useWindChargeItem(playerId, slot);
+    } else if (custom[ATTR_SHIELD] && CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
+        // A shield's right click puts it straight in your off-hand, the way
+        // Minecraft's F key does - no chat, one click, and your main hand is
+        // free for a sword. /shield still raises one by hand if you'd rather.
+        swapOffhand(playerId);
     } else if (custom[ATTR_SHIELD]) {
         toggleShield(playerId);
     } else if (CONFIG.offhand.enabled) {
-        // Anything with no other right-click use of its own goes off-hand.
-        // Items that DO have one (a shield included) still swap via /offhand.
+        // Anything with no other right-click use of its own goes off-hand too.
+        swapOffhand(playerId);
+    }
+}
+
+/**
+ * The engine's own touchscreen button, so phone players get the off-hand
+ * without a keyboard or the chat box. Fires on press and release; only the
+ * press should do anything.
+ */
+function onTouchscreenActionButton(playerId, touchDown) {
+    if (touchDown && CONFIG.offhand.enabled) {
         swapOffhand(playerId);
     }
 }
@@ -3107,14 +3134,26 @@ function playerCommand(playerId, command) {
             return true;
 
         case "offhand":
-            // Works on anything, including items whose right click is already
-            // spoken for - this is how a shield gets into the off-hand.
+            // The chat fallback. Right click and the touchscreen button do the
+            // same thing without typing.
             if (!CONFIG.offhand.enabled) {
                 tell(playerId, "The off-hand is switched off in this world.", "#ff4757");
             } else if (!swapOffhand(playerId)) {
                 tell(playerId, "Hold something to put in your off-hand first.", "#ffa502");
             }
             return true;
+
+        case "shield": {
+            // Raising a shield by hand, for anyone who wants to time their
+            // blocks instead of letting the off-hand one soak automatically.
+            const held = heldSlot(playerId);
+            if (!held || !customAttrs(held.item)[ATTR_SHIELD]) {
+                tell(playerId, "Hold a " + CONFIG.shield.name + " to raise it by hand.", "#ffa502");
+                return true;
+            }
+            toggleShield(playerId);
+            return true;
+        }
 
         case "smphelp":
             tell(playerId,
@@ -3124,12 +3163,11 @@ function playerCommand(playerId, command) {
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
                 + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
-                + "craft a " + CONFIG.shield.name + " - hold it and /offhand to wear it in "
-                + "slot " + (CONFIG.offhand.slotIndex + 1) + " (top-left), so you can fight "
-                + "with a sword and stay guarded at the same time, or hold it and right click "
-                + "to raise it by hand | "
-                + "right click any other item to swap it into your off-hand, right click with "
-                + "an empty hand to take it back | "
+                + "craft a " + CONFIG.shield.name + " and RIGHT CLICK it to wear it in your "
+                + "off-hand (slot " + (CONFIG.offhand.slotIndex + 1) + ", top-left) - then fight "
+                + "with a sword and stay guarded at the same time. Right click any item to swap "
+                + "it off-hand, right click with an empty hand to take it back, or use the "
+                + "on-screen button on mobile. /offhand and /shield do the same from chat | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
