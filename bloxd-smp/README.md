@@ -4,9 +4,9 @@
 
 | Feature | What it does |
 | --- | --- |
-| **Life Orbs** | A player kill costs the victim a heart and drops it as an orb. Right-click an orb to absorb it. |
+| **Life Orbs** | A player kill costs the victim a heart and drops it as an **Aura XP Orb**. Right-click to absorb it — **once per player, ever**. |
 | **Permanent ban at 0 hearts** | Lose your last heart and you are kicked and locked out of the world for good. |
-| **Windburst Mace** | A Moonstone Axe. Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. |
+| **Moonstone Mace** | Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. Expensive to craft. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Durability** | Bloxd has none natively. This gives **every** tool, weapon, bow and armour piece a durability worked out from its name. |
@@ -24,14 +24,27 @@ Recipes are registered per player on join, so they show up in the normal craftin
 
 | Item | Recipe |
 | --- | --- |
-| **Windburst Mace** (Moonstone Axe) | 5 Moonstone + 2 Stick + 1 Knight Heart |
+| **Moonstone Mace** | **40 Moonstone + 4 Knight Heart + 2 Stick** |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 
 Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
 
+## Life Orbs — one per player
+
+Orbs are **Aura XP Orbs**, so they read as XP on the ground. Each is worth exactly one heart.
+
+The catch: `orb.usesPerPlayer` is **1**. A player may absorb one orb in their entire life on the
+world, so nobody can farm kills up to the 20-heart cap. Beyond that limit the orb is *not* consumed —
+it stays in the inventory so it can still be traded to someone who has a use left. `/hp` shows how
+many uses you have left. Set `orb.usesPerPlayer: 0` for no limit at all, or a higher number to allow
+a few.
+
 ## The mace
+
+The mace is the real `Moonstone Mace` item, and it is meant to be an endgame grind: 40 Moonstone,
+4 Knight Hearts and 2 Sticks.
 
 - **Smash** — fall at least 1.5 blocks and hit something. Bonus damage is `2.5 × blocks fallen`
   (capped at 60), and it lands on mobs just as it does on players.
@@ -119,9 +132,10 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 ## Implementation notes
 
 - Max HP is persisted per player with `api.setPlayerDbValue`, so hearts survive relogs.
-- Custom items are ordinary Bloxd items (`Moonstone Axe`, `Apple`, `Knight Heart`) tagged through
-  `customAttributes`. A plain apple is not a Golden Apple and a plain Moonstone Axe is not the mace —
-  the tag is what counts, so nothing can be faked by renaming.
+- Custom items are ordinary Bloxd items (`Moonstone Mace`, `Apple`, `Aura XP Orb`) tagged through
+  `customAttributes`. A plain apple is not a Golden Apple and a plain Moonstone Mace is not *the*
+  mace — the tag is what counts, so nothing can be faked by renaming.
+- How many orbs a player has absorbed is persisted per player, so the one-use cap survives relogs.
 - Recipes carry those tags in the recipe's own `attributes` field, which is how a crafted item comes
   out custom.
 - Durability lives in each item's `customAttributes` and is rewritten into the slot on every use,
@@ -139,6 +153,7 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-74 assertions covering hearts, orbs, both apples (heal, shield, regen, fire resistance), smash damage
-against players and mobs, Density and Wind Burst, the spear lunge, durability derivation and
-breakage, crafting registration, elimination and unban, and every command.
+91 assertions covering hearts, the one-orb-per-player cap, both apples (heal, shield, regen, fire
+resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
+durability derivation and breakage, crafting registration and costs, elimination and unban, and
+every command.

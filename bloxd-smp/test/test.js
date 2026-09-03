@@ -13,6 +13,16 @@ check("join sets maxHealth option", world.opts.a.maxHealth === 100, JSON.stringi
 check("mace recipe registered", !!world.recipes.a[C.mace.item], Object.keys(world.recipes.a));
 check("spear recipe registered", !!world.recipes.a[C.spear.item], "");
 check("two apple recipes registered", world.recipes.a["Apple"].length === 2, "");
+check("mace is the real Moonstone Mace item", C.mace.item === "Moonstone Mace", C.mace.item);
+check("mace recipe costs 40 moonstone",
+    C.mace.recipe.some(r => r.items[0] === "Moonstone" && r.amt === 40), JSON.stringify(C.mace.recipe));
+check("mace recipe costs 4 knight hearts",
+    C.mace.recipe.some(r => r.items[0] === "Knight Heart" && r.amt === 4), "");
+check("mace recipe costs 2 sticks",
+    C.mace.recipe.some(r => r.items[0] === "Stick" && r.amt === 2), "");
+check("mace durability derives from its name",
+    ctx.durabilityForName("Moonstone Mace") === Math.round(2400 * 1.1),
+    ctx.durabilityForName("Moonstone Mace"));
 check("mace recipe carries mace tag",
     world.recipes.a[C.mace.item][0].attributes.customAttributes.smpMace === true, "");
 check("golden apple recipe carries tier",
@@ -39,9 +49,39 @@ check("orb raised max hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
 check("orb healed current hp", world.health.a === 60, world.health.a);
 check("orb stack decremented", world.inv.a[0].amount === 1, "");
 
+check("orb is the XP orb item", C.orb.item === "Aura XP Orb", C.orb.item);
+check("eating recorded one use", world.db.a.smpOrbsEaten === 1, world.db.a.smpOrbsEaten);
+check("no uses left after the first", ctx.orbUsesLeft("a") === 0, ctx.orbUsesLeft("a"));
+
+// the lifetime cap: a second orb must not be absorbed or consumed
+const hpBeforeSecond = world.db.a.smpMaxHp;
+ctx.onPlayerAltAction("a");
+check("second orb is refused", world.db.a.smpMaxHp === hpBeforeSecond, world.db.a.smpMaxHp);
+check("refused orb stays in the inventory", world.inv.a[0] && world.inv.a[0].amount === 1, JSON.stringify(world.inv.a[0]));
+check("refusal explains the limit", world.log.some(l => /only absorb/.test(l)), "");
+
+// a fresh player may still absorb theirs
+world.inv.b = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
+world.db.b.smpMaxHp = 90;
+world.health.b = 50;
+ctx.onPlayerAltAction("b");
+check("a different player can still absorb", world.db.b.smpMaxHp === 100, world.db.b.smpMaxHp);
+check("orb grants exactly one heart", 100 - 90 === C.orb.hp, C.orb.hp);
+check("absorbed orb clears the slot", world.inv.b[0] === null, "");
+
+// raising the cap re-opens it
+C.orb.usesPerPlayer = 2;
+check("raising the cap gives another use", ctx.orbUsesLeft("a") === 1, ctx.orbUsesLeft("a"));
+ctx.onPlayerAltAction("a");
+check("second orb now absorbed", world.db.a.smpMaxHp === hpBeforeSecond + C.orb.hp, world.db.a.smpMaxHp);
+C.orb.usesPerPlayer = 1;
+
 world.db.a.smpMaxHp = C.health.max;
+world.db.a.smpOrbsEaten = 0;
+world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
 ctx.onPlayerAltAction("a");
 check("at cap -> orb not consumed", world.inv.a[0] && world.inv.a[0].amount === 1, "");
+check("at cap -> no use spent", world.db.a.smpOrbsEaten === 0, world.db.a.smpOrbsEaten);
 world.db.a.smpMaxHp = 90;
 ctx.onPlayerAltAction("a");
 check("last orb clears slot", world.inv.a[0] === null, "");

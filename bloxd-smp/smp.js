@@ -41,17 +41,20 @@ const CONFIG = {
     },
 
     orb: {
-        item: "Knight Heart",
+        item: "Aura XP Orb",
         name: "Life Orb",
-        hp: 10,
+        hp: 10,                     // one heart per orb
         despawnMs: 5 * 60 * 1000,   // 5 min is the engine maximum
         healOnEat: true,
+        // How many orbs a player may ever absorb. 1 stops people farming their
+        // way to the health cap; set to 0 for no limit.
+        usesPerPlayer: 1,
     },
 
     // ---- Windburst Mace -----------------------------------------------------
     mace: {
-        item: "Moonstone Axe",
-        name: "Windburst Mace",
+        item: "Moonstone Mace",   // a real Bloxd item, so it looks like a mace
+        name: "Moonstone Mace",
         durability: 400,
 
         minSmashFall: 1.5,           // blocks you must be falling for a smash
@@ -76,10 +79,11 @@ const CONFIG = {
         knockbackUp: 5,
         knockbackHitsMobs: true,
 
+        // Deliberately expensive - this is the endgame weapon.
         recipe: [
-            { items: ["Moonstone"], amt: 5 },
+            { items: ["Moonstone"], amt: 40 },
+            { items: ["Knight Heart"], amt: 4 },
             { items: ["Stick"], amt: 2 },
-            { items: ["Knight Heart"], amt: 1 },
         ],
     },
 
@@ -146,7 +150,8 @@ const CONFIG = {
             Knight: 2000, Golem: 2200, Moonstone: 2400,
         },
         kinds: {
-            Sword: 1, Dagger: 0.9, Club: 1, Spear: 1, Axe: 1, Pickaxe: 1,
+            Sword: 1, Dagger: 0.9, Club: 1, Mace: 1.1, Spear: 1, Whip: 0.9,
+            Boomerang: 0.9, Axe: 1, Pickaxe: 1,
             Spade: 0.9, Shovel: 0.9, Hoe: 0.8, Bow: 1.2, Crossbow: 1.2, Shield: 1.5,
             Helmet: 0.8, Chestplate: 1.3, Leggings: 1.2, Boots: 0.9, Gauntlets: 0.8,
         },
@@ -168,6 +173,7 @@ const CONFIG = {
 
 const DB_MAX_HP = "smpMaxHp";
 const DB_BANS = "smpBans";
+const DB_ORBS_EATEN = "smpOrbsEaten";
 
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
@@ -316,9 +322,13 @@ function addMaxHp(playerId, delta, healBy) {
 // -----------------------------------------------------------------------------
 
 function orbAttributes(hp) {
+    const lines = ["Right click to absorb " + hearts(hp) + " heart(s)."];
+    if (CONFIG.orb.usesPerPlayer > 0) {
+        lines.push("You may only ever absorb " + CONFIG.orb.usesPerPlayer + ".");
+    }
     return {
         customDisplayName: CONFIG.orb.name,
-        customDescription: "Right click to absorb " + hearts(hp) + " hearts.",
+        customDescription: lines.join("\n"),
         customAttributes: { [ATTR_ORB]: true, hp: hp },
     };
 }
@@ -545,6 +555,21 @@ function spendDurability(playerId, slot, cost) {
 // Life Orbs
 // -----------------------------------------------------------------------------
 
+function orbsEaten(playerId) {
+    const stored = api.getPlayerDbValue(playerId, DB_ORBS_EATEN);
+    const value = typeof stored === "string" ? parseInt(stored, 10) : stored;
+    return typeof value === "number" && !isNaN(value) ? value : 0;
+}
+
+/** A lifetime cap, so nobody can grind orbs up to the health ceiling. */
+function orbUsesLeft(playerId) {
+    const limit = CONFIG.orb.usesPerPlayer;
+    if (limit <= 0) {
+        return Infinity;
+    }
+    return Math.max(0, limit - orbsEaten(playerId));
+}
+
 function dropOrbs(playerId, totalHp) {
     const perOrb = CONFIG.orb.hp;
     const count = Math.max(1, Math.round(totalHp / perOrb));
@@ -578,6 +603,15 @@ function eatOrb(playerId, slot) {
     const custom = customAttrs(slot.item);
     const hp = typeof custom.hp === "number" ? custom.hp : CONFIG.orb.hp;
 
+    if (orbUsesLeft(playerId) <= 0) {
+        // The orb is left in the inventory so it can still be traded away.
+        api.queueCrosshairText(playerId, "You have already absorbed your Life Orb", 2000);
+        tell(playerId, "You can only absorb " + CONFIG.orb.usesPerPlayer
+            + " Life Orb ever. Trade this one to someone else.", "#ffa502");
+        api.playSound(playerId, "hit1", 0.5, 0.7);
+        return;
+    }
+
     if (getMaxHp(playerId) >= CONFIG.health.max) {
         api.queueCrosshairText(playerId, "Already at " + hearts(CONFIG.health.max) + " hearts", 1500);
         api.playSound(playerId, "hit1", 0.5, 0.7);
@@ -589,11 +623,14 @@ function eatOrb(playerId, slot) {
         return;
     }
 
+    api.setPlayerDbValue(playerId, DB_ORBS_EATEN, orbsEaten(playerId) + 1);
+
     const amount = slot.item.amount == null ? 1 : slot.item.amount;
     writeSlot(playerId, slot.index, slot.item, amount - 1, slot.item.attributes);
 
     tell(playerId, "You absorbed " + hearts(gained) + " hearts. You now have "
         + hearts(getMaxHp(playerId)) + ".", "#ff6b81");
+    api.playSound(playerId, "exp_collect", 0.9, 1.0);
     api.playSound(playerId, "levelup", 0.8, 1.2);
 
     const pos = api.getPosition(playerId);
@@ -949,10 +986,15 @@ function playerCommand(playerId, command) {
 
     switch (name) {
         case "hp":
-        case "hearts":
-            tell(playerId, "You have " + hearts(getMaxHp(playerId)) + " / "
-                + hearts(CONFIG.health.max) + " hearts.", "#ff6b81");
+        case "hearts": {
+            let line = "You have " + hearts(getMaxHp(playerId)) + " / "
+                + hearts(CONFIG.health.max) + " hearts.";
+            if (CONFIG.orb.usesPerPlayer > 0) {
+                line += " Life Orbs left to absorb: " + orbUsesLeft(playerId) + ".";
+            }
+            tell(playerId, line, "#ff6b81");
             return true;
+        }
 
         case "withdraw":
             return withdraw(playerId, args[0]);
@@ -1045,7 +1087,8 @@ function withdraw(playerId, rawHearts) {
     for (let i = 0; i < orbs; i++) {
         api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
     }
-    tell(playerId, "Withdrew " + hearts(removed) + " hearts as " + orbs + " Life Orb(s).", "#7bed9f");
+    tell(playerId, "Withdrew " + hearts(removed) + " hearts as " + orbs + " Life Orb(s)."
+        + (orbUsesLeft(playerId) <= 0 ? " You cannot absorb these yourself." : ""), "#7bed9f");
     return true;
 }
 
