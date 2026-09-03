@@ -369,7 +369,7 @@ world.opts.a.headerChips = [];
 world.shield.a = 0;
 world.sel.a = 5;   // main hand is a different, unrelated slot
 world.inv.a = [];
-world.inv.a[C.shield.offhandSlotIndex] = shieldItem(C.shield.durability);
+world.inv.a[C.offhand.slotIndex] = shieldItem(C.shield.durability);
 world.inv.a[5] = { name: "Iron Sword", amount: null, attributes: undefined };
 ctx.tick();
 check("parking a shield off-hand raises it without holding it",
@@ -388,11 +388,11 @@ check("the off-hand shield blocks damage while a different weapon is held",
 check("the off-hand shield drains the numeric shield",
     world.shield.a < offhandShieldBefore, world.shield.a);
 check("the off-hand shield wears, the held weapon does not",
-    world.inv.a[C.shield.offhandSlotIndex].attributes.customAttributes.smpDur
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur
         === C.shield.durability - C.shield.blockDurabilityCost,
-    world.inv.a[C.shield.offhandSlotIndex].attributes.customAttributes.smpDur);
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur);
 
-world.inv.a[C.shield.offhandSlotIndex] = null;
+world.inv.a[C.offhand.slotIndex] = null;
 ctx.tick();
 check("removing the off-hand shield clears the flag",
     ctx.stateOf("a").offhandShieldOn === false, "");
@@ -400,6 +400,74 @@ check("removing the off-hand shield detaches the mesh", world.meshAttachments.a 
 check("removing the off-hand shield clears the HUD chip",
     world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
 world.sel.a = 0;
+
+// ------------------------------------------------------------ off-hand swapping
+// Right-click swaps a plain held item into the off-hand slot; the two slots
+// trade places, so nothing is ever destroyed or stranded in a variable.
+const OFF = C.offhand.slotIndex;
+world.effects.length = 0;
+world.inv.a = [];
+world.sel.a = 3;
+world.inv.a[3] = { name: "Torch", amount: 4, attributes: undefined };
+ctx.onPlayerAltAction("a");
+check("right-clicking a plain item puts it in the off-hand",
+    world.inv.a[OFF] && world.inv.a[OFF].name === "Torch", JSON.stringify(world.inv.a[OFF]));
+check("the swapped item leaves your hand", world.inv.a[3] === null, JSON.stringify(world.inv.a[3]));
+check("the whole stack moves, not one item",
+    world.inv.a[OFF].amount === 4, world.inv.a[OFF].amount);
+
+ctx.tick();
+check("an off-handed item shows as a status effect",
+    world.effects.some(e => e.id === "a" && e.name === "Torch"), JSON.stringify(world.effects));
+check("the status effect uses the item as its icon",
+    world.effects.some(e => e.name === "Torch" && e.info && e.info.icon === "Torch"),
+    JSON.stringify(world.effects));
+check("the off-hand effect never expires on its own",
+    world.effects.some(e => e.name === "Torch" && e.ms === null), JSON.stringify(world.effects));
+
+// swapping a second item returns the first one to your hand
+world.inv.a[3] = { name: "Apple", amount: 1, attributes: undefined };
+ctx.onPlayerAltAction("a");
+check("swapping again off-hands the new item",
+    world.inv.a[OFF].name === "Apple", JSON.stringify(world.inv.a[OFF]));
+check("swapping again hands the old one back",
+    world.inv.a[3] && world.inv.a[3].name === "Torch", JSON.stringify(world.inv.a[3]));
+ctx.tick();
+check("the old item's effect icon is cleared",
+    !world.effects.some(e => e.name === "Torch"), JSON.stringify(world.effects));
+
+// an empty hand pulls the off-hand item back out
+world.inv.a[3] = null;
+ctx.onPlayerAltAction("a");
+check("an empty hand takes the off-hand item back",
+    world.inv.a[3] && world.inv.a[3].name === "Apple", JSON.stringify(world.inv.a[3]));
+check("the off-hand is left empty", world.inv.a[OFF] === null, JSON.stringify(world.inv.a[OFF]));
+
+// /offhand works on items whose right-click is already spoken for, like the shield
+world.inv.a = [];
+world.sel.a = 3;
+world.inv.a[3] = shieldItem(C.shield.durability);
+ctx.playerCommand("a", "/offhand");
+check("/offhand puts a shield in the off-hand even though right-click raises it",
+    world.inv.a[OFF] && world.inv.a[OFF].attributes.customAttributes.smpShield === true,
+    JSON.stringify(world.inv.a[OFF]));
+check("/offhand frees your main hand for a weapon", world.inv.a[3] === null, "");
+ctx.tick();
+check("a shield put there by /offhand protects passively",
+    ctx.stateOf("a").offhandShieldOn === true, "");
+
+// right-clicking a shield still raises it by hand rather than swapping it
+world.inv.a = [];
+world.sel.a = 3;
+world.inv.a[3] = shieldItem(C.shield.durability);
+ctx.stateOf("a").shieldRaised = false;
+ctx.onPlayerAltAction("a");
+check("right-clicking a held shield still raises it instead of swapping",
+    ctx.stateOf("a").shieldRaised === true && world.inv.a[3] !== null, "");
+ctx.stateOf("a").shieldRaised = false;
+world.inv.a = [];
+world.sel.a = 0;
+ctx.tick();
 
 check("/give shield gives a tagged shield", (() => {
     C.commands.adminNames.push("Alice");

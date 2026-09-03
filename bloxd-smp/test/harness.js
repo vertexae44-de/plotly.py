@@ -23,7 +23,14 @@ const api = {
     setHealth: (id, hp) => { world.health[id] = hp; },
     getShieldAmount: id => world.shield[id] ?? 0,
     setShieldAmount: (id, v) => { world.shield[id] = v; },
-    applyEffect: (id, name, ms) => world.effects.push({ id, name, ms }),
+    applyEffect: (id, name, ms, info) => world.effects.push({ id, name, ms, info }),
+    removeEffect: (id, name) => {
+        for (let i = world.effects.length - 1; i >= 0; i--) {
+            if (world.effects[i].id === id && world.effects[i].name === name) {
+                world.effects.splice(i, 1);
+            }
+        }
+    },
 
     getPlayerDbValue: (id, k) => (world.db[id] || {})[k] ?? null,
     setPlayerDbValue: (id, k, v) => { (world.db[id] = world.db[id] || {})[k] = v; },

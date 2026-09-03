@@ -188,17 +188,36 @@ const CONFIG = {
         produces: 2,
     },
 
+    // ---- Off-hand -------------------------------------------------------------
+    // Bloxd has NO off-hand slot: every inventory cell, slot 0 included, is
+    // plain numbered storage the engine treats identically. So slot 0 is
+    // reserved by convention instead - a rule this script enforces, checked
+    // every tick. Whatever sits there is "off-handed": it shows as a status
+    // effect icon, and if it happens to be a Bulwark it protects you
+    // automatically, leaving your main hand free for a sword. Right click a
+    // plain item to swap it in, right click with an empty hand to take it
+    // back, or /offhand to force-swap anything (a shield included).
+    //
+    // The item genuinely stays in the inventory rather than being held in a
+    // variable, so a rejoin or a server restart can never lose it.
+    offhand: {
+        enabled: true,
+        slotIndex: 0,        // the top-left cell of the inventory grid
+        effectIcon: true,    // show the carried item as a status effect icon
+        particles: true,     // a glint puff on every swap
+        swapSound: "swoosh",
+        colour: "#9fe6a0",
+    },
+
     // ---- Shield (Bulwark) ------------------------------------------------------
-    // Bloxd has no dedicated shield item and no true off-hand inventory slot -
-    // there is only ever one selected hand. This rebuilds both from real
+    // Bloxd has no dedicated shield item, so this rebuilds one from real
     // primitives: hold it and right click to raise it manually, OR park it in
-    // a fixed inventory slot (offhandSlotIndex) and it protects you passively,
-    // without needing to be selected - the closest thing to a real off-hand
-    // Bloxd's plain numbered-slot inventory allows. Either way it shows on
-    // your OTHER arm as a mesh attachment and a status chip in the top-left
-    // HUD strip (the engine's own headerChips option), while it soaks a
-    // fraction of incoming player damage using Bloxd's own numeric shield
-    // resource.
+    // the off-hand slot above and it protects you passively, without needing
+    // to be selected - so you can fight with a sword and be guarded at the
+    // same time. Either way it shows on your OTHER arm as a mesh attachment
+    // and a status chip in the top-left HUD strip (the engine's own
+    // headerChips option), while it soaks a fraction of incoming player
+    // damage using Bloxd's own numeric shield resource.
     //
     // Scope: blocks player-vs-player hits and NPC attacks. It does not reduce
     // real-mob damage (never hooked to onMobDamagingPlayer) or crystal blasts
@@ -208,12 +227,6 @@ const CONFIG = {
         item: "Brown Paintball Explosive Item",   // a real Bloxd item, held as the visual base
         name: "Bulwark",
         durability: 500,
-
-        // Slot 0 of the inventory grid, reserved by convention as the
-        // "off-hand" - Bloxd has no such slot natively, so this is purely a
-        // rule this script enforces: whatever sits here is checked every
-        // tick and protects you automatically, main-hand item untouched.
-        offhandSlotIndex: 0,
 
         raiseShieldAmount: 30,     // tops shield up to at least this when raised
         maxShieldOption: 60,       // raises the client's shield ceiling so it can show
@@ -571,7 +584,8 @@ const CONFIG = {
     },
 
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "repair", "smphelp", "where", "anon", "orbs", "npcs"],
+        publicCommands: ["hp", "hearts", "withdraw", "repair", "offhand", "smphelp", "where",
+            "anon", "orbs", "npcs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -1422,14 +1436,96 @@ function useWindChargeItem(playerId, slot) {
 }
 
 // -----------------------------------------------------------------------------
-// Shield (Bulwark)
+// Off-hand
 // -----------------------------------------------------------------------------
 
 /** Reads the fixed "off-hand" slot - a script convention, not a native engine slot. */
 function offhandSlot(playerId) {
-    const item = api.getItemSlot(playerId, CONFIG.shield.offhandSlotIndex);
-    return item ? { index: CONFIG.shield.offhandSlotIndex, item: item } : null;
+    const item = api.getItemSlot(playerId, CONFIG.offhand.slotIndex);
+    return item ? { index: CONFIG.offhand.slotIndex, item: item } : null;
 }
+
+/** Writes a whole item into a slot, or clears it when there is nothing to write. */
+function putSlot(playerId, index, item) {
+    if (!item) {
+        api.setItemSlot(playerId, index, "Air", null, undefined, true);
+        return;
+    }
+    api.setItemSlot(playerId, index, item.name, item.amount, item.attributes, true);
+}
+
+/**
+ * Swaps what you are holding with what is in the off-hand slot, both ways:
+ * a held item goes off-hand and whatever was there lands in your hand, and an
+ * empty hand simply pulls the off-hand item back out.
+ *
+ * Because the off-hand is a real inventory slot this is a straight two-slot
+ * swap - nothing is ever parked in a variable that a rejoin or a restart
+ * could lose, and there is no "inventory full" case to fail on.
+ */
+function swapOffhand(playerId) {
+    const c = CONFIG.offhand;
+    const selected = api.getSelectedInventorySlotI(playerId);
+    if (selected === c.slotIndex) {
+        tell(playerId, "That slot is your off-hand already.", "#ffa502");
+        return false;
+    }
+
+    const held = api.getItemSlot(playerId, selected);
+    const stored = api.getItemSlot(playerId, c.slotIndex);
+    if (!held && !stored) {
+        return false;   // empty hand, empty off-hand: nothing to do
+    }
+
+    putSlot(playerId, c.slotIndex, held);
+    putSlot(playerId, selected, stored);
+
+    if (held) {
+        tell(playerId, "Off-hand: " + displayName(held)
+            + (stored ? " (returned " + displayName(stored) + ")" : ""), c.colour);
+    } else {
+        tell(playerId, "Took " + displayName(stored) + " out of your off-hand.", c.colour);
+    }
+    offhandSwapEffects(playerId);
+    return true;
+}
+
+/** The glint puff and swoosh that sell the swap. */
+function offhandSwapEffects(playerId) {
+    const c = CONFIG.offhand;
+    if (c.swapSound) {
+        api.playSound(playerId, c.swapSound, 0.6, 1.2);
+    }
+    if (!c.particles) {
+        return;
+    }
+    const pos = api.getPosition(playerId);
+    if (!pos) {
+        return;
+    }
+    api.playParticleEffect({
+        pos1: [pos[0] - 0.5, pos[1] + 0.5, pos[2] - 0.5],
+        pos2: [pos[0] + 0.5, pos[1] + 1.5, pos[2] + 0.5],
+        dir1: [-0.5, 0.1, -0.5],
+        dir2: [0.5, 1.5, 0.5],
+        texture: "glint",
+        minLifeTime: 0.4,
+        maxLifeTime: 0.9,
+        minEmitPower: 1,
+        maxEmitPower: 3,
+        minSize: 0.2,
+        maxSize: 0.5,
+        manualEmitCount: 12,
+        gravity: [0, -6, 0],
+        colorGradients: [
+            { timeFraction: 0, minColor: [200, 200, 255, 1], maxColor: [255, 255, 255, 1] },
+        ],
+    }, playerId);
+}
+
+// -----------------------------------------------------------------------------
+// Shield (Bulwark)
+// -----------------------------------------------------------------------------
 
 /** Shows the shield on the off arm and the HUD chip, topping up the numeric shield. */
 function shieldVisualsOn(playerId) {
@@ -1477,14 +1573,42 @@ function toggleShield(playerId) {
 }
 
 /**
- * Checked every tick: a Bulwark parked in the off-hand slot protects its
- * owner automatically, with no need to hold or click it. The visuals only
- * come down once neither this nor the hand-raised shield is active.
+ * Checked every tick, for every player: whatever sits in the off-hand slot
+ * gets a status effect icon, and a Bulwark parked there also protects its
+ * owner automatically, with no need to hold or click it - so a sword in your
+ * main hand and a shield off-hand work at the same time. The shield visuals
+ * only come down once neither this nor the hand-raised shield is active.
+ *
+ * Syncing from the slot itself (rather than only on swap) means dragging an
+ * item in or out in the inventory screen works just as well as /offhand does.
  */
-function syncOffhandShield(playerId) {
+function syncOffhand(playerId) {
     const state = stateOf(playerId);
     const slot = offhandSlot(playerId);
-    const valid = !!(slot && customAttrs(slot.item)[ATTR_SHIELD]);
+    const item = slot ? slot.item : null;
+
+    if (CONFIG.offhand.effectIcon) {
+        const carried = item ? item.name : null;
+        if (state.offhandIcon !== carried) {
+            if (state.offhandIcon) {
+                api.removeEffect(playerId, state.offhandIcon);
+            }
+            if (carried) {
+                // A custom effect whose icon is the item itself - the closest
+                // the HUD gets to showing something in a second hand.
+                api.applyEffect(playerId, carried, null, {
+                    icon: carried,
+                    displayName: "Off-hand: " + displayName(item),
+                });
+            }
+            state.offhandIcon = carried;
+        }
+    }
+
+    if (!CONFIG.shield.enabled) {
+        return;
+    }
+    const valid = !!(item && customAttrs(item)[ATTR_SHIELD]);
 
     if (valid && !state.offhandShieldOn) {
         state.offhandShieldOn = true;
@@ -2751,16 +2875,18 @@ function tick() {
 
         // A shield left raised with nothing backing it (swapped away, died
         // and respawned) is lowered automatically - independent of whether
-        // dimensions are enabled, so it always runs. The passive off-hand
-        // shield is synced the same way, every tick, for every player.
-        if (CONFIG.shield.enabled) {
-            if (state.shieldRaised) {
-                const slot = heldSlot(playerId);
-                if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
-                    lowerShield(playerId);
-                }
+        // dimensions are enabled, so it always runs.
+        if (CONFIG.shield.enabled && state.shieldRaised) {
+            const slot = heldSlot(playerId);
+            if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
+                lowerShield(playerId);
             }
-            syncOffhandShield(playerId);
+        }
+
+        // The off-hand slot is re-read every tick, for every player, so
+        // dragging something in or out in the inventory screen counts too.
+        if (CONFIG.offhand.enabled) {
+            syncOffhand(playerId);
         }
 
         // Catches respawns, admin teleports and simply walking over a border.
@@ -2857,6 +2983,10 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
 function onPlayerAltAction(playerId) {
     const slot = heldSlot(playerId);
     if (!slot) {
+        // An empty hand pulls whatever is in the off-hand back out.
+        if (CONFIG.offhand.enabled) {
+            swapOffhand(playerId);
+        }
         return;
     }
     const custom = customAttrs(slot.item);
@@ -2873,6 +3003,10 @@ function onPlayerAltAction(playerId) {
         useWindChargeItem(playerId, slot);
     } else if (custom[ATTR_SHIELD]) {
         toggleShield(playerId);
+    } else if (CONFIG.offhand.enabled) {
+        // Anything with no other right-click use of its own goes off-hand.
+        // Items that DO have one (a shield included) still swap via /offhand.
+        swapOffhand(playerId);
     }
 }
 
@@ -2972,6 +3106,16 @@ function playerCommand(playerId, command) {
             repairHeldItem(playerId);
             return true;
 
+        case "offhand":
+            // Works on anything, including items whose right click is already
+            // spoken for - this is how a shield gets into the off-hand.
+            if (!CONFIG.offhand.enabled) {
+                tell(playerId, "The off-hand is switched off in this world.", "#ff4757");
+            } else if (!swapOffhand(playerId)) {
+                tell(playerId, "Hold something to put in your off-hand first.", "#ffa502");
+            }
+            return true;
+
         case "smphelp":
             tell(playerId,
                 "/hp - your hearts | /withdraw <hearts> - turn hearts into "
@@ -2980,9 +3124,12 @@ function playerCommand(playerId, command) {
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
                 + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
-                + "craft a " + CONFIG.shield.name + " - hold it and right click to raise it, "
-                + "or park it in inventory slot " + (CONFIG.shield.offhandSlotIndex + 1)
-                + " (top-left) to wear it as an off-hand, no clicking needed | "
+                + "craft a " + CONFIG.shield.name + " - hold it and /offhand to wear it in "
+                + "slot " + (CONFIG.offhand.slotIndex + 1) + " (top-left), so you can fight "
+                + "with a sword and stay guarded at the same time, or hold it and right click "
+                + "to raise it by hand | "
+                + "right click any other item to swap it into your off-hand, right click with "
+                + "an empty hand to take it back | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
