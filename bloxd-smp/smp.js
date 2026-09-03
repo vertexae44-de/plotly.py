@@ -202,7 +202,7 @@ const CONFIG = {
     // (explosions bypass it, same as most games).
     shield: {
         enabled: true,
-        item: "Iron Gauntlets",   // a real Bloxd item, worn as the visual base
+        item: "Brown Paintball Explosive Item",   // a real Bloxd item, held as the visual base
         name: "Bulwark",
         durability: 500,
 
@@ -216,7 +216,7 @@ const CONFIG = {
         hudChip: "\uD83D\uDEE1 Shield raised",
 
         recipe: [
-            { items: ["Iron Gauntlets"], amt: 1 },
+            { items: ["Brown Paintball Explosive Item"], amt: 1 },
             { items: ["Iron Fragment"], amt: 4 },
         ],
     },

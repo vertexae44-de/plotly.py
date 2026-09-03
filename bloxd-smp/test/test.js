@@ -282,7 +282,7 @@ check("repairing the mace still uses maceAttributes' durability",
     world.inv.a[0].attributes.customAttributes.smpDur);
 
 // ---------------------------------------------------------------------- shield
-check("shield is a real Bloxd item, not a fake one", C.shield.item === "Iron Gauntlets", C.shield.item);
+check("shield is a real Bloxd item, not a fake one", C.shield.item === "Brown Paintball Explosive Item", C.shield.item);
 check("shield is renamed", C.shield.name === "Bulwark", C.shield.name);
 check("shield is craftable", !!world.recipes.a[C.shield.item], Object.keys(world.recipes.a));
 check("crafted shields carry their tag",

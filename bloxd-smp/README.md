@@ -37,7 +37,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
 | **Repair Kit** ×2 | 4 Iron Fragment + 2 Stick |
-| **Bulwark shield** | 1 Iron Gauntlets + 4 Iron Fragment |
+| **Bulwark shield** | 1 Brown Paintball Explosive Item + 4 Iron Fragment |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
@@ -270,7 +270,7 @@ piece in the game, not only this mod's own gear — and keeps a mace or spear's 
 Bloxd has **no dedicated shield item and no true off-hand inventory slot** — there is only ever one
 selected hand. This rebuilds both from real primitives rather than faking them:
 
-- Craft a **Bulwark** from **1 Iron Gauntlets + 4 Iron Fragment**.
+- Craft a **Bulwark** from **1 Brown Paintball Explosive Item + 4 Iron Fragment**.
 - **Right-click to raise it.** While raised, it tops up your numeric shield (Bloxd's own
   `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
   `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
@@ -287,6 +287,14 @@ selected hand. This rebuilds both from real primitives rather than faking them:
 **Scope, stated plainly:** blocking covers player-vs-player hits and this mod's NPCs (both go
 through code this script controls). It does **not** reduce damage from real Bloxd mobs
 (`onMobDamagingPlayer` isn't hooked) or crystal blasts (explosions bypass it, as in most games).
+
+**Item-choice caveat:** the Bulwark is built on `Brown Paintball Explosive Item`, which Bloxd
+lists as one of its throwable items (its own default throw/impact behaviour exists client-side,
+outside this script's control). Raising/lowering only hooks the **right-click (alt-action)**, so
+normal use isn't affected — but if a player **left-clicks/attacks** while holding it, the engine's
+own throw behaviour could fire instead of a normal punch. If that turns out to be a problem in
+testing, swap `CONFIG.shield.item` for a plain non-throwable item (e.g. `Iron Gauntlets`) — the
+recipe and everything else keeps working unchanged.
 
 ## Deaths## Deaths — one message, one sound, every time
 
