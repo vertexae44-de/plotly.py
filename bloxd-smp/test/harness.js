@@ -68,5 +68,7 @@ const api = {
 const ctx = vm.createContext({ api, console, Math, Object, String, Number, parseInt, parseFloat, isNaN, JSON });
 vm.runInContext(src, ctx);
 const CONFIG = vm.runInContext("CONFIG", ctx);
+// `const` declarations do not land on the context object, so pull them out by name.
+const durabilityCache = vm.runInContext("durabilityCache", ctx);
 
-module.exports = { ctx, world, api, CONFIG };
+module.exports = { ctx, world, api, CONFIG, durabilityCache };

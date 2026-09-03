@@ -106,10 +106,13 @@ const CONFIG = {
     // Bloxd has no Golden Apple item, so these are Apples with custom tags.
     apples: {
         golden: {
-            name: "Golden Apple",
+            name: "Golden Apple",          // rename shown in-game
             heal: 40,
             shield: 20,
             regenMs: 10000,
+            // Bloxd's fire resistance is called "Heat Resistance" - there is no
+            // effect named "Fire Resistance".
+            heatResistMs: 15000,
             bonusMaxHp: 0,
             recipe: [
                 { items: ["Apple"], amt: 1 },
@@ -121,6 +124,7 @@ const CONFIG = {
             heal: 100,
             shield: 60,
             regenMs: 30000,
+            heatResistMs: 60000,
             bonusMaxHp: 10,          // permanently worth one heart
             recipe: [
                 { items: ["Apple"], amt: 1 },
@@ -131,19 +135,26 @@ const CONFIG = {
 
     durability: {
         enabled: true,
-        // Uses before an item breaks. Anything not listed never wears out.
-        maxUses: {
-            "Wood Sword": 60, "Stone Sword": 130, "Iron Sword": 250,
-            "Gold Sword": 90, "Diamond Sword": 1560, "Knight Sword": 2000,
-            "Wood Pickaxe": 60, "Stone Pickaxe": 130, "Iron Pickaxe": 250,
-            "Gold Pickaxe": 90, "Diamond Pickaxe": 1560, "Moonstone Pickaxe": 2400,
-            "Wood Axe": 60, "Stone Axe": 130, "Iron Axe": 250,
-            "Gold Axe": 90, "Diamond Axe": 1560,
-            "Wood Club": 60, "Stone Club": 130, "Iron Club": 250,
-            "Gold Club": 90, "Diamond Club": 1560, "Moonstone Club": 2400,
-            "Wood Spear": 60, "Stone Spear": 130, "Iron Spear": 250,
-            "Gold Spear": 90, "Diamond Spear": 1560,
+
+        // Durability is worked out from the item's name rather than a hand-written
+        // list, so every tool, weapon and bow in the game gets it automatically:
+        //     uses = materials[<material word>] * kinds[<last word>]
+        // "Moonstone Axe" -> 2400 * 1 -> 2400.  "Black Wood Bow" -> 60 * 1.2 -> 72.
+        materials: {
+            Wood: 60, Fur: 80, Gold: 90, Paint: 120, Stone: 130, Iron: 250,
+            Spiked: 400, Mining: 500, Artisan: 1200, Diamond: 1560,
+            Knight: 2000, Golem: 2200, Moonstone: 2400,
         },
+        kinds: {
+            Sword: 1, Dagger: 0.9, Club: 1, Spear: 1, Axe: 1, Pickaxe: 1,
+            Spade: 0.9, Shovel: 0.9, Hoe: 0.8, Bow: 1.2, Crossbow: 1.2, Shield: 1.5,
+            Helmet: 0.8, Chestplate: 1.3, Leggings: 1.2, Boots: 0.9, Gauntlets: 0.8,
+        },
+        // Gear whose name has a kind but no known material word.
+        defaultMaterialUses: 200,
+        // Exact names win over the rule above. Set one to 0 to make it unbreakable.
+        overrides: {},
+
         warnAtFraction: 0.1,
         costPerHit: 1,
         costPerBlockBroken: 1,
@@ -352,6 +363,12 @@ function appleAttributes(tier) {
         "Right click to eat.",
         "Heals " + hearts(apple.heal) + " hearts and gives " + apple.shield + " shield.",
     ];
+    if (apple.regenMs > 0) {
+        lines.push("Health Regen for " + Math.round(apple.regenMs / 1000) + "s.");
+    }
+    if (apple.heatResistMs > 0) {
+        lines.push("Fire resistance for " + Math.round(apple.heatResistMs / 1000) + "s.");
+    }
     if (apple.bonusMaxHp > 0) {
         lines.push("Permanently grants " + hearts(apple.bonusMaxHp) + " max hearts.");
     }
@@ -431,13 +448,50 @@ function registerRecipes(playerId) {
 // Durability
 // -----------------------------------------------------------------------------
 
+// Names never change during a session, so the derived numbers are worth caching.
+const durabilityCache = {};
+
+/**
+ * Works out how many uses an item name is worth from its material and kind,
+ * e.g. "Diamond Pickaxe" -> 1560. Returns 0 for anything that is not gear.
+ */
+function durabilityForName(itemName) {
+    if (durabilityCache[itemName] !== undefined) {
+        return durabilityCache[itemName];
+    }
+    const d = CONFIG.durability;
+    let uses;
+
+    if (typeof d.overrides[itemName] === "number") {
+        uses = d.overrides[itemName];
+    } else {
+        const words = String(itemName).split(" ");
+        const kind = d.kinds[words[words.length - 1]];
+        if (kind == null) {
+            uses = 0;   // not a tool, weapon or piece of armour
+        } else {
+            // Match on whole words so "Moonstone" is never read as "Stone".
+            let base = 0;
+            for (let i = 0; i < words.length - 1; i++) {
+                if (typeof d.materials[words[i]] === "number") {
+                    base = d.materials[words[i]];
+                    break;
+                }
+            }
+            uses = Math.round((base || d.defaultMaterialUses) * kind);
+        }
+    }
+
+    durabilityCache[itemName] = uses;
+    return uses;
+}
+
 function maxDurabilityFor(item) {
     const custom = customAttrs(item);
     if (typeof custom[ATTR_DUR_MAX] === "number") {
         return custom[ATTR_DUR_MAX];
     }
-    const configured = CONFIG.durability.maxUses[item.name];
-    return typeof configured === "number" ? configured : 0;
+    return durabilityForName(item.name);
 }
 
 /**
@@ -575,6 +629,9 @@ function eatApple(playerId, slot, tier) {
     }
     if (apple.regenMs > 0) {
         api.applyEffect(playerId, "Health Regen", apple.regenMs);
+    }
+    if (apple.heatResistMs > 0) {
+        api.applyEffect(playerId, "Heat Resistance", apple.heatResistMs);
     }
 
     tell(playerId, "You ate a " + apple.name + ".", "#ffd700");

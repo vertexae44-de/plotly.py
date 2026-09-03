@@ -8,8 +8,8 @@
 | **Permanent ban at 0 hearts** | Lose your last heart and you are kicked and locked out of the world for good. |
 | **Windburst Mace** | A Moonstone Axe. Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
-| **Golden Apples** | Two tiers. Heal, shield, and regen; the enchanted one permanently adds a heart. |
-| **Durability** | Bloxd has none natively, so this adds it to every tool and weapon. |
+| **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
+| **Durability** | Bloxd has none natively. This gives **every** tool, weapon, bow and armour piece a durability worked out from its name. |
 | **Crafting** | The mace, the spear and both apples all have real recipes. |
 
 ## Install
@@ -43,6 +43,45 @@ Life Orbs are not craftable on purpose — they only come from deaths and `/with
 
 Set `mace.windBurstLevel` or `mace.densityLevel` to `0` to turn either enchant off.
 
+## Golden Apples
+
+Bloxd has no Golden Apple item, so both are `Apple` with a custom name and tag.
+
+| | Golden Apple | Enchanted Golden Apple |
+| --- | --- | --- |
+| Heals | 4 hearts | 10 hearts |
+| Shield | +20 | +60 |
+| Health Regen | 10 s | 30 s |
+| Fire resistance | 15 s | 60 s |
+| Permanent hearts | — | +1 |
+
+Bloxd calls fire resistance **`Heat Resistance`** — there is no effect named "Fire Resistance", so
+that is the one the script applies. Rename either apple with `apples.golden.name` /
+`apples.enchanted.name`, and change any duration by setting `regenMs` or `heatResistMs`
+(0 turns that effect off).
+
+## Durability on everything
+
+Rather than a hand-written list, durability is derived from the item's own name:
+
+```
+uses = materials[<material word>] * kinds[<last word>]
+```
+
+So `Moonstone Axe` is `2400 × 1`, `Iron Chestplate` is `250 × 1.3`, `Black Wood Bow` is `60 × 1.2`.
+Every sword, dagger, club, spear, axe, pickaxe, spade, hoe, bow, crossbow, shield and armour piece
+in the game is covered, including ones added later — no table to keep updating. Anything that is not
+gear (blocks, food, materials) never wears out.
+
+- Add or retune a tier in `durability.materials`, or a category in `durability.kinds`.
+- `durability.overrides` takes exact item names and wins over the rule. **Set one to `0` to make
+  that item unbreakable.**
+- Gear with an unrecognised material word falls back to `durability.defaultMaterialUses` (200).
+
+Wear is spent on **hits and blocks broken**, so it applies to what you are holding. Armour gets a
+durability value and shows it in the tooltip, but does not tick down when you take a hit — Bloxd's
+API does not expose the armour slots, so there is nothing to hook.
+
 ## Bans
 
 Reaching 0 hearts is permanent. The ban is stored on the world keyed by the player's **account id**,
@@ -72,8 +111,9 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 - `death.hpLostToPlayer` — what a PvP death costs. `death.hpLostToWorld` is 0, so fall damage is free.
 - `death.killerAlsoGains` — above 0 gives the killer instant lifesteal *on top of* the orbs.
 - `mace.*` / `spear.*` — smash thresholds, enchant levels, lunge force, cooldowns, recipes.
-- `apples.golden` / `apples.enchanted` — heal, shield, regen duration, permanent hearts, recipes.
-- `durability.maxUses` — the per-item table. Unlisted items never wear out; set
+- `apples.golden` / `apples.enchanted` — name, heal, shield, regen and fire-resistance durations,
+  permanent hearts, recipes.
+- `durability.materials` / `kinds` / `overrides` — see **Durability on everything** above. Set
   `durability.enabled: false` to switch the whole system off.
 
 ## Implementation notes
@@ -85,7 +125,8 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 - Recipes carry those tags in the recipe's own `attributes` field, which is how a crafted item comes
   out custom.
 - Durability lives in each item's `customAttributes` and is rewritten into the slot on every use,
-  because the engine has no durability concept to hook into.
+  because the engine has no durability concept to hook into. The per-name lookup is cached, and
+  matches on whole words so `Moonstone` is never read as `Stone`.
 - Fall distance is tracked in `tick()` by accumulating descent and resetting on any non-fall.
 - Bans are stored as JSON in the lobby db. A corrupt value is treated as "nobody is banned" rather
   than locking the whole world out.
@@ -98,6 +139,6 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-61 assertions covering hearts, orbs, both apples, smash damage against players and mobs, Density and
-Wind Burst, the spear lunge, durability and breakage, crafting registration, elimination and unban,
-and every command.
+74 assertions covering hearts, orbs, both apples (heal, shield, regen, fire resistance), smash damage
+against players and mobs, Density and Wind Burst, the spear lunge, durability derivation and
+breakage, crafting registration, elimination and unban, and every command.

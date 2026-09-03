@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -56,6 +56,9 @@ ctx.onPlayerAltAction("a");
 check("golden apple heals", world.health.a === 60, world.health.a);
 check("golden apple gives shield", world.shield.a === C.apples.golden.shield, world.shield.a);
 check("golden apple applies regen", world.effects.some(e => e.name === "Health Regen"), "");
+check("golden apple applies fire resistance",
+    world.effects.some(e => e.name === "Heat Resistance" && e.ms === C.apples.golden.heatResistMs),
+    JSON.stringify(world.effects));
 check("golden apple consumed one", world.inv.a[0].amount === 2, "");
 check("golden apple does not raise max hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
 
@@ -65,6 +68,13 @@ ctx.onPlayerAltAction("a");
 check("enchanted apple raises max hp", world.db.a.smpMaxHp === 110, world.db.a.smpMaxHp);
 check("enchanted apple heals to cap", world.health.a === 110, world.health.a);
 check("enchanted apple clears slot", world.inv.a[0] === null, "");
+check("enchanted apple gives longer fire resistance",
+    world.effects.some(e => e.name === "Heat Resistance" && e.ms === C.apples.enchanted.heatResistMs),
+    JSON.stringify(world.effects));
+check("apple tooltip mentions both effects", (() => {
+    const desc = ctx.appleAttributes("enchanted").customDescription;
+    return /Health Regen/.test(desc) && /[Ff]ire resistance/.test(desc);
+})(), ctx.appleAttributes("enchanted").customDescription);
 
 // a plain apple is not edible as a gapple
 world.health.a = 50;
@@ -145,6 +155,36 @@ check("placing costs no durability", world.inv.a[0].attributes.customAttributes.
 world.inv.a = [{ name: "Dirt", amount: 10, attributes: undefined }];
 ctx.onPlayerChangeBlock("a", 0, 0, 0, "Stone", "Air");
 check("untracked item unaffected", world.inv.a[0].name === "Dirt" && world.inv.a[0].amount === 10, "");
+
+// ------------------------------------------------- durability derived from name
+const durOf = n => ctx.durabilityForName(n);
+check("diamond pickaxe uses material table", durOf("Diamond Pickaxe") === 1560, durOf("Diamond Pickaxe"));
+check("moonstone is not read as stone", durOf("Moonstone Axe") === 2400, durOf("Moonstone Axe"));
+check("stone tools still work", durOf("Stone Sword") === 130, durOf("Stone Sword"));
+check("kind multiplier applies to armour",
+    durOf("Iron Chestplate") === Math.round(250 * 1.3), durOf("Iron Chestplate"));
+check("coloured wood gear gets wood tier",
+    durOf("Black Wood Bow") === Math.round(60 * 1.2), durOf("Black Wood Bow"));
+check("unknown material falls back to default",
+    durOf("Draugr Sword") === C.durability.defaultMaterialUses, durOf("Draugr Sword"));
+check("non-gear has no durability", durOf("Dirt") === 0 && durOf("Apple") === 0, "");
+check("gold hang glider is not gear", durOf("Gold Hang Glider") === 0, durOf("Gold Hang Glider"));
+
+// an item that was never in the old hardcoded list now wears out
+world.inv.a = [{ name: "Diamond Dagger", amount: null, attributes: undefined }];
+ctx.onPlayerChangeBlock("a", 0, 0, 0, "Stone", "Air");
+check("previously untracked weapon now wears",
+    world.inv.a[0].attributes.customAttributes.smpDur === Math.round(1560 * 0.9) - 1,
+    JSON.stringify(world.inv.a[0].attributes.customAttributes));
+
+// overrides win, and 0 means unbreakable
+C.durability.overrides["Iron Sword"] = 0;
+delete durabilityCache["Iron Sword"];
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+ctx.onPlayerDamagingOtherPlayer("a", "b", 10);
+check("override of 0 makes an item unbreakable", world.inv.a[0].attributes === undefined, "");
+delete C.durability.overrides["Iron Sword"];
+delete durabilityCache["Iron Sword"];
 
 // ---------------------------------------------------------- permanent ban at 0
 world.drops.length = 0;
