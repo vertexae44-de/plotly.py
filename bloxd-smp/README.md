@@ -4,17 +4,19 @@
 
 | Feature | What it does |
 | --- | --- |
-| **Life Orbs** | A player kill costs the victim a heart and drops it as an **Aura XP Orb**. Right-click to absorb it — **once per player, ever**. |
+| **Hearts** | A player kill costs the victim a heart and drops it as a **Heart** (an Aura XP Orb). Right-click to eat it — **1 Heart = 1 heart, no limit**. |
 | **Exile to the Void at 0 hearts** | Lose your last heart and you are stranded in a fourth dimension until you mine 3 Orbs of Resurrection. |
 | **Moonstone Mace** | Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. Expensive to craft. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
+| **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your nametag and your name in chat. |
+| **Death announcements** | One clean message and a server-wide toll for every death — no double kill messages. |
 | **NPCs** | Player-model people with trades — they chop, mine, build their own huts, talk, fight back and flee. |
 
 ## Install
@@ -31,6 +33,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | --- | --- |
 | **Moonstone Mace** | **40 Moonstone + 4 Knight Heart + 2 Stick** |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
+| **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
@@ -38,15 +41,16 @@ Recipes are registered per player on join, so they show up in the normal craftin
 
 Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
 
-## Life Orbs — one per player
+## Hearts
 
-Orbs are **Aura XP Orbs**, so they read as XP on the ground. Each is worth exactly one heart.
+A death drops a **Heart** (item name `Aura XP Orb` under the hood — Bloxd has no dedicated heart
+item). Right-click one to eat it: **1 Heart = 1 heart, always, with no lifetime cap.** That's the
+whole trade a lifesteal SMP runs on — win a fight, eat the proof, get stronger. `/withdraw 2` turns
+your own hearts back into Hearts to give or trade away.
 
-The catch: `orb.usesPerPlayer` is **1**. A player may absorb one orb in their entire life on the
-world, so nobody can farm kills up to the 20-heart cap. Beyond that limit the orb is *not* consumed —
-it stays in the inventory so it can still be traded to someone who has a use left. `/hp` shows how
-many uses you have left. Set `orb.usesPerPlayer: 0` for no limit at all, or a higher number to allow
-a few.
+The old lifetime cap (`orb.usesPerPlayer`) is still in the code and still tested — set it back to
+`1` (or any number) if you ever want to reintroduce a limit — but the shipped default is `0`,
+unlimited.
 
 ## The mace
 
@@ -236,6 +240,45 @@ it. A refused spot is skipped rather than retried forever. Being attacked stops 
 default — turning it on makes NPC hunting an alternative source of hearts, which weakens the PvP
 economy.
 
+## Wind Charge
+
+A standalone item — not the mace's own mid-air ability, a separate thing anyone can carry. Bloxd has
+no Wind Charge item, so this is a tagged **Iron Fragment**.
+
+- Craft it from **1 Mango + 1 Iron Fragment**, four charges per craft.
+- Right-click to launch yourself up and slightly forward. Consumed on use, own 2s cooldown.
+- Doesn't touch the mace's own wind-charge-in-midair ability — both work independently, and
+  hitting one's cooldown never affects the other.
+
+## Deaths — one message, one sound, every time
+
+Bloxd's native killfeed panel prints an automatic entry for every kill with **no way to relabel or
+suppress just that entry**. Leaving it on next to a custom message is exactly what caused a kill to
+show twice. The fix: the panel is switched off for everyone from the moment they join, permanently —
+not just while someone is anonymous — and this script's own message is the only one anyone ever sees.
+
+Every death, anywhere in the world, produces **exactly one broadcast and exactly one toll**, from a
+single call site:
+
+```
+☠ Alice slew Bob with Moonstone Mace.
+☠ Bob ran out of hearts — exiled to the Void.
+☠ Otto died.
+```
+
+- **A kill names the weapon** — the last item the killer was holding when they landed a hit is
+  remembered for this, since the game doesn't tell world code what killed someone.
+- **An elimination merges into the same line** rather than sending a second message — you get the
+  kill and the outcome together, once.
+- **Even a free fall/lava death gets its one message and its toll** — it just says "died." with no
+  killer, since those don't cost hearts by default.
+- **Dying again while already exiled in the Void raises nothing** — you can't really die twice.
+- **Anonymity still swaps the name** inside that one message, same as before.
+
+The toll (`deathSound`) uses `maxHearDist: 1000000` — far past any real distance in the world,
+including the 30000-block dimension offsets — so it is heard by every player, anywhere, every time.
+Set `killFeed.enabled: false` or `deathSound.enabled: false` to turn either half off independently.
+
 ## Bans
 
 Reaching 0 hearts is permanent. The ban is stored on the world keyed by the player's **account id**,
@@ -254,7 +297,7 @@ instead of eliminations.
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
 | `/npcs` | everyone | Who is alive, their skin, personality and health |
-| `/give mace\|spear\|gapple\|egapple\|orb\|netherportal\|endportal` | admins | Spawn any custom item |
+| `/give mace\|spear\|windcharge\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
@@ -299,7 +342,7 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-214 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+237 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
 blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
@@ -307,7 +350,9 @@ Void platform and orb rarity, the durability bar, anonymity in chat, on nametags
 mobs, walking a step at a time, greeting, retaliating in range and on cooldown, fleeing, dying and
 coming back as the same person, finding and chopping timber from the top of a
 trunk down, refusing to reach outside their patch, building a hut with the right material and
-skipping protected spots, both apples (heal, shield, regen, fire
+skipping protected spots, the Wind Charge item's own cooldown and consumption, that it never
+interferes with the mace's own charge, and that every death sends exactly one message and one toll
+however it happened, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

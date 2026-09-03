@@ -3,10 +3,11 @@
 //
 //  Paste this whole file into World Settings -> Code -> World Code.
 //
-//  Life Orbs        a player kill drops Aura XP Orbs. One per player, ever
+//  Hearts           a player kill drops Hearts. Eat one, gain one heart, no limit
 //  The Void         hit 0 hearts and you are exiled until you find 3 orbs
 //  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
 //  Moonstone Spear  right click to lunge, hit hard while lunging
+//  Wind Charge      craft from Mango + Iron Fragment, right click to launch
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
@@ -57,15 +58,41 @@ const CONFIG = {
         killerAlsoGains: 0,   // instant HP for the killer, on top of the orbs
     },
 
+    // ---- Death announcements -------------------------------------------------
+    // The engine's own killfeed panel prints an automatic entry for every kill
+    // with no way to relabel or suppress just that entry, so leaving it on next
+    // to our own message is what caused a kill to show twice. The fix is to
+    // switch the panel off for everyone and let this be the only kill or death
+    // message anyone ever sees - exactly one call site, exactly once per death.
+    killFeed: {
+        enabled: true,
+        disableNativePanel: true,
+        icon: "\u2620",              // a skull, so a death reads as a death
+        playerColour: "#ff6b6b",
+        worldColour: "#9aa0a6",
+    },
+
+    // A death is heard everywhere, not just nearby - so a fight on the far
+    // side of the world still tells everyone something happened.
+    deathSound: {
+        enabled: true,
+        sound: "ominousBellHit",
+        volume: 1,
+        rate: 0.6,
+        // Bigger than any distance in the world, including the 30000-block
+        // dimension offsets, so it reaches every player no matter where they are.
+        maxHearDist: 1000000,
+    },
+
     orb: {
         item: "Aura XP Orb",
-        name: "Life Orb",
-        hp: 10,                     // one heart per orb
-        despawnMs: 5 * 60 * 1000,   // 5 min is the engine maximum
+        name: "Heart",               // eat one, gain one heart - no catch
+        hp: 10,                      // one heart per orb
+        despawnMs: 5 * 60 * 1000,    // 5 min is the engine maximum
         healOnEat: true,
-        // How many orbs a player may ever absorb. 1 stops people farming their
-        // way to the health cap; set to 0 for no limit.
-        usesPerPlayer: 1,
+        // How many a player may ever absorb. 0 = no limit, so kills genuinely
+        // pay out - this is the whole point of a lifesteal SMP.
+        usesPerPlayer: 0,
     },
 
     // ---- Windburst Mace -----------------------------------------------------
@@ -121,6 +148,24 @@ const CONFIG = {
             { items: ["Moonstone"], amt: 4 },
             { items: ["Stick"], amt: 2 },
         ],
+    },
+
+    // ---- Wind Charge ----------------------------------------------------------
+    // A standalone throwable-style launch, separate from the mace's own wind
+    // charge - anyone can carry a stack of these, not just whoever is holding
+    // the mace. Bloxd has no Wind Charge item, so this is a tagged Iron Fragment.
+    windCharge: {
+        enabled: true,
+        item: "Iron Fragment",   // a real Bloxd item; looks the part
+        name: "Wind Charge",
+        upwardImpulse: 9,
+        forwardImpulse: 4,       // a small push the way you are facing too
+        cooldownMs: 2000,
+        recipe: [
+            { items: ["Mango"], amt: 1 },
+            { items: ["Iron Fragment"], amt: 1 },
+        ],
+        produces: 4,
     },
 
     // ---- Golden Apples ------------------------------------------------------
@@ -354,10 +399,8 @@ const CONFIG = {
         displayName: "Anonymous",
         hideNameTag: true,
         hideInChat: true,
-        // The engine's own killfeed prints real names and cannot be rewritten.
-        // So while anyone is anonymous the killfeed is switched off for everyone
-        // and kills are announced in chat instead, where names can be swapped.
-        hideKillfeed: true,
+        // The native killfeed panel is handled globally by killFeed.* below, not
+        // per-anon here - see the death announcements section.
         colour: "#9aa0a6",
     },
 
@@ -480,6 +523,7 @@ const DB_ANON = "smpAnon";
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
 const ATTR_SPEAR = "smpSpear";
+const ATTR_WINDCHARGE = "smpWindCharge";
 const ATTR_APPLE = "smpApple";
 const ATTR_DUR = "smpDur";
 const ATTR_DUR_MAX = "smpDurMax";
@@ -555,10 +599,7 @@ function banPlayer(playerId, reason) {
     const bans = readBans();
     bans[api.getPlayerDbId(playerId)] = name;
     writeBans(bans);
-
-    if (CONFIG.ban.announce) {
-        api.broadcastMessage(name + " hit 0 hearts and is eliminated.", { color: "#ff4757" });
-    }
+    // The elimination is already covered by announceDeath - no second message here.
     api.kickPlayer(playerId, reason);
 }
 
@@ -666,6 +707,15 @@ function spearAttributes(durabilityLeft) {
             "Hits during a lunge deal +" + CONFIG.spear.lungeBonusDamage + " damage.\n" +
             durabilityBar(left, max),
         customAttributes: { [ATTR_SPEAR]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function windChargeAttributes() {
+    const wc = CONFIG.windCharge;
+    return {
+        customDisplayName: wc.name,
+        customDescription: "Right click to launch yourself. Consumed on use.",
+        customAttributes: { [ATTR_WINDCHARGE]: true },
     };
 }
 
@@ -785,6 +835,14 @@ function registerRecipes(playerId) {
         api.editItemCraftingRecipes(playerId, CONFIG.crystal.block, [{
             requires: CONFIG.crystal.recipe,
             produces: 1,
+        }]);
+    }
+
+    if (CONFIG.windCharge.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.windCharge.item, [{
+            requires: CONFIG.windCharge.recipe,
+            produces: CONFIG.windCharge.produces,
+            attributes: windChargeAttributes(),
         }]);
     }
 
@@ -954,9 +1012,9 @@ function eatOrb(playerId, slot) {
 
     if (orbUsesLeft(playerId) <= 0) {
         // The orb is left in the inventory so it can still be traded away.
-        api.queueCrosshairText(playerId, "You have already absorbed your Life Orb", 2000);
-        tell(playerId, "You can only absorb " + CONFIG.orb.usesPerPlayer
-            + " Life Orb ever. Trade this one to someone else.", "#ffa502");
+        api.queueCrosshairText(playerId, "You have already absorbed your " + CONFIG.orb.name, 2000);
+        tell(playerId, "You can only absorb " + CONFIG.orb.usesPerPlayer + " " + CONFIG.orb.name
+            + " ever. Trade this one to someone else.", "#ffa502");
         api.playSound(playerId, "hit1", 0.5, 0.7);
         return;
     }
@@ -1171,6 +1229,46 @@ function spearLunge(playerId, slot) {
 
 function isLunging(playerId) {
     return api.now() - stateOf(playerId).lastLunge <= CONFIG.spear.lungeWindowMs;
+}
+
+// -----------------------------------------------------------------------------
+// Wind Charge (the standalone item, not the mace's built-in ability)
+// -----------------------------------------------------------------------------
+
+/** Consumes one Wind Charge to launch the player up and slightly forward. */
+function useWindChargeItem(playerId, slot) {
+    const wc = CONFIG.windCharge;
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = wc.cooldownMs - (now - (state.lastWindCharge || 0));
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Wind Charge: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+    state.lastWindCharge = now;
+
+    const facing = api.getPlayerFacingInfo(playerId);
+    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
+    const length = Math.max(0.001, Math.sqrt(dir[0] * dir[0] + dir[2] * dir[2]));
+
+    api.applyImpulse(
+        playerId,
+        (dir[0] / length) * wc.forwardImpulse,
+        wc.upwardImpulse,
+        (dir[2] / length) * wc.forwardImpulse
+    );
+    api.preventFallDamageNextGrounding(playerId);
+
+    const amount = slot.item.amount == null ? 1 : slot.item.amount;
+    writeSlot(playerId, slot.index, slot.item, amount - 1, slot.item.attributes);
+
+    const pos = api.getPosition(playerId);
+    api.broadcastSound("magicAccent4", 0.8, 1.3, { playerIdOrPos: pos, maxHearDist: 25 });
+    api.playParticleEffect({
+        presetId: "stomp",
+        pos1: [pos[0] - 1, pos[1], pos[2] - 1],
+        pos2: [pos[0] + 1, pos[1] + 0.5, pos[2] + 1],
+    });
 }
 
 // -----------------------------------------------------------------------------
@@ -1940,8 +2038,8 @@ function npcKilled(entityId, byPlayer) {
     despawnNpc(npc);
     npc.deadUntil = api.now() + CONFIG.npcs.respawnDelayMs;
 
-    api.broadcastMessage(npc.name + " was killed by " + displayNameOf(byPlayer),
-        { color: CONFIG.npcs.chatColour });
+    api.broadcastMessage(CONFIG.killFeed.icon + " " + npc.name + " was killed by "
+        + displayNameOf(byPlayer), { color: CONFIG.npcs.chatColour });
 
     if (CONFIG.npcs.dropsLifeOrb && where) {
         api.createItemDrop(where[0], where[1] + 1, where[2], CONFIG.orb.item, 1,
@@ -1965,11 +2063,7 @@ function exileToVoid(playerId) {
     travelTo(playerId, "void");
     tell(playerId, b.voidReason, "#b39ddb");
     api.sendFlyingMiddleMessage(playerId, "Exiled to the Void", 0, 3000);
-
-    if (b.announce) {
-        api.broadcastMessage(displayNameOf(playerId) + " ran out of hearts and fell into the Void.",
-            { color: "#b39ddb" });
-    }
+    // The elimination is already covered by announceDeath - no second message here.
 }
 
 /**
@@ -2029,40 +2123,47 @@ function displayNameOf(playerId) {
     return api.getEntityName(playerId);
 }
 
-function anyoneAnonymous() {
-    const ids = api.getPlayerIds();
-    for (let i = 0; i < ids.length; i++) {
-        if (isAnon(ids[i])) {
-            return true;
-        }
-    }
-    return false;
+function eliminationClause() {
+    return CONFIG.ban.mode === "void" ? " \u2014 exiled to the Void." : " \u2014 eliminated.";
 }
 
 /**
- * The engine's killfeed prints real names and offers no way to rewrite them, so
- * while anyone is anonymous it is switched off for everybody and kills are
- * announced in chat instead - where the name is ours to choose.
+ * The one and only place a death is announced, called exactly once per death
+ * regardless of whether it costs hearts. Everything that used to announce a
+ * kill, a ban or an exile separately now feeds through here instead, which is
+ * what stops the same death producing two messages.
  */
-function refreshKillfeed() {
-    if (!CONFIG.anonymous.enabled || !CONFIG.anonymous.hideKillfeed) {
+function announceDeath(victim, killer, eliminated) {
+    const kf = CONFIG.killFeed;
+    if (!kf.enabled) {
         return;
     }
-    const hide = anyoneAnonymous();
-    const ids = api.getPlayerIds();
-    for (let i = 0; i < ids.length; i++) {
-        if (hide) {
-            api.setClientOption(ids[i], "showKillfeed", false);
-        } else {
-            api.setClientOptionToDefault(ids[i], "showKillfeed");
-        }
+
+    let text;
+    let colour;
+    if (killer) {
+        const weapon = stateOf(killer).lastWeapon;
+        text = kf.icon + " " + displayNameOf(killer) + " slew " + displayNameOf(victim)
+            + (weapon ? " with " + weapon : "")
+            + (eliminated ? eliminationClause() : ".");
+        colour = kf.playerColour;
+    } else {
+        text = kf.icon + " " + displayNameOf(victim)
+            + (eliminated ? " ran out of hearts" + eliminationClause() : " died.");
+        colour = kf.worldColour;
+    }
+    api.broadcastMessage(text, { color: colour });
+
+    if (CONFIG.deathSound.enabled) {
+        const pos = api.getPosition(victim) || [0, 64, 0];
+        api.broadcastSound(CONFIG.deathSound.sound, CONFIG.deathSound.volume, CONFIG.deathSound.rate,
+            { playerIdOrPos: pos, maxHearDist: CONFIG.deathSound.maxHearDist });
     }
 }
 
 function setAnon(playerId, anon) {
     api.setPlayerDbValue(playerId, DB_ANON, anon ? 1 : 0);
     applyAnonNameTag(playerId, anon);
-    refreshKillfeed();
     tell(playerId, anon
         ? "You are now " + CONFIG.anonymous.displayName + ". Type "
             + CONFIG.anonymous.chatCommand + " again to reveal yourself."
@@ -2313,11 +2414,14 @@ function onPlayerJoin(playerId) {
         enterDimension(playerId, key, false);
     }
 
-    if (CONFIG.anonymous.enabled) {
-        if (isAnon(playerId)) {
-            applyAnonNameTag(playerId, true);
-        }
-        refreshKillfeed();
+    if (CONFIG.anonymous.enabled && isAnon(playerId)) {
+        applyAnonNameTag(playerId, true);
+    }
+
+    // The native killfeed panel is switched off for good, not just during
+    // anonymity - announceDeath is the only kill/death message anyone sees.
+    if (CONFIG.killFeed.enabled && CONFIG.killFeed.disableNativePanel) {
+        api.setClientOption(playerId, "showKillfeed", false);
     }
 
     const hp = getMaxHp(playerId);
@@ -2327,10 +2431,6 @@ function onPlayerJoin(playerId) {
 
 function onPlayerLeave(playerId) {
     delete players[playerId];
-    // Their anonymity left with them, so the killfeed may be safe to restore.
-    if (CONFIG.anonymous.enabled) {
-        refreshKillfeed();
-    }
 }
 
 function tick() {
@@ -2387,20 +2487,27 @@ function onBlockStandStart(playerId, x, y, z, blockName) {
 function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
     const byPlayer = isPlayer(attackingLifeform) && attackingLifeform !== killedPlayer;
     const loss = byPlayer ? CONFIG.death.hpLostToPlayer : CONFIG.death.hpLostToWorld;
-    if (loss <= 0) {
-        return;
-    }
 
-    const before = getMaxHp(killedPlayer);
-    const shouldDrop = CONFIG.death.dropOrbs && (byPlayer || CONFIG.death.dropOrbsOnWorldDeath);
-
-    // Dying in the Void must not strand you deeper: exile is a state, not a loop.
+    // Dying in the Void must not strand you deeper: exile is a state, not a
+    // loop, and nothing worth announcing happens to someone already stranded.
     if (CONFIG.dimensions.enabled && inVoid(killedPlayer)) {
         return;
     }
 
-    // Elimination: running out of hearts.
-    if (CONFIG.ban.enabled && before - loss <= 0) {
+    const before = getMaxHp(killedPlayer);
+    const willEliminate = CONFIG.ban.enabled && loss > 0 && before - loss <= 0;
+
+    // Exactly one message and one sound for this death, whatever it costs -
+    // including a free fall or lava death, which never reached this point before.
+    announceDeath(killedPlayer, byPlayer ? attackingLifeform : null, willEliminate);
+
+    if (loss <= 0) {
+        return;
+    }
+
+    const shouldDrop = CONFIG.death.dropOrbs && (byPlayer || CONFIG.death.dropOrbsOnWorldDeath);
+
+    if (willEliminate) {
         if (shouldDrop) {
             dropOrbs(killedPlayer, before);
         }
@@ -2449,21 +2556,17 @@ function onPlayerAltAction(playerId) {
         windCharge(playerId, slot);
     } else if (custom[ATTR_SPEAR]) {
         spearLunge(playerId, slot);
+    } else if (custom[ATTR_WINDCHARGE]) {
+        useWindChargeItem(playerId, slot);
     }
 }
 
 function onPlayerDamagingOtherPlayer(attackingPlayer, damagedPlayer, damageDealt) {
+    // Remembered so announceDeath can name the weapon if this hit turns out
+    // to be the fatal one - onAttemptKillPlayer is not told what was used.
+    const slot = heldSlot(attackingPlayer);
+    stateOf(attackingPlayer).lastWeapon = slot ? displayName(slot.item) : null;
     return handleWeaponHit(attackingPlayer, damagedPlayer, damageDealt);
-}
-
-function onPlayerKilledOtherPlayer(attackingPlayer, killedPlayer, damageDealt, withItem) {
-    // Only announce while the killfeed is hidden, or every kill would show twice.
-    if (CONFIG.anonymous.enabled && CONFIG.anonymous.hideKillfeed && anyoneAnonymous()) {
-        api.broadcastMessage(
-            displayNameOf(attackingPlayer) + " killed " + displayNameOf(killedPlayer)
-                + (withItem ? " with " + withItem : ""),
-            { color: "#ff7675" });
-    }
 }
 
 function onPlayerEnteredVehicle(playerId) {
@@ -2541,7 +2644,7 @@ function playerCommand(playerId, command) {
             let line = "You have " + hearts(getMaxHp(playerId)) + " / "
                 + hearts(CONFIG.health.max) + " hearts.";
             if (CONFIG.orb.usesPerPlayer > 0) {
-                line += " Life Orbs left to absorb: " + orbUsesLeft(playerId) + ".";
+                line += " " + CONFIG.orb.name + "s left to absorb: " + orbUsesLeft(playerId) + ".";
             }
             tell(playerId, line, "#ff6b81");
             return true;
@@ -2552,10 +2655,12 @@ function playerCommand(playerId, command) {
 
         case "smphelp":
             tell(playerId,
-                "/hp - your hearts | /withdraw <hearts> - turn hearts into Life Orbs | "
-                + "right click a Life Orb or Golden Apple to eat it | "
-                + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + ") and "
-                + CONFIG.spear.name + " | craft and place a Purple Portal for the Nether or a "
+                "/hp - your hearts | /withdraw <hearts> - turn hearts into "
+                + CONFIG.orb.name + "s | right click a " + CONFIG.orb.name
+                + " or Golden Apple to eat it | "
+                + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
+                + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
+                + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
                 + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "
@@ -2591,14 +2696,17 @@ function playerCommand(playerId, command) {
                 api.giveItem(playerId, "Apple", 1, appleAttributes("golden"));
             } else if (what === "egapple") {
                 api.giveItem(playerId, "Apple", 1, appleAttributes("enchanted"));
-            } else if (what === "orb") {
+            } else if (what === "orb" || what === "heart") {
                 api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
+            } else if (what === "windcharge") {
+                api.giveItem(playerId, CONFIG.windCharge.item, 1, windChargeAttributes());
             } else if (what === "netherportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.nether.portalBlock, 8);
             } else if (what === "endportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.end.portalBlock, 8);
             } else {
-                tell(playerId, "Usage: /give mace|spear|gapple|egapple|orb|netherportal|endportal",
+                tell(playerId,
+                    "Usage: /give mace|spear|windcharge|gapple|egapple|heart|netherportal|endportal",
                     "#ff4757");
             }
             return true;
@@ -2692,7 +2800,7 @@ function withdraw(playerId, rawHearts) {
     for (let i = 0; i < orbs; i++) {
         api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
     }
-    tell(playerId, "Withdrew " + hearts(removed) + " hearts as " + orbs + " Life Orb(s)."
+    tell(playerId, "Withdrew " + hearts(removed) + " hearts as " + orbs + " " + CONFIG.orb.name + "(s)."
         + (orbUsesLeft(playerId) <= 0 ? " You cannot absorb these yourself." : ""), "#7bed9f");
     return true;
 }

@@ -8,6 +8,7 @@ const world = {
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
     mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
     mobSeq: 0, meshEntities: [], headings: {}, meshSpawnFails: false,
+    sounds: [],
     worldChanges: [], protectedBlocks: {},
 };
 const ids = ["a", "b"];
@@ -97,7 +98,9 @@ const api = {
     broadcastMessage: m => world.log.push(`bcast ${m}`),
     sendFlyingMiddleMessage: (id, m) => world.log.push(`fly[${id}] ${m}`),
     queueCrosshairText: (id, t) => world.log.push(`cross[${id}] ${t}`),
-    playSound: () => {}, broadcastSound: () => {}, playParticleEffect: () => {},
+    playSound: () => {},
+    broadcastSound: (soundName, volume, rate, posSettings) => world.sounds.push({ soundName, volume, rate, posSettings }),
+    playParticleEffect: () => {},
     shakePlayerCamera: () => {}, now: () => Date.now(),
 };
 

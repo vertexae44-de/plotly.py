@@ -41,6 +41,10 @@ ctx.onAttemptKillPlayer("a", null);
 check("world death costs nothing", world.db.a.smpMaxHp === beforeWorldDeath, world.db.a.smpMaxHp);
 
 // ------------------------------------------------------------------ eating orbs
+check("orb is the XP orb item", C.orb.item === "Aura XP Orb", C.orb.item);
+check("the orb is renamed Heart", C.orb.name === "Heart", C.orb.name);
+check("hearts are uncapped by default", C.orb.usesPerPlayer === 0, C.orb.usesPerPlayer);
+
 world.sel = { a: 0, b: 0 };
 world.inv.a = [{ name: C.orb.item, amount: 2, attributes: world.drops[0].attrs }];
 world.health.a = 50;
@@ -48,43 +52,53 @@ ctx.onPlayerAltAction("a");
 check("orb raised max hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
 check("orb healed current hp", world.health.a === 60, world.health.a);
 check("orb stack decremented", world.inv.a[0].amount === 1, "");
+check("eating still records a use for reporting", world.db.a.smpOrbsEaten === 1, world.db.a.smpOrbsEaten);
+check("no cap means uses left is unlimited", ctx.orbUsesLeft("a") === Infinity, ctx.orbUsesLeft("a"));
 
-check("orb is the XP orb item", C.orb.item === "Aura XP Orb", C.orb.item);
-check("eating recorded one use", world.db.a.smpOrbsEaten === 1, world.db.a.smpOrbsEaten);
-check("no uses left after the first", ctx.orbUsesLeft("a") === 0, ctx.orbUsesLeft("a"));
-
-// the lifetime cap: a second orb must not be absorbed or consumed
+// with no cap, eating a second (and third) Heart gains further hearts every time
+world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
 const hpBeforeSecond = world.db.a.smpMaxHp;
 ctx.onPlayerAltAction("a");
-check("second orb is refused", world.db.a.smpMaxHp === hpBeforeSecond, world.db.a.smpMaxHp);
-check("refused orb stays in the inventory", world.inv.a[0] && world.inv.a[0].amount === 1, JSON.stringify(world.inv.a[0]));
-check("refusal explains the limit", world.log.some(l => /only absorb/.test(l)), "");
+check("a second Heart is absorbed with no cap", world.db.a.smpMaxHp === hpBeforeSecond + C.orb.hp, world.db.a.smpMaxHp);
+world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
+ctx.onPlayerAltAction("a");
+check("a third Heart is absorbed too", world.db.a.smpMaxHp === hpBeforeSecond + C.orb.hp * 2, world.db.a.smpMaxHp);
 
-// a fresh player may still absorb theirs
+// a fresh player may also absorb theirs, independently
 world.inv.b = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
 world.db.b.smpMaxHp = 90;
 world.health.b = 50;
 ctx.onPlayerAltAction("b");
-check("a different player can still absorb", world.db.b.smpMaxHp === 100, world.db.b.smpMaxHp);
+check("a different player can also absorb", world.db.b.smpMaxHp === 100, world.db.b.smpMaxHp);
 check("orb grants exactly one heart", 100 - 90 === C.orb.hp, C.orb.hp);
 check("absorbed orb clears the slot", world.inv.b[0] === null, "");
 
-// raising the cap re-opens it
-C.orb.usesPerPlayer = 2;
-check("raising the cap gives another use", ctx.orbUsesLeft("a") === 1, ctx.orbUsesLeft("a"));
-ctx.onPlayerAltAction("a");
-check("second orb now absorbed", world.db.a.smpMaxHp === hpBeforeSecond + C.orb.hp, world.db.a.smpMaxHp);
+// the cap machinery is still there for anyone who wants to re-enable it
 C.orb.usesPerPlayer = 1;
+world.db.a.smpOrbsEaten = 0;
+world.db.a.smpMaxHp = 90;
+world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
+ctx.onPlayerAltAction("a");
+check("with a cap set, one use is spent", world.db.a.smpOrbsEaten === 1, world.db.a.smpOrbsEaten);
+check("no uses left after the first", ctx.orbUsesLeft("a") === 0, ctx.orbUsesLeft("a"));
+
+world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
+const hpBeforeCapped = world.db.a.smpMaxHp;
+ctx.onPlayerAltAction("a");
+check("a capped second orb is refused", world.db.a.smpMaxHp === hpBeforeCapped, world.db.a.smpMaxHp);
+check("a refused orb stays in the inventory", world.inv.a[0] && world.inv.a[0].amount === 1, JSON.stringify(world.inv.a[0]));
+check("the refusal explains the limit", world.log.some(l => /only absorb/.test(l)), "");
 
 world.db.a.smpMaxHp = C.health.max;
 world.db.a.smpOrbsEaten = 0;
 world.inv.a = [{ name: C.orb.item, amount: 1, attributes: world.drops[0].attrs }];
 ctx.onPlayerAltAction("a");
-check("at cap -> orb not consumed", world.inv.a[0] && world.inv.a[0].amount === 1, "");
-check("at cap -> no use spent", world.db.a.smpOrbsEaten === 0, world.db.a.smpOrbsEaten);
+check("at the health cap -> orb not consumed", world.inv.a[0] && world.inv.a[0].amount === 1, "");
+check("at the health cap -> no use spent", world.db.a.smpOrbsEaten === 0, world.db.a.smpOrbsEaten);
 world.db.a.smpMaxHp = 90;
 ctx.onPlayerAltAction("a");
-check("last orb clears slot", world.inv.a[0] === null, "");
+check("last orb clears the slot", world.inv.a[0] === null, "");
+C.orb.usesPerPlayer = 0;   // back to the real default for the rest of the suite
 
 // -------------------------------------------------------------- golden apples
 world.db.a.smpMaxHp = 100;
@@ -181,6 +195,43 @@ dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 15);
 check("lunging spear hit adds bonus", dmg === 15 + C.spear.lungeBonusDamage, dmg);
 dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 15);
 check("bonus only lands once per lunge", dmg === undefined, dmg);
+
+// ------------------------------------------------------------------ wind charge
+check("wind charge is a real Bloxd item, not a fake one", C.windCharge.item === "Iron Fragment", C.windCharge.item);
+check("wind charge is renamed", C.windCharge.name === "Wind Charge", C.windCharge.name);
+check("wind charge recipe needs mango and iron fragment",
+    C.windCharge.recipe.some(r => r.items[0] === "Mango")
+        && C.windCharge.recipe.some(r => r.items[0] === "Iron Fragment"),
+    JSON.stringify(C.windCharge.recipe));
+check("wind charge is craftable", !!world.recipes.a[C.windCharge.item], Object.keys(world.recipes.a));
+check("crafted wind charges carry their tag",
+    world.recipes.a[C.windCharge.item][0].attributes.customAttributes.smpWindCharge === true, "");
+
+const windChargeItem = () => ({ name: C.windCharge.item, amount: 3, attributes: ctx.windChargeAttributes() });
+world.inv.a = [windChargeItem()];
+world.facing = [0, 0, 1];
+world.impulses.length = 0;
+ctx.onPlayerAltAction("a");
+check("using a wind charge launches you",
+    world.impulses.length === 1 && world.impulses[0][2] === C.windCharge.upwardImpulse,
+    JSON.stringify(world.impulses));
+check("using a wind charge consumes exactly one", world.inv.a[0].amount === 2, world.inv.a[0].amount);
+world.impulses.length = 0;
+ctx.onPlayerAltAction("a");
+check("wind charge item has its own cooldown", world.impulses.length === 0, JSON.stringify(world.impulses));
+
+// it does not interfere with the mace's separate, built-in wind charge
+world.inv.a = [maceItem()];
+ctx.stateOf("a").lastCharge = 0;   // real time has not moved since the earlier mace test
+world.impulses.length = 0;
+ctx.onPlayerAltAction("a");
+check("the mace's own wind charge is unaffected", world.impulses.length === 1, JSON.stringify(world.impulses));
+
+// running out of charges leaves the slot empty, like any other consumable
+world.inv.a = [{ name: C.windCharge.item, amount: 1, attributes: ctx.windChargeAttributes() }];
+ctx.stateOf("a").lastWindCharge = 0;
+ctx.onPlayerAltAction("a");
+check("the last wind charge clears the slot", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
 
 // ------------------------------------------------------------------ durability
 world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 1, smpDurMax: 250 } } }];
@@ -452,23 +503,75 @@ check("!anon toggles back off", ctx.onPlayerChat("a", "!anon", "global") === fal
 check("anon flag cleared", world.db.a.smpAnon === 0, world.db.a.smpAnon);
 check("nametag restored", world.entitySettings.a.nameTagInfo === null, JSON.stringify(world.entitySettings.a));
 check("chat is normal again", ctx.onPlayerChat("a", "hello", "global") === undefined, "");
-// the killfeed leak: the engine prints real names, so it is switched off instead
-ctx.onPlayerChat("a", "!anon", "global");
-check("killfeed hidden while someone is anonymous",
+// the native killfeed panel is off for good, from the moment they join - there
+// is no per-anon toggling any more, so nobody ever sees the automatic entry
+check("the native killfeed panel is disabled on join",
     world.opts.a.showKillfeed === false && world.opts.b.showKillfeed === false,
     JSON.stringify([world.opts.a.showKillfeed, world.opts.b.showKillfeed]));
-world.log.length = 0;
-ctx.onPlayerKilledOtherPlayer("a", "b", 20, "Iron Sword");
-check("anon kills are announced in chat", world.log.some(l => /killed/.test(l)), JSON.stringify(world.log));
-check("the killer's real name never appears", !world.log.some(l => /Alice/.test(l)), JSON.stringify(world.log));
-check("the victim's real name still shows",
-    world.log.some(l => /Bob/.test(l)), JSON.stringify(world.log));
+
+// ------------------------------------------------------------- death announcements
+// exactly one message and one sound per death, from a single call site
+world.pos.a = [10, 64, 10]; world.pos.b = [10, 64, 10];
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+ctx.onPlayerDamagingOtherPlayer("a", "b", 20);   // records "a"s weapon for the kill line
+world.db.b.smpMaxHp = 100;
+// broadcastMessage entries are prefixed "bcast " in the log; sendMessage/
+// sendFlyingMiddleMessage are private and prefixed differently, so counting
+// "public messages" means counting bcast lines specifically.
+const bcasts = () => world.log.filter(l => l.indexOf("bcast ") === 0);
+// a kill also drops an orb, which plays its own pickup-chime sound - a real,
+// separate sound for a separate event, not a second copy of the death toll.
+const tolls = () => world.sounds.filter(s => s.soundName === C.deathSound.sound);
+
+world.log.length = 0; world.sounds.length = 0;
+ctx.onAttemptKillPlayer("b", "a");
+check("a PvP kill sends exactly one public message", bcasts().length === 1, JSON.stringify(world.log));
+check("the kill message names the killer and victim",
+    /Alice/.test(bcasts()[0]) && /Bob/.test(bcasts()[0]), bcasts()[0]);
+check("the kill message names the weapon used", /Iron Sword/.test(bcasts()[0]), bcasts()[0]);
+check("a death tolls exactly once", tolls().length === 1, JSON.stringify(world.sounds));
+check("the death toll reaches the whole server",
+    tolls()[0].posSettings.maxHearDist === C.deathSound.maxHearDist, tolls()[0].posSettings);
+
+// a free world death (fall damage etc, 0 hearts lost) still gets one message and sound
+world.db.b.smpMaxHp = 100;
+world.log.length = 0; world.sounds.length = 0;
+ctx.onAttemptKillPlayer("b", null);
+check("a free world death is still announced once", bcasts().length === 1, JSON.stringify(world.log));
+check("a world death names no killer", !/Alice/.test(bcasts()[0]), bcasts()[0]);
+check("a free world death still tolls", tolls().length === 1, JSON.stringify(world.sounds));
+check("a free world death costs no hearts", world.db.b.smpMaxHp === 100, world.db.b.smpMaxHp);
+
+// an eliminating kill merges into ONE public message, not a kill line plus a separate one
+world.db.b.smpMaxHp = C.death.hpLostToPlayer;
+world.drops.length = 0;
+world.log.length = 0; world.sounds.length = 0;
+ctx.onAttemptKillPlayer("b", "a");
+check("an eliminating kill still sends only one public message", bcasts().length === 1, JSON.stringify(world.log));
+check("that one message mentions both the kill and the Void",
+    /Alice/.test(bcasts()[0]) && /Bob/.test(bcasts()[0]) && /Void/.test(bcasts()[0]), bcasts()[0]);
+check("an eliminating kill still tolls exactly once", tolls().length === 1, JSON.stringify(world.sounds));
+world.db.b.smpMaxHp = 100;
+if (ctx.dimensionAt(world.pos.b) === "void") ctx.travelTo("b", "overworld");
+
+// dying again while still exiled in the Void raises no further noise
+world.pos.b = [C.dimensions.list["void"].origin[0], 64, C.dimensions.list["void"].origin[1]];
+ctx.tick();
+world.log.length = 0; world.sounds.length = 0;
+ctx.onAttemptKillPlayer("b", "a");
+check("dying again inside the Void is silent", bcasts().length === 0 && tolls().length === 0, "");
+ctx.travelTo("b", "overworld");
+
+// anonymity still swaps the name inside that one message
+world.pos.a = [10, 64, 10]; world.pos.b = [10, 64, 10];
+world.db.b.smpMaxHp = 100;
 ctx.onPlayerChat("a", "!anon", "global");
-check("killfeed restored once nobody is anonymous",
-    world.opts.a.showKillfeed === "DEFAULT", world.opts.a.showKillfeed);
 world.log.length = 0;
-ctx.onPlayerKilledOtherPlayer("a", "b", 20, "Iron Sword");
-check("no double announcement with the killfeed back on", world.log.length === 0, JSON.stringify(world.log));
+ctx.onAttemptKillPlayer("b", "a");
+check("an anonymous killer's real name is hidden in the death message",
+    !/Alice/.test(bcasts()[0]) && new RegExp(C.anonymous.displayName).test(bcasts()[0]), bcasts()[0]);
+ctx.onPlayerChat("a", "!anon", "global");
+world.db.b.smpMaxHp = 100;
 
 // anonymity must survive a relog
 world.db.a.smpAnon = 1;
