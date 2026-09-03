@@ -233,6 +233,142 @@ ctx.stateOf("a").lastWindCharge = 0;
 ctx.onPlayerAltAction("a");
 check("the last wind charge clears the slot", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
 
+// -------------------------------------------------------------------- repair kit
+check("repair kit is a real Bloxd block, not a fake one", C.repair.item === "Yellow Portal", C.repair.item);
+check("repair kit is craftable", !!world.recipes.a[C.repair.item], Object.keys(world.recipes.a));
+check("repair kit recipe never touches the resurrection orb item",
+    C.repair.item !== C.resurrection.item, JSON.stringify([C.repair.item, C.resurrection.item]));
+
+world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 100, smpDurMax: 400 } } }];
+world.sel.a = 0;
+ctx.playerCommand("a", "/repair");
+check("with no kit in hand, repair refuses", world.inv.a[0].attributes.customAttributes.smpDur === 100,
+    world.inv.a[0].attributes.customAttributes.smpDur);
+
+world.inv.a = [
+    { name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 100, smpDurMax: 400 } } },
+    { name: C.repair.item, amount: 3, attributes: ctx.repairKitAttributes() },
+];
+world.sel.a = 0;
+ctx.playerCommand("a", "/repair");
+check("repair restores half of max durability",
+    world.inv.a[0].attributes.customAttributes.smpDur === 100 + Math.round(400 * C.repair.restoreFraction),
+    world.inv.a[0].attributes.customAttributes.smpDur);
+check("repair consumes exactly one kit", world.inv.a[1].amount === 2, world.inv.a[1].amount);
+
+world.inv.a[0].attributes.customAttributes.smpDur = 390;
+ctx.playerCommand("a", "/repair");
+check("repair never overshoots the max", world.inv.a[0].attributes.customAttributes.smpDur === 400,
+    world.inv.a[0].attributes.customAttributes.smpDur);
+
+const kitsBefore = world.inv.a[1].amount;
+ctx.playerCommand("a", "/repair");
+check("a full item does not spend a kit", world.inv.a[1].amount === kitsBefore, world.inv.a[1].amount);
+
+world.inv.a = [{ name: "Dirt", amount: 5, attributes: undefined }, { name: C.repair.item, amount: 1, attributes: ctx.repairKitAttributes() }];
+world.sel.a = 0;
+ctx.playerCommand("a", "/repair");
+check("an item with no durability cannot be repaired", world.inv.a[1].amount === 1, world.inv.a[1].amount);
+
+// /repair keeps the mace's bespoke tooltip in sync, via the shared withDurability helper
+world.inv.a = [maceItem(), { name: C.repair.item, amount: 1, attributes: ctx.repairKitAttributes() }];
+world.inv.a[0].attributes = ctx.maceAttributes(50);
+world.sel.a = 0;
+ctx.playerCommand("a", "/repair");
+check("repairing the mace keeps its Wind Burst tooltip",
+    /Wind Burst/.test(world.inv.a[0].attributes.customDescription), world.inv.a[0].attributes.customDescription);
+check("repairing the mace still uses maceAttributes' durability",
+    world.inv.a[0].attributes.customAttributes.smpDur === 50 + Math.round(C.mace.durability * C.repair.restoreFraction),
+    world.inv.a[0].attributes.customAttributes.smpDur);
+
+// ---------------------------------------------------------------------- shield
+check("shield is a real Bloxd item, not a fake one", C.shield.item === "Iron Gauntlets", C.shield.item);
+check("shield is renamed", C.shield.name === "Bulwark", C.shield.name);
+check("shield is craftable", !!world.recipes.a[C.shield.item], Object.keys(world.recipes.a));
+check("crafted shields carry their tag",
+    world.recipes.a[C.shield.item][0].attributes.customAttributes.smpShield === true, "");
+
+const shieldItem = (dur) => ({ name: C.shield.item, amount: null, attributes: ctx.shieldAttributes(dur) });
+
+world.shield.a = 0;
+world.inv.a = [shieldItem(C.shield.durability)];
+world.sel.a = 0;
+world.meshAttachments.a = undefined;
+ctx.onPlayerAltAction("a");
+check("raising the shield sets the flag", ctx.stateOf("a").shieldRaised === true, "");
+check("raising the shield tops up the numeric shield",
+    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
+check("raising the shield attaches a mesh to the off arm",
+    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
+    JSON.stringify(world.meshAttachments.a));
+check("raising the shield sets the top-left HUD chip",
+    world.opts.a.headerChips && world.opts.a.headerChips[0] === C.shield.hudChip,
+    JSON.stringify(world.opts.a.headerChips));
+
+// a raised shield blocks a chunk of incoming player damage and drains the shield, not health
+world.pos.a = [0, 64, 0]; world.pos.b = [1, 64, 0];
+world.inv.b = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.sel.b = 0;
+const shieldBefore = world.shield.a;
+const blockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a raised shield reduces the damage",
+    blockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), blockedDmg);
+check("blocking drains the numeric shield, not just absorbing for free",
+    world.shield.a < shieldBefore, world.shield.a);
+check("blocking wears the shield item",
+    world.inv.a[0].attributes.customAttributes.smpDur === C.shield.durability - C.shield.blockDurabilityCost,
+    world.inv.a[0].attributes.customAttributes.smpDur);
+
+// lowering it removes the mesh and the HUD chip
+ctx.onPlayerAltAction("a");
+check("lowering the shield clears the flag", ctx.stateOf("a").shieldRaised === false, "");
+check("lowering the shield detaches the mesh", world.meshAttachments.a === null, world.meshAttachments.a);
+check("lowering the shield clears the HUD chip", world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
+
+// with it lowered, hits go through untouched
+world.health.a = 100;
+const unblockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a lowered shield blocks nothing", unblockedDmg === undefined, unblockedDmg);
+
+// running out of shield breaks the guard rather than blocking for free
+world.inv.a = [shieldItem(C.shield.durability)];
+ctx.stateOf("a").shieldRaised = true;
+world.shield.a = 0;
+const brokenGuardDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("an empty shield stops blocking", brokenGuardDmg === undefined, brokenGuardDmg);
+check("an empty shield auto-lowers", ctx.stateOf("a").shieldRaised === false, "");
+
+// switching away from the shield mid-raise is caught and cleaned up by the tick safety-check
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+ctx.stateOf("a").shieldRaised = true;
+world.pos.a = [500, 64, 500];
+ctx.tick();
+check("switching away from a raised shield lowers it on the next tick",
+    ctx.stateOf("a").shieldRaised === false, "");
+
+// NPC attacks respect a raised shield too
+world.inv.a = [shieldItem(C.shield.durability)];
+ctx.stateOf("a").shieldRaised = true;
+world.shield.a = 50;
+const npcForShieldTest = npcRoster[0];
+npcForShieldTest.pos = [0, 64, 0];
+world.pos.a = [1, 64, 0];
+npcForShieldTest.lastAttack = 0;
+world.damages.length = 0;
+ctx.npcAttack(npcForShieldTest, "a");
+check("a raised shield reduces NPC damage too",
+    world.damages[0].attemptedDmgAmt === Math.round(C.npcs.attackDamage * (1 - C.shield.blockFraction)),
+    JSON.stringify(world.damages));
+ctx.stateOf("a").shieldRaised = false;
+
+check("/give shield gives a tagged shield", (() => {
+    C.commands.adminNames.push("Alice");
+    world.inv.a = [];
+    ctx.playerCommand("a", "/give shield");
+    C.commands.adminNames.length = 0;
+    return world.inv.a[0] && world.inv.a[0].attributes.customAttributes.smpShield === true;
+})(), JSON.stringify(world.inv.a));
+
 // ------------------------------------------------------------------ durability
 world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 1, smpDurMax: 250 } } }];
 ctx.onPlayerChangeBlock("a", 0, 0, 0, "Stone", "Air");

@@ -8,6 +8,8 @@
 //  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
 //  Moonstone Spear  right click to lunge, hit hard while lunging
 //  Wind Charge      craft from Mango + Iron Fragment, right click to launch
+//  Repair Kit       craft from Iron Fragment + Stick, /repair to restore wear
+//  Bulwark shield   right click to raise: blocks damage, shows on your off arm
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
@@ -166,6 +168,57 @@ const CONFIG = {
             { items: ["Iron Fragment"], amt: 1 },
         ],
         produces: 4,
+    },
+
+    // ---- Repair Kit -----------------------------------------------------------
+    // Restores durability on whatever you're holding via /repair - works on any
+    // durable item in the game, not just this mod's own weapons. The base item
+    // (a portal block) has no other use anywhere in this script, so counting how
+    // many a player holds by name is always unambiguous - the same trick the
+    // Orbs of Resurrection use.
+    repair: {
+        enabled: true,
+        item: "Yellow Portal",
+        name: "Repair Kit",
+        restoreFraction: 0.5,   // one kit restores half of an item's max durability
+        recipe: [
+            { items: ["Iron Fragment"], amt: 4 },
+            { items: ["Stick"], amt: 2 },
+        ],
+        produces: 2,
+    },
+
+    // ---- Shield (Bulwark) ------------------------------------------------------
+    // Bloxd has no dedicated shield item and no true off-hand inventory slot -
+    // there is only ever one selected hand. This rebuilds both from real
+    // primitives: right click to raise it, which shows on your OTHER arm as a
+    // mesh attachment (the closest thing to an off-hand the engine supports)
+    // and a status chip in the top-left HUD strip (the engine's own
+    // headerChips option), while it soaks a fraction of incoming player damage
+    // using Bloxd's own numeric shield resource.
+    //
+    // Scope: blocks player-vs-player hits and NPC attacks. It does not reduce
+    // real-mob damage (never hooked to onMobDamagingPlayer) or crystal blasts
+    // (explosions bypass it, same as most games).
+    shield: {
+        enabled: true,
+        item: "Iron Gauntlets",   // a real Bloxd item, worn as the visual base
+        name: "Bulwark",
+        durability: 500,
+
+        raiseShieldAmount: 30,     // tops shield up to at least this when raised
+        maxShieldOption: 60,       // raises the client's shield ceiling so it can show
+        blockFraction: 0.6,        // fraction of incoming player/NPC damage blocked
+        blockDurabilityCost: 2,    // per hit blocked
+
+        armNode: "ArmLeftMesh",    // the "off-hand" arm - opposite the weapon hand
+        meshColour: [176, 184, 196],
+        hudChip: "\uD83D\uDEE1 Shield raised",
+
+        recipe: [
+            { items: ["Iron Gauntlets"], amt: 1 },
+            { items: ["Iron Fragment"], amt: 4 },
+        ],
     },
 
     // ---- Golden Apples ------------------------------------------------------
@@ -509,7 +562,7 @@ const CONFIG = {
     },
 
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "smphelp", "where", "anon", "orbs", "npcs"],
+        publicCommands: ["hp", "hearts", "withdraw", "repair", "smphelp", "where", "anon", "orbs", "npcs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -524,6 +577,7 @@ const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
 const ATTR_SPEAR = "smpSpear";
 const ATTR_WINDCHARGE = "smpWindCharge";
+const ATTR_SHIELD = "smpShield";
 const ATTR_APPLE = "smpApple";
 const ATTR_DUR = "smpDur";
 const ATTR_DUR_MAX = "smpDurMax";
@@ -719,6 +773,28 @@ function windChargeAttributes() {
     };
 }
 
+function repairKitAttributes() {
+    const r = CONFIG.repair;
+    return {
+        customDisplayName: r.name,
+        customDescription: "Hold a damaged item and type /repair. Restores "
+            + Math.round(r.restoreFraction * 100) + "% of its max durability.",
+    };
+}
+
+function shieldAttributes(durabilityLeft) {
+    const c = CONFIG.shield;
+    const max = c.durability;
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDisplayName: c.name,
+        customDescription: "Right click to raise it.\n"
+            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while raised.\n"
+            + durabilityBar(left, max),
+        customAttributes: { [ATTR_SHIELD]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
 function appleAttributes(tier) {
     const apple = CONFIG.apples[tier];
     const lines = [
@@ -846,6 +922,22 @@ function registerRecipes(playerId) {
         }]);
     }
 
+    if (CONFIG.repair.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.repair.item, [{
+            requires: CONFIG.repair.recipe,
+            produces: CONFIG.repair.produces,
+            attributes: repairKitAttributes(),
+        }]);
+    }
+
+    if (CONFIG.shield.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.shield.item, [{
+            requires: CONFIG.shield.recipe,
+            produces: 1,
+            attributes: shieldAttributes(CONFIG.shield.durability),
+        }]);
+    }
+
     // Both apples craft into the same base item, told apart by their tag.
     api.editItemCraftingRecipes(playerId, "Apple", [
         {
@@ -937,25 +1029,74 @@ function spendDurability(playerId, slot, cost) {
         return;
     }
 
-    let attributes;
-    if (custom[ATTR_MACE]) {
-        attributes = maceAttributes(left);
-    } else if (custom[ATTR_SPEAR]) {
-        attributes = spearAttributes(left);
-    } else {
-        attributes = {
-            customDisplayName: item.attributes && item.attributes.customDisplayName,
-            customDescription: durabilityBar(left, max),
-            customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
-        };
-    }
-
-    writeSlot(playerId, slot.index, item, item.amount, attributes);
+    writeSlot(playerId, slot.index, item, item.amount, withDurability(item, custom, left, max));
 
     const wasAbove = before > max * CONFIG.durability.warnAtFraction;
     if (wasAbove && left <= max * CONFIG.durability.warnAtFraction) {
         api.queueCrosshairText(playerId, displayName(item) + " is almost broken", 2000);
     }
+}
+
+/**
+ * Rebuilds an item's attributes at a new durability, keeping any special
+ * tooltip (mace/spear) in sync rather than falling back to a bare wear bar.
+ * Shared by ordinary wear and by /repair, so the two can never drift apart.
+ */
+function withDurability(item, custom, left, max) {
+    if (custom[ATTR_MACE]) {
+        return maceAttributes(left);
+    }
+    if (custom[ATTR_SPEAR]) {
+        return spearAttributes(left);
+    }
+    if (custom[ATTR_SHIELD]) {
+        return shieldAttributes(left);
+    }
+    return {
+        customDisplayName: item.attributes && item.attributes.customDisplayName,
+        customDescription: durabilityBar(left, max),
+        customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
+    };
+}
+
+/**
+ * Spends one Repair Kit to restore durability on whatever the player is
+ * holding. Works on anything durabilityForName recognises - every tool,
+ * weapon, bow and armour piece in the game, not only this mod's own items.
+ */
+function repairHeldItem(playerId) {
+    const r = CONFIG.repair;
+    const slot = heldSlot(playerId);
+    if (!slot) {
+        tell(playerId, "Hold the item you want to repair first.", "#ff4757");
+        return;
+    }
+
+    const max = maxDurabilityFor(slot.item);
+    if (max <= 0) {
+        tell(playerId, displayName(slot.item) + " has no durability to repair.", "#ff4757");
+        return;
+    }
+
+    const custom = customAttrs(slot.item);
+    const before = typeof custom[ATTR_DUR] === "number" ? custom[ATTR_DUR] : max;
+    if (before >= max) {
+        tell(playerId, displayName(slot.item) + " is already at full durability.", "#ffa502");
+        return;
+    }
+
+    if (countItem(playerId, r.item) < 1) {
+        tell(playerId, "You need a " + r.name + " to repair anything - craft one first.", "#ff4757");
+        return;
+    }
+    consumeItems(playerId, r.item, 1);
+
+    const left = Math.min(max, before + Math.round(max * r.restoreFraction));
+    writeSlot(playerId, slot.index, slot.item, slot.item.amount,
+        withDurability(slot.item, custom, left, max));
+
+    tell(playerId, "Repaired " + displayName(slot.item) + ".", "#7bed9f");
+    api.playSound(playerId, "levelup", 0.8, 1.1);
 }
 
 // -----------------------------------------------------------------------------
@@ -1272,6 +1413,73 @@ function useWindChargeItem(playerId, slot) {
 }
 
 // -----------------------------------------------------------------------------
+// Shield (Bulwark)
+// -----------------------------------------------------------------------------
+
+/** Raises the shield: tops up the numeric shield, shows it on the off arm, HUD chip. */
+function raiseShield(playerId) {
+    const c = CONFIG.shield;
+    stateOf(playerId).shieldRaised = true;
+
+    if (api.getShieldAmount(playerId) < c.raiseShieldAmount) {
+        api.setShieldAmount(playerId, c.raiseShieldAmount);
+    }
+    api.updateEntityNodeMeshAttachment(
+        playerId, c.armNode, "Box",
+        { width: 0.5, height: 0.7, depth: 0.12, diffuseColor: c.meshColour },
+        [0, -0.2, 0.15]
+    );
+    api.setClientOption(playerId, "headerChips", [c.hudChip]);
+    tell(playerId, "Shield raised.", "#9fb4c7");
+}
+
+/** Lowers the shield: clears the off-arm mesh and the HUD chip. */
+function lowerShield(playerId) {
+    stateOf(playerId).shieldRaised = false;
+    api.updateEntityNodeMeshAttachment(playerId, CONFIG.shield.armNode, null);
+    api.setClientOption(playerId, "headerChips", []);
+}
+
+function toggleShield(playerId) {
+    if (stateOf(playerId).shieldRaised) {
+        lowerShield(playerId);
+        tell(playerId, "Shield lowered.", "#9fb4c7");
+    } else {
+        raiseShield(playerId);
+    }
+}
+
+/**
+ * Applies blocking to an incoming hit on a raised defender: a fraction of the
+ * damage is absorbed by their numeric shield instead of their health, and the
+ * shield item takes wear. Returns the damage that should actually land.
+ */
+function shieldBlock(defenderId, damage) {
+    const c = CONFIG.shield;
+    if (!c.enabled || !stateOf(defenderId).shieldRaised) {
+        return damage;
+    }
+
+    const slot = heldSlot(defenderId);
+    if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
+        lowerShield(defenderId);   // switched away without lowering it properly
+        return damage;
+    }
+
+    const shieldLeft = api.getShieldAmount(defenderId);
+    if (shieldLeft <= 0) {
+        lowerShield(defenderId);   // out of shield - the guard breaks
+        return damage;
+    }
+
+    const reduced = Math.max(0, Math.round(damage * (1 - c.blockFraction)));
+    const absorbed = damage - reduced;
+    api.setShieldAmount(defenderId, Math.max(0, shieldLeft - absorbed));
+    spendDurability(defenderId, slot, c.blockDurabilityCost);
+    return reduced;
+}
+
+// -----------------------------------------------------------------------------
 // Shared weapon hit handling
 // -----------------------------------------------------------------------------
 
@@ -1288,7 +1496,7 @@ function cartBonus(targetId) {
     return c.bonusDamage;
 }
 
-function handleWeaponHit(attacker, targetId, damageDealt) {
+function computeWeaponDamage(attacker, targetId, damageDealt) {
     const slot = heldSlot(attacker);
     if (!slot) {
         return;
@@ -1311,6 +1519,23 @@ function handleWeaponHit(attacker, targetId, damageDealt) {
 
     spendDurability(attacker, slot, CONFIG.durability.costPerHit);
     return cart > 0 ? Math.round(damageDealt + cart) : undefined;
+}
+
+/** Weapon damage, then a raised shield on the target's side gets the final say. */
+function handleWeaponHit(attacker, targetId, damageDealt) {
+    const computed = computeWeaponDamage(attacker, targetId, damageDealt);
+    if (!CONFIG.shield.enabled || !isPlayer(targetId)) {
+        return computed;
+    }
+    const base = computed === undefined ? damageDealt : computed;
+    const blocked = shieldBlock(targetId, base);
+    // Only truly a no-op (undefined) when neither the weapon nor the shield
+    // changed anything - a mace/spear hit still reports its number even when
+    // that number happens to equal the input, matching their existing contract.
+    if (computed === undefined && blocked === base) {
+        return undefined;
+    }
+    return blocked;
 }
 
 // -----------------------------------------------------------------------------
@@ -1720,11 +1945,14 @@ function npcAttack(npc, targetId) {
         return;
     }
     npc.lastAttack = now;
+    const damage = CONFIG.shield.enabled && isPlayer(targetId)
+        ? shieldBlock(targetId, n.attackDamage)
+        : n.attackDamage;
     // Self-inflicted is the documented way for game code to apply damage.
     api.attemptApplyDamage({
         eId: targetId,
         hitEId: targetId,
-        attemptedDmgAmt: n.attackDamage,
+        attemptedDmgAmt: damage,
         withItem: npc.name,
     });
     api.broadcastSound("hit1", 0.7, 1.0, { playerIdOrPos: npc.pos, maxHearDist: 20 });
@@ -2424,6 +2652,10 @@ function onPlayerJoin(playerId) {
         api.setClientOption(playerId, "showKillfeed", false);
     }
 
+    if (CONFIG.shield.enabled) {
+        api.setClientOption(playerId, "maxShield", CONFIG.shield.maxShieldOption);
+    }
+
     const hp = getMaxHp(playerId);
     applyMaxHp(playerId, hp, 0);
     tell(playerId, "You have " + hearts(hp) + " hearts. Type /smphelp for commands.", "#7bed9f");
@@ -2449,6 +2681,16 @@ function tick() {
             state.fallDistance = dropped > 0.05 ? state.fallDistance + dropped : 0;
         }
         state.lastY = pos[1];
+
+        // A shield left raised with nothing backing it (swapped away, died
+        // and respawned) is lowered automatically - independent of whether
+        // dimensions are enabled, so it always runs.
+        if (CONFIG.shield.enabled && state.shieldRaised) {
+            const slot = heldSlot(playerId);
+            if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
+                lowerShield(playerId);
+            }
+        }
 
         // Catches respawns, admin teleports and simply walking over a border.
         if (CONFIG.dimensions.enabled) {
@@ -2558,6 +2800,8 @@ function onPlayerAltAction(playerId) {
         spearLunge(playerId, slot);
     } else if (custom[ATTR_WINDCHARGE]) {
         useWindChargeItem(playerId, slot);
+    } else if (custom[ATTR_SHIELD]) {
+        toggleShield(playerId);
     }
 }
 
@@ -2653,6 +2897,10 @@ function playerCommand(playerId, command) {
         case "withdraw":
             return withdraw(playerId, args[0]);
 
+        case "repair":
+            repairHeldItem(playerId);
+            return true;
+
         case "smphelp":
             tell(playerId,
                 "/hp - your hearts | /withdraw <hearts> - turn hearts into "
@@ -2660,6 +2908,8 @@ function playerCommand(playerId, command) {
                 + " or Golden Apple to eat it | "
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
+                + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
+                + "craft a " + CONFIG.shield.name + " and right click to raise it | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
@@ -2700,13 +2950,18 @@ function playerCommand(playerId, command) {
                 api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
             } else if (what === "windcharge") {
                 api.giveItem(playerId, CONFIG.windCharge.item, 1, windChargeAttributes());
+            } else if (what === "repairkit") {
+                api.giveItem(playerId, CONFIG.repair.item, 1, repairKitAttributes());
+            } else if (what === "shield") {
+                api.giveItem(playerId, CONFIG.shield.item, 1, shieldAttributes(CONFIG.shield.durability));
             } else if (what === "netherportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.nether.portalBlock, 8);
             } else if (what === "endportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.end.portalBlock, 8);
             } else {
                 tell(playerId,
-                    "Usage: /give mace|spear|windcharge|gapple|egapple|heart|netherportal|endportal",
+                    "Usage: /give mace|spear|windcharge|repairkit|shield|gapple|egapple|heart"
+                        + "|netherportal|endportal",
                     "#ff4757");
             }
             return true;

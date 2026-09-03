@@ -10,6 +10,8 @@
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
+| **Repair Kit** | Craftable. `/repair` restores half of whatever you're holding's max durability. |
+| **Bulwark shield** | Right-click to raise it: blocks damage, shown as a real mesh on your off arm, status in the top-left HUD. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
@@ -34,6 +36,8 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Moonstone Mace** | **40 Moonstone + 4 Knight Heart + 2 Stick** |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
+| **Repair Kit** ×2 | 4 Iron Fragment + 2 Stick |
+| **Bulwark shield** | 1 Iron Gauntlets + 4 Iron Fragment |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
@@ -250,7 +254,41 @@ no Wind Charge item, so this is a tagged **Iron Fragment**.
 - Doesn't touch the mace's own wind-charge-in-midair ability — both work independently, and
   hitting one's cooldown never affects the other.
 
-## Deaths — one message, one sound, every time
+## Repair Kit
+
+Craft one from **4 Iron Fragment + 2 Stick** (a tagged **Yellow Portal** under the hood — a block
+with no other use in this mod, so counting how many a player holds is never ambiguous, the same
+trick the resurrection orbs use). Hold the damaged item you want fixed and run **`/repair`**: one
+kit restores `repair.restoreFraction` (50% by default) of that item's max durability, capped at
+full. Works on **anything** `durabilityForName` recognises — every tool, weapon, bow and armour
+piece in the game, not only this mod's own gear — and keeps a mace or spear's special tooltip
+(Wind Burst, lunge bonus) in sync rather than falling back to a bare number, via the same
+`withDurability` helper that ordinary wear uses.
+
+## Shield (Bulwark)
+
+Bloxd has **no dedicated shield item and no true off-hand inventory slot** — there is only ever one
+selected hand. This rebuilds both from real primitives rather than faking them:
+
+- Craft a **Bulwark** from **1 Iron Gauntlets + 4 Iron Fragment**.
+- **Right-click to raise it.** While raised, it tops up your numeric shield (Bloxd's own
+  `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
+  `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
+  shield instead of your health for the part it absorbed.
+- **The "off-hand"** is a real mesh — a small plate — attached to your other arm
+  (`updateEntityNodeMeshAttachment` on `ArmLeftMesh`) for as long as it's raised. That's the closest
+  thing to an off-hand slot the engine actually supports; there is no second, independently
+  equippable item slot underneath it.
+- **The status shows in the literal top-left corner** of your screen, via Bloxd's own `headerChips`
+  client option — the HUD strip that already carries your FPS counter and coordinates.
+- Running out of shield **breaks the guard** (auto-lowers) rather than blocking for free once it
+  hits zero. Switching away from the shield, or dying, also auto-lowers it — checked once a tick.
+
+**Scope, stated plainly:** blocking covers player-vs-player hits and this mod's NPCs (both go
+through code this script controls). It does **not** reduce damage from real Bloxd mobs
+(`onMobDamagingPlayer` isn't hooked) or crystal blasts (explosions bypass it, as in most games).
+
+## Deaths## Deaths — one message, one sound, every time
 
 Bloxd's native killfeed panel prints an automatic entry for every kill with **no way to relabel or
 suppress just that entry**. Leaving it on next to a custom message is exactly what caused a kill to
@@ -296,8 +334,9 @@ instead of eliminations.
 | `/where` | everyone | Which dimension you are in |
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
+| `/repair` | everyone | Repair whatever you're holding using a Repair Kit |
 | `/npcs` | everyone | Who is alive, their skin, personality and health |
-| `/give mace\|spear\|windcharge\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
+| `/give mace\|spear\|windcharge\|repairkit\|shield\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
@@ -342,7 +381,7 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-237 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
+268 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
 blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
@@ -351,8 +390,11 @@ mobs, walking a step at a time, greeting, retaliating in range and on cooldown, 
 coming back as the same person, finding and chopping timber from the top of a
 trunk down, refusing to reach outside their patch, building a hut with the right material and
 skipping protected spots, the Wind Charge item's own cooldown and consumption, that it never
-interferes with the mace's own charge, and that every death sends exactly one message and one toll
-however it happened, both apples (heal, shield, regen, fire
+interferes with the mace's own charge, that /repair restores durability without overshooting and
+keeps a mace's bespoke tooltip in sync, the shield's block fraction and shield-drain, its off-arm
+mesh and HUD chip appearing and clearing, an empty shield auto-breaking, an untended raised shield
+auto-lowering on the next tick, that NPC attacks respect it too, and that every death sends exactly
+one message and one toll however it happened, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and
 every command.

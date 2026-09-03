@@ -8,7 +8,7 @@ const world = {
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
     mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
     mobSeq: 0, meshEntities: [], headings: {}, meshSpawnFails: false,
-    sounds: [],
+    sounds: [], meshAttachments: {},
     worldChanges: [], protectedBlocks: {},
 };
 const ids = ["a", "b"];
@@ -82,6 +82,9 @@ const api = {
         return true;
     },
     setEntityHeading: (id, h) => { world.headings[id] = h; },
+    updateEntityNodeMeshAttachment: (id, node, type, opts, offset, rotation) => {
+        world.meshAttachments[id] = type === null ? null : { node, type, opts, offset, rotation };
+    },
     attemptWorldChangeBlock: (initiator, x, y, z, name) => {
         const key = x + "," + y + "," + z;
         if (world.protectedBlocks[key]) return "preventChange";
