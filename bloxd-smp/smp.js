@@ -3,13 +3,14 @@
 //
 //  Paste this whole file into World Settings -> Code -> World Code.
 //
-//  Life Orbs        dying to a player costs you hearts and drops them as orbs
+//  Life Orbs        a player kill drops Aura XP Orbs. One per player, ever
 //  Permanent ban    hit 0 hearts and you are banned from the world for good
-//  Windburst Mace   Moonstone Axe. Smash players AND mobs from the air
+//  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
 //  Moonstone Spear  right click to lunge, hit hard while lunging
-//  Golden Apples    two tiers, heal + shield + regen
+//  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
-//  Crafting         mace, spear and both apples all have real recipes
+//  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
+//  Crafting         mace, spear, both apples and both portals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
 //  so one "heart" here is hpPerHeart points.
