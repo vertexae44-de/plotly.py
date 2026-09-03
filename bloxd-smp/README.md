@@ -1,73 +1,103 @@
 # Unstable-style SMP — Bloxd.io World Code
 
 `smp.js` is a single self-contained World Code script for [Bloxd.io](https://bloxd.io).
-It adds the three things that make a lifesteal/unstable SMP work:
 
 | Feature | What it does |
 | --- | --- |
-| **Life Orbs** | Getting killed by another player costs you max HP and drops that HP on the ground as orbs. Right-click an orb to absorb it. |
-| **Windburst Mace** | A club branded as a mace. Hit someone while falling and it smashes for bonus damage, knocks everyone nearby away, and launches you back into the air. Right-click in mid-air to spend a wind charge. |
-| **Durability** | Bloxd has no durability at all, so this adds it: tools and weapons wear down per hit and per block broken, and break when they run out. |
+| **Life Orbs** | A player kill costs the victim a heart and drops it as an orb. Right-click an orb to absorb it. |
+| **Permanent ban at 0 hearts** | Lose your last heart and you are kicked and locked out of the world for good. |
+| **Windburst Mace** | A Moonstone Axe. Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. |
+| **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
+| **Golden Apples** | Two tiers. Heal, shield, and regen; the enchanted one permanently adds a heart. |
+| **Durability** | Bloxd has none natively, so this adds it to every tool and weapon. |
+| **Crafting** | The mace, the spear and both apples all have real recipes. |
 
 ## Install
 
-1. In your world: **World Settings → Code → World Code**.
-2. Paste the entire contents of `smp.js`.
-3. Save. That's it — everything is driven by the `CONFIG` object at the top of the file.
+1. **World Settings → Code → World Code**.
+2. Paste the whole of `smp.js`.
+3. Save. Everything is driven by the `CONFIG` object at the top of the file.
 
-## Playing
+## Crafting
 
-- **Get the mace** — hold a `Moonstone Club` with 8 `Moonstone` in your inventory and right-click. Or run `/mace`.
-- **Smash** — jump or fall at least 1.5 blocks and hit someone. Damage scales with how far you fell (2.5 per block, capped at 60), and Wind Burst throws you back up so you can chain it.
-- **Wind charge** — right-click the mace in mid-air for a 4-second-cooldown vertical launch. Costs 3 durability.
-- **Orbs** — kill someone, pick up the orb they drop, right-click it. Each orb is worth one heart.
-- **Trade hearts** — `/withdraw 2` converts 2 of your own hearts into orbs you can hand to someone else.
+Recipes are registered per player on join, so they show up in the normal crafting menu.
 
-### Commands
+| Item | Recipe |
+| --- | --- |
+| **Windburst Mace** (Moonstone Axe) | 5 Moonstone + 2 Stick + 1 Knight Heart |
+| **Moonstone Spear** | 4 Moonstone + 2 Stick |
+| **Golden Apple** | 1 Apple + 8 Gold Bar |
+| **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
+
+Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
+
+## The mace
+
+- **Smash** — fall at least 1.5 blocks and hit something. Bonus damage is `2.5 × blocks fallen`
+  (capped at 60), and it lands on mobs just as it does on players.
+- **Density 3** — adds a further `0.75 × level × blocks fallen`, so a longer drop hits much harder.
+- **Wind Burst 3** — the smash throws you `4.5 × level` back into the air, and cancels the fall
+  damage, so you can chain smashes.
+- **Splash** — everything within 4.5 blocks of the impact, mobs included, is knocked away and up.
+- **Wind charge** — right-click in mid-air for a vertical launch. 4 s cooldown, 3 durability.
+
+Set `mace.windBurstLevel` or `mace.densityLevel` to `0` to turn either enchant off.
+
+## Bans
+
+Reaching 0 hearts is permanent. The ban is stored on the world keyed by the player's **account id**,
+not their name, so changing name does not get them back in. Admins can lift one with `/unban <name>`
+even while that player is offline. Set `ban.enabled: false` to use a heart floor (`health.min`)
+instead of eliminations.
+
+## Commands
 
 | Command | Who | Effect |
 | --- | --- | --- |
 | `/hp`, `/hearts` | everyone | Show your hearts |
-| `/withdraw <hearts>` | everyone | Turn your hearts into Life Orbs |
+| `/withdraw <hearts>` | everyone | Turn your hearts into Life Orbs to trade |
 | `/smphelp` | everyone | Short in-game reminder |
-| `/mace` | everyone by default | Give yourself a Windburst Mace |
-| `/orb [n]` | admins | Give yourself orbs |
+| `/give mace\|spear\|gapple\|egapple\|orb` | admins | Spawn any custom item |
+| `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
 
 Admins are matched by in-game name — fill in `CONFIG.commands.adminNames`, which starts empty.
-Set `CONFIG.commands.freeMace` to `false` to restrict `/mace` to that list too.
+**`/unban` needs at least one admin name in there**, so set it before anyone gets eliminated.
 
 ## Tuning
 
-Everything lives in `CONFIG` at the top of `smp.js`. Health in Bloxd runs 0–100 rather than 0–20,
-so a "heart" here is 10 HP (`hpPerHeart`). The knobs you are most likely to want:
+Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`).
 
-- `health.starting` / `health.min` / `health.max` — 100 / 20 / 200 by default, i.e. 10 / 2 / 20 hearts.
-  The floor means players can be ground down but never eliminated; there is no ban or spectator mode.
-- `death.hpLostToPlayer` — how much a PvP death costs. `death.hpLostToWorld` is 0, so fall damage is free.
-- `death.killerAlsoGains` — set above 0 if you want classic instant lifesteal *on top of* the orbs.
-- `mace.*` — smash thresholds, Wind Burst strength, splash knockback, forge cost.
-- `durability.maxUses` — the per-item table. Anything not listed never wears out; delete entries to
-  exempt items, or set `durability.enabled: false` to turn the whole system off.
+- `health.starting` / `health.max` — 100 / 200 by default, i.e. 10 and 20 hearts.
+- `death.hpLostToPlayer` — what a PvP death costs. `death.hpLostToWorld` is 0, so fall damage is free.
+- `death.killerAlsoGains` — above 0 gives the killer instant lifesteal *on top of* the orbs.
+- `mace.*` / `spear.*` — smash thresholds, enchant levels, lunge force, cooldowns, recipes.
+- `apples.golden` / `apples.enchanted` — heal, shield, regen duration, permanent hearts, recipes.
+- `durability.maxUses` — the per-item table. Unlisted items never wear out; set
+  `durability.enabled: false` to switch the whole system off.
 
 ## Implementation notes
 
-- Max HP is persisted per player with `api.setPlayerDbValue`, so hearts survive relogs and lobby changes.
-- Orbs and the mace are ordinary items (`Knight Heart`, `Moonstone Club`) tagged through
-  `customAttributes`. A vanilla Knight Heart is *not* edible and a vanilla club is *not* a mace —
-  the tag is what counts, so renaming can't fake either one.
-- Durability is stored in the item's own `customAttributes` and rewritten into the slot on each use,
+- Max HP is persisted per player with `api.setPlayerDbValue`, so hearts survive relogs.
+- Custom items are ordinary Bloxd items (`Moonstone Axe`, `Apple`, `Knight Heart`) tagged through
+  `customAttributes`. A plain apple is not a Golden Apple and a plain Moonstone Axe is not the mace —
+  the tag is what counts, so nothing can be faked by renaming.
+- Recipes carry those tags in the recipe's own `attributes` field, which is how a crafted item comes
+  out custom.
+- Durability lives in each item's `customAttributes` and is rewritten into the slot on every use,
   because the engine has no durability concept to hook into.
-- Fall distance is tracked in `tick()` by accumulating descent and resetting on any non-fall, which is
-  what the "did they drop onto this hit" check needs.
+- Fall distance is tracked in `tick()` by accumulating descent and resetting on any non-fall.
+- Bans are stored as JSON in the lobby db. A corrupt value is treated as "nobody is banned" rather
+  than locking the whole world out.
 
 ## Tests
 
-`test/` runs the script against a stubbed `api` object in a Node VM — no game needed:
+`test/` runs the script against a stubbed `api` in a Node VM — no game needed:
 
 ```
 cd test && node test.js
 ```
 
-39 assertions covering heart gain/loss, the min/max clamps, orb drops and eating, smash damage and
-wind burst, durability wear and breakage, forging, and every command.
+61 assertions covering hearts, orbs, both apples, smash damage against players and mobs, Density and
+Wind Burst, the spear lunge, durability and breakage, crafting registration, elimination and unban,
+and every command.

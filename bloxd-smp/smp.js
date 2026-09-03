@@ -1,65 +1,132 @@
 // =============================================================================
 //  Unstable-style SMP  -  Bloxd.io World Code
 //
-//  Paste this whole file into World Code (World Settings -> Code -> World Code).
+//  Paste this whole file into World Settings -> Code -> World Code.
 //
-//  What it adds:
-//    * Life Orbs   - dying drops orbs; whoever right-clicks one gains max HP
-//    * Windburst Mace - a smash weapon that launches you into the air on a hit
-//    * Durability  - tools and weapons wear out and break (Bloxd has none by default)
+//  Life Orbs        dying to a player costs you hearts and drops them as orbs
+//  Permanent ban    hit 0 hearts and you are banned from the world for good
+//  Windburst Mace   Moonstone Axe. Smash players AND mobs from the air
+//  Moonstone Spear  right click to lunge, hit hard while lunging
+//  Golden Apples    two tiers, heal + shield + regen
+//  Durability       Bloxd has none, so this adds it to every tool and weapon
+//  Crafting         mace, spear and both apples all have real recipes
 //
-//  Everything is tunable in CONFIG below. Health in Bloxd is 0-100, not 20,
-//  so one "heart" here is HP_PER_HEART points.
+//  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
+//  so one "heart" here is hpPerHeart points.
 // =============================================================================
 
 const CONFIG = {
     hpPerHeart: 10,
 
     health: {
-        starting: 100,   // 10 hearts, the Bloxd default
-        min: 20,         //  2 hearts - you can never be ground below this
+        starting: 100,   // 10 hearts
         max: 200,        // 20 hearts
+        min: 10,         // only used when ban.enabled is false
+    },
+
+    ban: {
+        enabled: true,
+        // Reaching 0 hearts is permanent. Bans are stored on the world, so an
+        // admin can lift one with /unban <name> even while the player is offline.
+        reason: "You hit 0 hearts. You are eliminated from this SMP.",
+        announce: true,
     },
 
     death: {
-        hpLostToPlayer: 10,   // HP the victim loses when another player kills them
-        hpLostToWorld: 0,     // HP lost to fall damage / mobs / lava (0 = free deaths)
+        hpLostToPlayer: 10,   // hearts the victim loses to a player kill
+        hpLostToWorld: 0,     // fall damage / mobs / lava. 0 = free
         dropOrbs: true,
         dropOrbsOnWorldDeath: false,
         killerAlsoGains: 0,   // instant HP for the killer, on top of the orbs
     },
 
     orb: {
-        item: "Knight Heart",          // base item the orb is made of
+        item: "Knight Heart",
         name: "Life Orb",
-        hp: 10,                        // HP one orb gives when eaten
-        despawnMs: 5 * 60 * 1000,      // 5 min is the engine maximum
-        healOnEat: true,               // also top up current health, not just the cap
+        hp: 10,
+        despawnMs: 5 * 60 * 1000,   // 5 min is the engine maximum
+        healOnEat: true,
     },
 
+    // ---- Windburst Mace -----------------------------------------------------
     mace: {
-        item: "Moonstone Club",        // Bloxd has no Mace, so we brand a club
+        item: "Moonstone Axe",
         name: "Windburst Mace",
         durability: 400,
 
-        minSmashFall: 1.5,             // blocks you must be falling before a hit smashes
+        minSmashFall: 1.5,           // blocks you must be falling for a smash
         damagePerBlockFallen: 2.5,
         maxSmashDamage: 60,
 
-        windBurstLevel: 3,             // 1-5, scales the pop-up after a smash
+        // Wind Burst: the smash throws you back into the air.
+        windBurstLevel: 3,           // 0 disables it
         windBurstPerLevel: 4.5,
 
-        // Right-click in mid-air to spend a charge and launch yourself upward.
+        // Density: more smash damage the further you fell, on top of the base.
+        densityLevel: 3,             // 0 disables it
+        densityPerLevel: 0.75,       // extra damage per level per block fallen
+
+        // Right click in mid-air to launch yourself.
         chargeUpwardImpulse: 11,
         chargeCooldownMs: 4000,
         chargeDurabilityCost: 3,
 
-        knockbackRadius: 4.5,          // splash knockback around the player you smashed
+        knockbackRadius: 4.5,        // splash around whatever you smashed
         knockbackForce: 9,
         knockbackUp: 5,
+        knockbackHitsMobs: true,
 
-        // Survival route: right click a plain club while carrying the cost.
-        forgeCost: { item: "Moonstone", amount: 8 },
+        recipe: [
+            { items: ["Moonstone"], amt: 5 },
+            { items: ["Stick"], amt: 2 },
+            { items: ["Knight Heart"], amt: 1 },
+        ],
+    },
+
+    // ---- Moonstone Spear ----------------------------------------------------
+    spear: {
+        item: "Moonstone Spear",
+        name: "Moonstone Spear",
+        durability: 300,
+
+        lungeForce: 16,              // forward impulse on right click
+        lungeUp: 3,
+        lungeCooldownMs: 3500,
+        lungeWindowMs: 1200,         // how long a lunge counts as "charging"
+        lungeBonusDamage: 14,
+        lungeDurabilityCost: 2,
+
+        recipe: [
+            { items: ["Moonstone"], amt: 4 },
+            { items: ["Stick"], amt: 2 },
+        ],
+    },
+
+    // ---- Golden Apples ------------------------------------------------------
+    // Bloxd has no Golden Apple item, so these are Apples with custom tags.
+    apples: {
+        golden: {
+            name: "Golden Apple",
+            heal: 40,
+            shield: 20,
+            regenMs: 10000,
+            bonusMaxHp: 0,
+            recipe: [
+                { items: ["Apple"], amt: 1 },
+                { items: ["Gold Bar"], amt: 8 },
+            ],
+        },
+        enchanted: {
+            name: "Enchanted Golden Apple",
+            heal: 100,
+            shield: 60,
+            regenMs: 30000,
+            bonusMaxHp: 10,          // permanently worth one heart
+            recipe: [
+                { items: ["Apple"], amt: 1 },
+                { items: ["Moonstone"], amt: 8 },
+            ],
+        },
     },
 
     durability: {
@@ -71,33 +138,34 @@ const CONFIG = {
             "Wood Pickaxe": 60, "Stone Pickaxe": 130, "Iron Pickaxe": 250,
             "Gold Pickaxe": 90, "Diamond Pickaxe": 1560, "Moonstone Pickaxe": 2400,
             "Wood Axe": 60, "Stone Axe": 130, "Iron Axe": 250,
-            "Gold Axe": 90, "Diamond Axe": 1560, "Moonstone Axe": 2400,
+            "Gold Axe": 90, "Diamond Axe": 1560,
             "Wood Club": 60, "Stone Club": 130, "Iron Club": 250,
             "Gold Club": 90, "Diamond Club": 1560, "Moonstone Club": 2400,
             "Wood Spear": 60, "Stone Spear": 130, "Iron Spear": 250,
-            "Gold Spear": 90, "Diamond Spear": 1560, "Moonstone Spear": 2400,
+            "Gold Spear": 90, "Diamond Spear": 1560,
         },
-        warnAtFraction: 0.1,   // flash a warning under 10% durability
+        warnAtFraction: 0.1,
         costPerHit: 1,
         costPerBlockBroken: 1,
     },
 
     commands: {
-        // Anyone may run these.
         publicCommands: ["hp", "hearts", "withdraw", "smphelp"],
-        // Only names in adminNames may run these.
-        adminNames: [],        // e.g. ["YourName"]
-        freeMace: true,        // false restricts /mace to adminNames
+        adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
 
 const DB_MAX_HP = "smpMaxHp";
+const DB_BANS = "smpBans";
+
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
+const ATTR_SPEAR = "smpSpear";
+const ATTR_APPLE = "smpApple";
 const ATTR_DUR = "smpDur";
 const ATTR_DUR_MAX = "smpDurMax";
 
-// Per-player runtime state. Rebuilt on join, so nothing here needs persisting.
+// Per-player runtime state, rebuilt on join. Nothing here needs persisting.
 const players = {};
 
 // -----------------------------------------------------------------------------
@@ -107,13 +175,18 @@ const players = {};
 function stateOf(playerId) {
     let s = players[playerId];
     if (!s) {
-        s = players[playerId] = { fallDistance: 0, lastY: null, lastCharge: 0 };
+        s = players[playerId] = { fallDistance: 0, lastY: null, lastCharge: 0, lastLunge: 0 };
     }
     return s;
 }
 
+function minHp() {
+    // With banning on, 0 is reachable and triggers elimination instead of clamping.
+    return CONFIG.ban.enabled ? 0 : CONFIG.health.min;
+}
+
 function clampHp(hp) {
-    return Math.max(CONFIG.health.min, Math.min(CONFIG.health.max, Math.round(hp)));
+    return Math.max(minHp(), Math.min(CONFIG.health.max, Math.round(hp)));
 }
 
 function hearts(hp) {
@@ -131,6 +204,59 @@ function isAdmin(playerId) {
 
 function tell(playerId, message, colour) {
     api.sendMessage(playerId, message, { color: colour || "#ffffff" });
+}
+
+// -----------------------------------------------------------------------------
+// Permanent bans
+// -----------------------------------------------------------------------------
+
+function readBans() {
+    const raw = api.getLobbyDbValue(DB_BANS);
+    if (typeof raw !== "string" || raw === "") {
+        return {};
+    }
+    try {
+        return JSON.parse(raw) || {};
+    } catch (err) {
+        return {};   // corrupt value should not lock everybody out
+    }
+}
+
+function writeBans(bans) {
+    api.setLobbyDbValue(DB_BANS, JSON.stringify(bans));
+}
+
+function isBanned(playerId) {
+    return readBans()[api.getPlayerDbId(playerId)] != null;
+}
+
+/** Bans by permanent account id, so a name change does not undo it. */
+function banPlayer(playerId, reason) {
+    const name = api.getEntityName(playerId);
+    const bans = readBans();
+    bans[api.getPlayerDbId(playerId)] = name;
+    writeBans(bans);
+
+    if (CONFIG.ban.announce) {
+        api.broadcastMessage(name + " hit 0 hearts and is eliminated.", { color: "#ff4757" });
+    }
+    api.kickPlayer(playerId, reason);
+}
+
+function unbanByName(name) {
+    const bans = readBans();
+    const wanted = String(name).toLowerCase();
+    let removed = null;
+    for (const dbId in bans) {
+        if (String(bans[dbId]).toLowerCase() === wanted) {
+            removed = bans[dbId];
+            delete bans[dbId];
+        }
+    }
+    if (removed) {
+        writeBans(bans);
+    }
+    return removed;
 }
 
 // -----------------------------------------------------------------------------
@@ -153,7 +279,7 @@ function applyMaxHp(playerId, hp, healBy) {
 
     const current = api.getHealth(playerId);
     if (current > hp) {
-        // Shrinking the cap must pull current health down with it, or the bar reads wrong.
+        // Shrinking the cap has to pull current health down too, or the bar lies.
         api.setHealth(playerId, hp);
     } else if (healBy > 0) {
         api.setHealth(playerId, Math.min(hp, current + healBy));
@@ -162,7 +288,7 @@ function applyMaxHp(playerId, hp, healBy) {
 
 /**
  * Moves a player's max HP and returns how much actually changed, which is less
- * than requested once they hit the configured floor or ceiling.
+ * than asked for once they hit the floor or the cap.
  */
 function addMaxHp(playerId, delta, healBy) {
     const before = getMaxHp(playerId);
@@ -189,13 +315,50 @@ function orbAttributes(hp) {
 function maceAttributes(durabilityLeft) {
     const max = CONFIG.mace.durability;
     const left = durabilityLeft == null ? max : durabilityLeft;
+    const lines = [];
+    if (CONFIG.mace.windBurstLevel > 0) {
+        lines.push("Wind Burst " + CONFIG.mace.windBurstLevel + " - smash launches you skyward.");
+    }
+    if (CONFIG.mace.densityLevel > 0) {
+        lines.push("Density " + CONFIG.mace.densityLevel + " - the further you fall, the harder it hits.");
+    }
+    lines.push("Works on players and mobs.");
+    lines.push("Right click in mid-air to wind charge.");
+    lines.push("Durability: " + left + " / " + max);
+
     return {
         customDisplayName: CONFIG.mace.name,
-        customDescription:
-            "Wind Burst " + CONFIG.mace.windBurstLevel + " - fall onto them to smash.\n" +
-            "Right click in mid-air to launch yourself.\n" +
-            "Durability: " + left + " / " + max,
+        customDescription: lines.join("\n"),
         customAttributes: { [ATTR_MACE]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function spearAttributes(durabilityLeft) {
+    const max = CONFIG.spear.durability;
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDisplayName: CONFIG.spear.name,
+        customDescription:
+            "Right click to lunge forward.\n" +
+            "Hits during a lunge deal +" + CONFIG.spear.lungeBonusDamage + " damage.\n" +
+            "Durability: " + left + " / " + max,
+        customAttributes: { [ATTR_SPEAR]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function appleAttributes(tier) {
+    const apple = CONFIG.apples[tier];
+    const lines = [
+        "Right click to eat.",
+        "Heals " + hearts(apple.heal) + " hearts and gives " + apple.shield + " shield.",
+    ];
+    if (apple.bonusMaxHp > 0) {
+        lines.push("Permanently grants " + hearts(apple.bonusMaxHp) + " max hearts.");
+    }
+    return {
+        customDisplayName: apple.name,
+        customDescription: lines.join("\n"),
+        customAttributes: { [ATTR_APPLE]: tier },
     };
 }
 
@@ -212,7 +375,7 @@ function heldSlot(playerId) {
     return item ? { index: index, item: item } : null;
 }
 
-/** Overwrites a slot, preserving the stack size, or clears it when the count runs out. */
+/** Overwrites a slot, keeping the stack size, or clears it when the count runs out. */
 function writeSlot(playerId, index, item, amount, attributes) {
     if (amount != null && amount <= 0) {
         api.setItemSlot(playerId, index, "Air", null, undefined, true);
@@ -221,32 +384,47 @@ function writeSlot(playerId, index, item, amount, attributes) {
     api.setItemSlot(playerId, index, item.name, amount, attributes, true);
 }
 
-function countItem(playerId, itemName) {
-    const amount = api.getInventoryItemAmount(playerId, itemName);
-    return amount < 0 ? Infinity : amount;   // a negative count means infinite
+function displayName(item) {
+    if (item.attributes && item.attributes.customDisplayName) {
+        return item.attributes.customDisplayName;
+    }
+    return item.name;
 }
 
-/** Removes `amount` of an item across however many stacks it is spread over. */
-function consumeItems(playerId, itemName, amount) {
-    if (countItem(playerId, itemName) < amount) {
-        return false;
-    }
-    let left = amount;
-    for (let guard = 0; guard < 64 && left > 0; guard++) {
-        const index = api.findItem(playerId, itemName);
-        if (index == null) {
-            break;
-        }
-        const slot = api.getItemSlot(playerId, index);
-        if (!slot) {
-            break;
-        }
-        const have = slot.amount == null ? 1 : slot.amount;
-        const take = Math.min(have, left);
-        writeSlot(playerId, index, slot, have - take, slot.attributes);
-        left -= take;
-    }
-    return left <= 0;
+// -----------------------------------------------------------------------------
+// Crafting
+// -----------------------------------------------------------------------------
+
+/**
+ * Recipes are per player in Bloxd, so they are registered on every join.
+ * The `attributes` field is what turns the crafted item into our custom one.
+ */
+function registerRecipes(playerId) {
+    api.editItemCraftingRecipes(playerId, CONFIG.mace.item, [{
+        requires: CONFIG.mace.recipe,
+        produces: 1,
+        attributes: maceAttributes(CONFIG.mace.durability),
+    }]);
+
+    api.editItemCraftingRecipes(playerId, CONFIG.spear.item, [{
+        requires: CONFIG.spear.recipe,
+        produces: 1,
+        attributes: spearAttributes(CONFIG.spear.durability),
+    }]);
+
+    // Both apples craft into the same base item, told apart by their tag.
+    api.editItemCraftingRecipes(playerId, "Apple", [
+        {
+            requires: CONFIG.apples.golden.recipe,
+            produces: 1,
+            attributes: appleAttributes("golden"),
+        },
+        {
+            requires: CONFIG.apples.enchanted.recipe,
+            produces: 1,
+            attributes: appleAttributes("enchanted"),
+        },
+    ]);
 }
 
 // -----------------------------------------------------------------------------
@@ -264,8 +442,8 @@ function maxDurabilityFor(item) {
 
 /**
  * Spends durability on whatever is in the given slot.
- * Bloxd has no built-in durability, so it lives in the item's custom attributes
- * and the slot is rewritten each time it changes.
+ * Bloxd has no durability of its own, so it lives in the item's custom
+ * attributes and the slot is rewritten every time it changes.
  */
 function spendDurability(playerId, slot, cost) {
     if (!CONFIG.durability.enabled || !slot || cost <= 0) {
@@ -288,13 +466,18 @@ function spendDurability(playerId, slot, cost) {
         return;
     }
 
-    const attributes = custom[ATTR_MACE]
-        ? maceAttributes(left)
-        : {
-              customDisplayName: item.attributes && item.attributes.customDisplayName,
-              customDescription: "Durability: " + left + " / " + max,
-              customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
-          };
+    let attributes;
+    if (custom[ATTR_MACE]) {
+        attributes = maceAttributes(left);
+    } else if (custom[ATTR_SPEAR]) {
+        attributes = spearAttributes(left);
+    } else {
+        attributes = {
+            customDisplayName: item.attributes && item.attributes.customDisplayName,
+            customDescription: "Durability: " + left + " / " + max,
+            customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
+        };
+    }
 
     writeSlot(playerId, slot.index, item, item.amount, attributes);
 
@@ -302,13 +485,6 @@ function spendDurability(playerId, slot, cost) {
     if (wasAbove && left <= max * CONFIG.durability.warnAtFraction) {
         api.queueCrosshairText(playerId, displayName(item) + " is almost broken", 2000);
     }
-}
-
-function displayName(item) {
-    if (item.attributes && item.attributes.customDisplayName) {
-        return item.attributes.customDisplayName;
-    }
-    return item.name;
 }
 
 // -----------------------------------------------------------------------------
@@ -328,7 +504,7 @@ function dropOrbs(playerId, totalHp) {
             pos[0], pos[1] + 1, pos[2],
             CONFIG.orb.item,
             1,
-            false,                       // never merge: each orb carries its own HP value
+            false,                     // never merge: each orb carries its own HP
             orbAttributes(perOrb),
             CONFIG.orb.despawnMs,
             playerId,
@@ -375,32 +551,47 @@ function eatOrb(playerId, slot) {
 }
 
 // -----------------------------------------------------------------------------
-// Windburst Mace
+// Golden Apples
 // -----------------------------------------------------------------------------
 
-/**
- * Upgrades a plain club into the Windburst Mace in exchange for the forge cost.
- * Stays quiet unless the player is clearly trying, so it never spams normal club use.
- */
-function tryForgeMace(playerId, slot) {
-    const cost = CONFIG.mace.forgeCost;
-    const held = countItem(playerId, cost.item);
-    if (held <= 0) {
-        return;
-    }
-    if (held < cost.amount) {
-        api.queueCrosshairText(playerId,
-            "Need " + cost.amount + " " + cost.item + " to forge a " + CONFIG.mace.name, 2000);
-        return;
-    }
-    if (!consumeItems(playerId, cost.item, cost.amount)) {
+function eatApple(playerId, slot, tier) {
+    const apple = CONFIG.apples[tier];
+    if (!apple) {
         return;
     }
 
-    writeSlot(playerId, slot.index, slot.item, slot.item.amount, maceAttributes(CONFIG.mace.durability));
-    tell(playerId, "Forged a " + CONFIG.mace.name + ".", "#7bed9f");
-    api.playSound(playerId, "levelup", 0.9, 0.9);
+    const amount = slot.item.amount == null ? 1 : slot.item.amount;
+    writeSlot(playerId, slot.index, slot.item, amount - 1, slot.item.attributes);
+
+    if (apple.bonusMaxHp > 0) {
+        addMaxHp(playerId, apple.bonusMaxHp, 0);
+    }
+
+    const maxHp = getMaxHp(playerId);
+    api.setHealth(playerId, Math.min(maxHp, api.getHealth(playerId) + apple.heal));
+
+    if (apple.shield > 0) {
+        api.setShieldAmount(playerId, api.getShieldAmount(playerId) + apple.shield);
+    }
+    if (apple.regenMs > 0) {
+        api.applyEffect(playerId, "Health Regen", apple.regenMs);
+    }
+
+    tell(playerId, "You ate a " + apple.name + ".", "#ffd700");
+    api.playSound(playerId, "eat1", 0.9, 1.0);
+    api.playSound(playerId, "magicAccent1", 0.7, 1.3);
+
+    const pos = api.getPosition(playerId);
+    api.playParticleEffect({
+        presetId: "aura",
+        pos1: [pos[0] - 0.6, pos[1], pos[2] - 0.6],
+        pos2: [pos[0] + 0.6, pos[1] + 2, pos[2] + 0.6],
+    });
 }
+
+// -----------------------------------------------------------------------------
+// Windburst Mace
+// -----------------------------------------------------------------------------
 
 function windCharge(playerId, slot) {
     const state = stateOf(playerId);
@@ -426,10 +617,11 @@ function windCharge(playerId, slot) {
 }
 
 /**
- * Turns a normal mace hit into a smash when the attacker is falling.
+ * Turns a mace hit into a smash when the attacker is falling. The target may be
+ * a player or a mob - both take the fall bonus and both get knocked around.
  * Returns the damage the hit should deal.
  */
-function maceSmash(attacker, victim, baseDamage, slot) {
+function maceSmash(attacker, targetId, baseDamage, slot) {
     const state = stateOf(attacker);
     const fell = state.fallDistance;
 
@@ -439,34 +631,47 @@ function maceSmash(attacker, victim, baseDamage, slot) {
         return baseDamage;
     }
 
-    const bonus = Math.min(CONFIG.mace.maxSmashDamage, fell * CONFIG.mace.damagePerBlockFallen);
-    const centre = api.getPosition(victim);
+    // Base smash scales with the fall; Density adds more on top of it.
+    let bonus = Math.min(CONFIG.mace.maxSmashDamage, fell * CONFIG.mace.damagePerBlockFallen);
+    if (CONFIG.mace.densityLevel > 0) {
+        bonus += CONFIG.mace.densityLevel * CONFIG.mace.densityPerLevel * fell;
+    }
 
-    // Wind Burst: the smash throws the attacker back into the air.
-    const lift = CONFIG.mace.windBurstLevel * CONFIG.mace.windBurstPerLevel;
-    api.applyImpulse(attacker, 0, lift, 0);
-    api.preventFallDamageNextGrounding(attacker);
+    const centre = api.getPosition(targetId);
+
+    if (CONFIG.mace.windBurstLevel > 0) {
+        const lift = CONFIG.mace.windBurstLevel * CONFIG.mace.windBurstPerLevel;
+        api.applyImpulse(attacker, 0, lift, 0);
+        api.preventFallDamageNextGrounding(attacker);
+    }
     state.fallDistance = 0;
 
-    knockbackAround(centre, attacker, victim);
-
-    api.broadcastSound("ominousBellHit", 0.9, 1.0, { playerIdOrPos: centre, maxHearDist: 40 });
-    api.playParticleEffect({
-        presetId: "stomp",
-        pos1: [centre[0] - 2, centre[1], centre[2] - 2],
-        pos2: [centre[0] + 2, centre[1] + 1, centre[2] + 2],
-    });
-    api.shakePlayerCamera(victim, 0.6, 400);
+    if (centre) {
+        knockbackAround(centre, attacker, targetId);
+        api.broadcastSound("ominousBellHit", 0.9, 1.0, { playerIdOrPos: centre, maxHearDist: 40 });
+        api.playParticleEffect({
+            presetId: "stomp",
+            pos1: [centre[0] - 2, centre[1], centre[2] - 2],
+            pos2: [centre[0] + 2, centre[1] + 1, centre[2] + 2],
+        });
+    }
+    if (isPlayer(targetId)) {
+        api.shakePlayerCamera(targetId, 0.6, 400);
+    }
 
     return Math.round(baseDamage + bonus);
 }
 
+/** Splash knockback on every player and, if enabled, every mob near the impact. */
 function knockbackAround(centre, attacker, alreadyHit) {
     const radius = CONFIG.mace.knockbackRadius;
-    const ids = api.getPlayerIds();
+    let targets = api.getPlayerIds();
+    if (CONFIG.mace.knockbackHitsMobs) {
+        targets = targets.concat(api.getMobIds());
+    }
 
-    for (let i = 0; i < ids.length; i++) {
-        const other = ids[i];
+    for (let i = 0; i < targets.length; i++) {
+        const other = targets[i];
         if (other === attacker || other === alreadyHit) {
             continue;
         }
@@ -482,7 +687,7 @@ function knockbackAround(centre, attacker, alreadyHit) {
             continue;
         }
 
-        // Falls off linearly, and a direct overlap still gets pushed somewhere.
+        // Falls off linearly. A direct overlap still gets pushed somewhere.
         const strength = (1 - distance / radius) * CONFIG.mace.knockbackForce;
         const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
         api.applyImpulse(other, (dx / length) * strength, CONFIG.mace.knockbackUp, (dz / length) * strength);
@@ -490,11 +695,81 @@ function knockbackAround(centre, attacker, alreadyHit) {
 }
 
 // -----------------------------------------------------------------------------
+// Moonstone Spear
+// -----------------------------------------------------------------------------
+
+function spearLunge(playerId, slot) {
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = CONFIG.spear.lungeCooldownMs - (now - state.lastLunge);
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Lunge: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+
+    const facing = api.getPlayerFacingInfo(playerId);
+    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
+    // Horizontal only, so a lunge is a dash rather than a launch.
+    const length = Math.max(0.001, Math.sqrt(dir[0] * dir[0] + dir[2] * dir[2]));
+
+    state.lastLunge = now;
+    api.applyImpulse(
+        playerId,
+        (dir[0] / length) * CONFIG.spear.lungeForce,
+        CONFIG.spear.lungeUp,
+        (dir[2] / length) * CONFIG.spear.lungeForce
+    );
+    api.preventFallDamageNextGrounding(playerId);
+    spendDurability(playerId, slot, CONFIG.spear.lungeDurabilityCost);
+
+    const pos = api.getPosition(playerId);
+    api.broadcastSound("magicAccent3", 0.6, 1.2, { playerIdOrPos: pos, maxHearDist: 20 });
+}
+
+function isLunging(playerId) {
+    return api.now() - stateOf(playerId).lastLunge <= CONFIG.spear.lungeWindowMs;
+}
+
+// -----------------------------------------------------------------------------
+// Shared weapon hit handling
+// -----------------------------------------------------------------------------
+
+function handleWeaponHit(attacker, targetId, damageDealt) {
+    const slot = heldSlot(attacker);
+    if (!slot) {
+        return;
+    }
+    const custom = customAttrs(slot.item);
+
+    if (custom[ATTR_MACE]) {
+        return maceSmash(attacker, targetId, damageDealt, slot);
+    }
+
+    if (custom[ATTR_SPEAR]) {
+        spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+        if (isLunging(attacker)) {
+            stateOf(attacker).lastLunge = 0;   // the bonus lands once per lunge
+            return Math.round(damageDealt + CONFIG.spear.lungeBonusDamage);
+        }
+        return;
+    }
+
+    spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+}
+
+// -----------------------------------------------------------------------------
 // Callbacks
 // -----------------------------------------------------------------------------
 
 function onPlayerJoin(playerId) {
+    if (CONFIG.ban.enabled && isBanned(playerId)) {
+        api.kickPlayer(playerId, CONFIG.ban.reason);
+        return;
+    }
+
     stateOf(playerId);
+    registerRecipes(playerId);
+
     const hp = getMaxHp(playerId);
     applyMaxHp(playerId, hp, 0);
     tell(playerId, "You have " + hearts(hp) + " hearts. Type /smphelp for commands.", "#7bed9f");
@@ -515,8 +790,8 @@ function tick() {
         const state = stateOf(playerId);
         if (state.lastY != null) {
             const dropped = state.lastY - pos[1];
-            // Accumulate while descending; any non-fall resets it, which is what a
-            // "did they fall onto this hit" check needs.
+            // Accumulate while descending; anything else resets it, which is
+            // exactly what "did they fall onto this hit" needs.
             state.fallDistance = dropped > 0.05 ? state.fallDistance + dropped : 0;
         }
         state.lastY = pos[1];
@@ -530,9 +805,22 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
         return;
     }
 
+    const before = getMaxHp(killedPlayer);
+    const shouldDrop = CONFIG.death.dropOrbs && (byPlayer || CONFIG.death.dropOrbsOnWorldDeath);
+
+    // Elimination: dropping to 0 hearts is permanent.
+    if (CONFIG.ban.enabled && before - loss <= 0) {
+        if (shouldDrop) {
+            dropOrbs(killedPlayer, before);
+        }
+        applyMaxHp(killedPlayer, 0, 0);
+        banPlayer(killedPlayer, CONFIG.ban.reason);
+        return;
+    }
+
     const lost = -addMaxHp(killedPlayer, -loss, 0);
     if (lost <= 0) {
-        tell(killedPlayer, "You are at the minimum of " + hearts(CONFIG.health.min) + " hearts.", "#ffa502");
+        tell(killedPlayer, "You are at the minimum of " + hearts(minHp()) + " hearts.", "#ffa502");
         return;
     }
 
@@ -546,7 +834,6 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
         }
     }
 
-    const shouldDrop = CONFIG.death.dropOrbs && (byPlayer || CONFIG.death.dropOrbsOnWorldDeath);
     if (shouldDrop) {
         dropOrbs(killedPlayer, lost);
     }
@@ -561,29 +848,21 @@ function onPlayerAltAction(playerId) {
 
     if (custom[ATTR_ORB]) {
         eatOrb(playerId, slot);
+    } else if (custom[ATTR_APPLE]) {
+        eatApple(playerId, slot, custom[ATTR_APPLE]);
     } else if (custom[ATTR_MACE]) {
         windCharge(playerId, slot);
-    } else if (slot.item.name === CONFIG.mace.item) {
-        tryForgeMace(playerId, slot);
+    } else if (custom[ATTR_SPEAR]) {
+        spearLunge(playerId, slot);
     }
 }
 
 function onPlayerDamagingOtherPlayer(attackingPlayer, damagedPlayer, damageDealt) {
-    const slot = heldSlot(attackingPlayer);
-    if (!slot) {
-        return;
-    }
-    if (customAttrs(slot.item)[ATTR_MACE]) {
-        return maceSmash(attackingPlayer, damagedPlayer, damageDealt, slot);
-    }
-    spendDurability(attackingPlayer, slot, CONFIG.durability.costPerHit);
+    return handleWeaponHit(attackingPlayer, damagedPlayer, damageDealt);
 }
 
-function onPlayerDamagingMob(playerId) {
-    const slot = heldSlot(playerId);
-    if (slot) {
-        spendDurability(playerId, slot, CONFIG.durability.costPerHit);
-    }
+function onPlayerDamagingMob(playerId, mobId, damageDealt) {
+    return handleWeaponHit(playerId, mobId, damageDealt);
 }
 
 function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
@@ -607,7 +886,7 @@ function playerCommand(playerId, command) {
     const args = parts.slice(1);
 
     const isPublic = CONFIG.commands.publicCommands.indexOf(name) !== -1;
-    if (!isPublic && !isAdmin(playerId) && !(name === "mace" && CONFIG.commands.freeMace)) {
+    if (!isPublic && !isAdmin(playerId)) {
         return false;
     }
 
@@ -621,15 +900,46 @@ function playerCommand(playerId, command) {
         case "withdraw":
             return withdraw(playerId, args[0]);
 
-        case "mace":
-            api.giveItem(playerId, CONFIG.mace.item, 1, maceAttributes(CONFIG.mace.durability));
-            tell(playerId, "Given a " + CONFIG.mace.name + ".", "#7bed9f");
+        case "smphelp":
+            tell(playerId,
+                "/hp - your hearts | /withdraw <hearts> - turn hearts into Life Orbs | "
+                + "right click a Life Orb or Golden Apple to eat it | "
+                + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + ") and "
+                + CONFIG.spear.name + " | hit 0 hearts and you are banned for good.",
+                "#70a1ff");
             return true;
 
-        case "orb": {
-            const amount = Math.max(1, parseInt(args[0], 10) || 1);
-            for (let i = 0; i < amount; i++) {
+        case "unban": {
+            const removed = unbanByName(args[0]);
+            tell(playerId, removed ? "Unbanned " + removed + "." : "No ban found for " + args[0] + ".",
+                removed ? "#7bed9f" : "#ff4757");
+            return true;
+        }
+
+        case "bans": {
+            const bans = readBans();
+            const names = [];
+            for (const dbId in bans) {
+                names.push(bans[dbId]);
+            }
+            tell(playerId, names.length ? "Banned: " + names.join(", ") : "Nobody is banned.", "#70a1ff");
+            return true;
+        }
+
+        case "give": {
+            const what = (args[0] || "").toLowerCase();
+            if (what === "mace") {
+                api.giveItem(playerId, CONFIG.mace.item, 1, maceAttributes(CONFIG.mace.durability));
+            } else if (what === "spear") {
+                api.giveItem(playerId, CONFIG.spear.item, 1, spearAttributes(CONFIG.spear.durability));
+            } else if (what === "gapple") {
+                api.giveItem(playerId, "Apple", 1, appleAttributes("golden"));
+            } else if (what === "egapple") {
+                api.giveItem(playerId, "Apple", 1, appleAttributes("enchanted"));
+            } else if (what === "orb") {
                 api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
+            } else {
+                tell(playerId, "Usage: /give mace|spear|gapple|egapple|orb", "#ff4757");
             }
             return true;
         }
@@ -647,14 +957,6 @@ function playerCommand(playerId, command) {
             return true;
         }
 
-        case "smphelp":
-            tell(playerId, "/hp - your hearts | /withdraw <hearts> - turn hearts into Life Orbs"
-                + " | right click a Life Orb to eat it | right click the "
-                + CONFIG.mace.name + " in mid-air to wind charge | right click a "
-                + CONFIG.mace.item + " holding " + CONFIG.mace.forgeCost.amount + " "
-                + CONFIG.mace.forgeCost.item + " to forge the mace", "#70a1ff");
-            return true;
-
         default:
             return false;
     }
@@ -669,8 +971,10 @@ function withdraw(playerId, rawHearts) {
     }
 
     const hp = Math.round(heartsWanted * CONFIG.hpPerHeart);
-    if (getMaxHp(playerId) - hp < CONFIG.health.min) {
-        tell(playerId, "You cannot drop below " + hearts(CONFIG.health.min) + " hearts.", "#ff4757");
+    // Never let a withdrawal be the thing that eliminates you.
+    const floor = Math.max(minHp(), CONFIG.ban.enabled ? CONFIG.orb.hp : minHp());
+    if (getMaxHp(playerId) - hp < floor) {
+        tell(playerId, "You cannot drop below " + hearts(floor) + " hearts.", "#ff4757");
         return true;
     }
 

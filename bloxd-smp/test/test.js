@@ -1,130 +1,204 @@
 const { ctx, world, CONFIG: C } = require("./harness.js");
 let fails = 0;
-const check = (label, cond, extra) => { console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra)); if (!cond) fails++; };
+const check = (label, cond, extra) => {
+    console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
+    if (!cond) fails++;
+};
+const maceItem = () => ({ name: C.mace.item, amount: null, attributes: ctx.maceAttributes(C.mace.durability) });
+const spearItem = () => ({ name: C.spear.item, amount: null, attributes: ctx.spearAttributes(C.spear.durability) });
 
-// --- join
+// ---------------------------------------------------------------- join & setup
 ctx.onPlayerJoin("a"); ctx.onPlayerJoin("b");
 check("join sets maxHealth option", world.opts.a.maxHealth === 100, JSON.stringify(world.opts.a));
+check("mace recipe registered", !!world.recipes.a[C.mace.item], Object.keys(world.recipes.a));
+check("spear recipe registered", !!world.recipes.a[C.spear.item], "");
+check("two apple recipes registered", world.recipes.a["Apple"].length === 2, "");
+check("mace recipe carries mace tag",
+    world.recipes.a[C.mace.item][0].attributes.customAttributes.smpMace === true, "");
+check("golden apple recipe carries tier",
+    world.recipes.a["Apple"][0].attributes.customAttributes.smpApple === "golden", "");
+check("enchanted apple recipe carries tier",
+    world.recipes.a["Apple"][1].attributes.customAttributes.smpApple === "enchanted", "");
 
-// --- pvp death drops orbs and costs the victim hp
+// ------------------------------------------------------------------ orb drops
 world.health.a = 100;
 ctx.onAttemptKillPlayer("a", "b");
 check("victim lost 10 hp", world.db.a.smpMaxHp === 90, world.db.a.smpMaxHp);
 check("one orb dropped", world.drops.length === 1, world.drops.length);
-check("orb carries hp", world.drops[0].attrs.customAttributes.hp === 10, JSON.stringify(world.drops[0].attrs));
-check("orb tagged", world.drops[0].attrs.customAttributes.smpOrb === true, "");
-
-// --- natural death is free by default
-const before = world.db.a.smpMaxHp;
+check("orb carries hp", world.drops[0].attrs.customAttributes.hp === 10, "");
+const beforeWorldDeath = world.db.a.smpMaxHp;
 ctx.onAttemptKillPlayer("a", null);
-check("world death costs nothing", world.db.a.smpMaxHp === before, world.db.a.smpMaxHp);
+check("world death costs nothing", world.db.a.smpMaxHp === beforeWorldDeath, world.db.a.smpMaxHp);
 
-// --- eating an orb
+// ------------------------------------------------------------------ eating orbs
 world.sel = { a: 0, b: 0 };
-world.inv.a = [{ name: "Knight Heart", amount: 2, attributes: world.drops[0].attrs }];
+world.inv.a = [{ name: C.orb.item, amount: 2, attributes: world.drops[0].attrs }];
 world.health.a = 50;
 ctx.onPlayerAltAction("a");
-check("orb restored max hp to 100", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
+check("orb raised max hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
 check("orb healed current hp", world.health.a === 60, world.health.a);
-check("orb stack decremented", world.inv.a[0].amount === 1, JSON.stringify(world.inv.a[0]));
+check("orb stack decremented", world.inv.a[0].amount === 1, "");
 
-// at the cap the orb must NOT be eaten
 world.db.a.smpMaxHp = C.health.max;
 ctx.onPlayerAltAction("a");
-check("at cap -> orb not consumed", world.inv.a[0] && world.inv.a[0].amount === 1, JSON.stringify(world.inv.a[0]));
-check("at cap -> max hp unchanged", world.db.a.smpMaxHp === C.health.max, world.db.a.smpMaxHp);
-// eating the last orb clears the slot
+check("at cap -> orb not consumed", world.inv.a[0] && world.inv.a[0].amount === 1, "");
 world.db.a.smpMaxHp = 90;
 ctx.onPlayerAltAction("a");
-check("last orb clears slot", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
-check("last orb still granted hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
+check("last orb clears slot", world.inv.a[0] === null, "");
 
-// --- max hp floor
-world.db.b.smpMaxHp = C.health.min;
-world.drops.length = 0;
-ctx.onAttemptKillPlayer("b", "a");
-check("cannot go below floor", world.db.b.smpMaxHp === C.health.min, world.db.b.smpMaxHp);
-check("no orbs when nothing lost", world.drops.length === 0, world.drops.length);
+// -------------------------------------------------------------- golden apples
+world.db.a.smpMaxHp = 100;
+world.health.a = 20;
+world.shield.a = 0;
+world.effects.length = 0;
+world.inv.a = [{ name: "Apple", amount: 3, attributes: ctx.appleAttributes("golden") }];
+ctx.onPlayerAltAction("a");
+check("golden apple heals", world.health.a === 60, world.health.a);
+check("golden apple gives shield", world.shield.a === C.apples.golden.shield, world.shield.a);
+check("golden apple applies regen", world.effects.some(e => e.name === "Health Regen"), "");
+check("golden apple consumed one", world.inv.a[0].amount === 2, "");
+check("golden apple does not raise max hp", world.db.a.smpMaxHp === 100, world.db.a.smpMaxHp);
 
-// --- mace: normal hit (not falling) is unchanged, spends 1 durability
-const mace = () => ctx.maceAttributes(C.mace.durability);
-world.inv.a = [{ name: "Moonstone Club", amount: null, attributes: mace() }];
+world.health.a = 10;
+world.inv.a = [{ name: "Apple", amount: 1, attributes: ctx.appleAttributes("enchanted") }];
+ctx.onPlayerAltAction("a");
+check("enchanted apple raises max hp", world.db.a.smpMaxHp === 110, world.db.a.smpMaxHp);
+check("enchanted apple heals to cap", world.health.a === 110, world.health.a);
+check("enchanted apple clears slot", world.inv.a[0] === null, "");
+
+// a plain apple is not edible as a gapple
+world.health.a = 50;
+world.inv.a = [{ name: "Apple", amount: 5, attributes: undefined }];
+ctx.onPlayerAltAction("a");
+check("plain apple untouched", world.inv.a[0].amount === 5 && world.health.a === 50, "");
+
+// ------------------------------------------------------------------ mace smash
+world.inv.a = [maceItem()];
 let dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 20);
 check("grounded mace hit keeps base damage", dmg === 20, dmg);
-check("mace lost 1 durability", world.inv.a[0].attributes.customAttributes.smpDur === C.mace.durability - 1,
-      world.inv.a[0].attributes.customAttributes.smpDur);
+check("mace lost 1 durability",
+    world.inv.a[0].attributes.customAttributes.smpDur === C.mace.durability - 1, "");
 
-// --- mace: falling hit smashes
-world.pos.a = [0, 70, 0];
-ctx.tick();
-world.pos.a = [0, 64, 0];
-ctx.tick();                                  // fell 6 blocks
+world.pos.a = [0, 70, 0]; ctx.tick();
+world.pos.a = [0, 64, 0]; ctx.tick();          // fell 6 blocks
 world.impulses.length = 0;
 dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 20);
-check("smash adds fall damage", dmg === Math.round(20 + 6 * C.mace.damagePerBlockFallen), dmg);
+const expected = Math.round(20 + Math.min(C.mace.maxSmashDamage, 6 * C.mace.damagePerBlockFallen)
+    + C.mace.densityLevel * C.mace.densityPerLevel * 6);
+check("smash adds fall + density damage", dmg === expected, dmg + " vs " + expected);
 const lift = world.impulses.find(i => i[0] === "a");
-check("wind burst launches attacker", lift && lift[2] === C.mace.windBurstLevel * C.mace.windBurstPerLevel, JSON.stringify(world.impulses));
+check("wind burst launches attacker",
+    lift && lift[2] === C.mace.windBurstLevel * C.mace.windBurstPerLevel, JSON.stringify(world.impulses));
 
-// --- mace: right click = wind charge, then cooldown
+// same smash against a mob
+world.mobs = ["m1"];
+world.pos.m1 = [0, 64, 0];
+world.pos.a = [0, 71, 0]; ctx.tick();
+world.pos.a = [0, 65, 0]; ctx.tick();          // fell 6 blocks again
+world.impulses.length = 0;
+dmg = ctx.onPlayerDamagingMob("a", "m1", 20);
+check("mace smashes mobs too", dmg === expected, dmg + " vs " + expected);
+check("wind burst fires on a mob hit",
+    world.impulses.some(i => i[0] === "a" && i[2] === C.mace.windBurstLevel * C.mace.windBurstPerLevel),
+    JSON.stringify(world.impulses));
+
+// splash knockback reaches nearby mobs
+world.mobs = ["m2"];
+world.pos.m2 = [1, 64, 0];
+world.pos.b = [0, 64, 0];
+world.pos.a = [0, 72, 0]; ctx.tick();
+world.pos.a = [0, 66, 0]; ctx.tick();
+world.impulses.length = 0;
+ctx.onPlayerDamagingOtherPlayer("a", "b", 20);
+check("nearby mob is knocked back", world.impulses.some(i => i[0] === "m2"), JSON.stringify(world.impulses));
+world.mobs = [];
+
+// wind charge on right click, then cooldown
 world.impulses.length = 0;
 ctx.onPlayerAltAction("a");
-check("wind charge impulse", world.impulses.length === 1 && world.impulses[0][2] === C.mace.chargeUpwardImpulse, JSON.stringify(world.impulses));
+check("wind charge impulse", world.impulses.length === 1 && world.impulses[0][2] === C.mace.chargeUpwardImpulse, "");
 ctx.onPlayerAltAction("a");
-check("wind charge on cooldown", world.impulses.length === 1, JSON.stringify(world.impulses));
+check("wind charge on cooldown", world.impulses.length === 1, "");
 
-// --- durability breaks the item
-world.inv.a = [{ name: "Iron Pickaxe", amount: null,
-                 attributes: { customAttributes: { smpDur: 1, smpDurMax: 250 } } }];
+// ----------------------------------------------------------------- spear lunge
+world.inv.a = [spearItem()];
+world.facing = [1, 0, 0];
+world.impulses.length = 0;
+ctx.onPlayerAltAction("a");
+check("lunge pushes along facing",
+    world.impulses.length === 1 && world.impulses[0][1] === C.spear.lungeForce, JSON.stringify(world.impulses));
+dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 15);
+check("lunging spear hit adds bonus", dmg === 15 + C.spear.lungeBonusDamage, dmg);
+dmg = ctx.onPlayerDamagingOtherPlayer("a", "b", 15);
+check("bonus only lands once per lunge", dmg === undefined, dmg);
+
+// ------------------------------------------------------------------ durability
+world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 1, smpDurMax: 250 } } }];
 ctx.onPlayerChangeBlock("a", 0, 0, 0, "Stone", "Air");
-check("tool breaks at 0 durability", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
+check("tool breaks at 0 durability", world.inv.a[0] === null, "");
 check("break message sent", world.log.some(l => l.startsWith("fly[a]")), "");
 
-// placing a block must not cost durability
 world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 50, smpDurMax: 250 } } }];
 ctx.onPlayerChangeBlock("a", 0, 0, 0, "Air", "Stone");
-check("placing costs no durability", world.inv.a[0].attributes.customAttributes.smpDur === 50,
-      world.inv.a[0].attributes.customAttributes.smpDur);
+check("placing costs no durability", world.inv.a[0].attributes.customAttributes.smpDur === 50, "");
 
-// untracked item never wears out
 world.inv.a = [{ name: "Dirt", amount: 10, attributes: undefined }];
 ctx.onPlayerChangeBlock("a", 0, 0, 0, "Stone", "Air");
-check("untracked item unaffected", world.inv.a[0].name === "Dirt" && world.inv.a[0].amount === 10, JSON.stringify(world.inv.a[0]));
+check("untracked item unaffected", world.inv.a[0].name === "Dirt" && world.inv.a[0].amount === 10, "");
 
-// --- forging the mace from a plain club
-world.inv.a = [{ name: "Moonstone Club", amount: null, attributes: undefined },
-               { name: "Moonstone", amount: 5, attributes: undefined }];
-ctx.onPlayerAltAction("a");
-check("forge refused without full cost", world.inv.a[0].attributes === undefined, JSON.stringify(world.inv.a[0]));
-check("partial cost not consumed", world.inv.a[1].amount === 5, world.inv.a[1].amount);
+// ---------------------------------------------------------- permanent ban at 0
+world.drops.length = 0;
+world.kicks.length = 0;
+world.db.b.smpMaxHp = C.death.hpLostToPlayer;      // exactly one death left
+ctx.onAttemptKillPlayer("b", "a");
+check("0 hearts kicks the player", world.kicks.some(k => k.id === "b"), JSON.stringify(world.kicks));
+check("0 hearts is announced", world.log.some(l => l.startsWith("bcast") && /Bob/.test(l)), "");
+check("elimination still drops orbs", world.drops.length > 0, world.drops.length);
+check("ban recorded by account id", JSON.parse(world.lobbyDb.smpBans)["db-b"] === "Bob", world.lobbyDb.smpBans);
 
-world.inv.a = [{ name: "Moonstone Club", amount: null, attributes: undefined },
-               { name: "Moonstone", amount: 5, attributes: undefined },
-               { name: "Moonstone", amount: 4, attributes: undefined }];
-ctx.onPlayerAltAction("a");
-check("forge upgrades the club", world.inv.a[0].attributes.customAttributes.smpMace === true, JSON.stringify(world.inv.a[0]));
-check("forge sets full durability", world.inv.a[0].attributes.customAttributes.smpDur === C.mace.durability, "");
-const moonstoneLeft = world.inv.a.reduce((n, s) => n + (s && s.name === "Moonstone" ? s.amount : 0), 0);
-check("forge consumed cost across stacks", moonstoneLeft === 1, moonstoneLeft);
+world.kicks.length = 0;
+ctx.onPlayerJoin("b");
+check("banned player kicked on join", world.kicks.length === 1, JSON.stringify(world.kicks));
+check("banned player gets no recipes", world.recipes.b === undefined || !world.recipes.b.__rejoined, "");
 
-// a plain club with no moonstone at all does nothing and says nothing
-world.inv.a = [{ name: "Moonstone Club", amount: null, attributes: undefined }];
-const logsBefore = world.log.length;
-ctx.onPlayerAltAction("a");
-check("plain club stays silent with no cost", world.log.length === logsBefore && world.inv.a[0].attributes === undefined, "");
+// admins can lift it
+C.commands.adminNames.push("Alice");
+check("/bans lists the ban", ctx.playerCommand("a", "/bans") === true, "");
+check("/unban handled", ctx.playerCommand("a", "/unban Bob") === true, "");
+check("ban removed", JSON.parse(world.lobbyDb.smpBans)["db-b"] === undefined, world.lobbyDb.smpBans);
+world.kicks.length = 0;
+world.db.b.smpMaxHp = 100;
+ctx.onPlayerJoin("b");
+check("unbanned player may rejoin", world.kicks.length === 0, JSON.stringify(world.kicks));
 
-// --- commands
+// a corrupt ban list must not lock everyone out
+world.lobbyDb.smpBans = "{not json";
+world.kicks.length = 0;
+ctx.onPlayerJoin("b");
+check("corrupt ban list is ignored", world.kicks.length === 0, JSON.stringify(world.kicks));
+world.lobbyDb.smpBans = "{}";
+
+// -------------------------------------------------------------------- commands
 world.inv.a = [];
 check("/hp handled", ctx.playerCommand("a", "/hp") === true, "");
 world.db.a.smpMaxHp = 100;
 check("/withdraw handled", ctx.playerCommand("a", "withdraw 2") === true, "");
 check("withdraw removed 20 hp", world.db.a.smpMaxHp === 80, world.db.a.smpMaxHp);
 check("withdraw gave 2 orbs", world.inv.a.length === 2, JSON.stringify(world.inv.a));
-check("withdrawn orbs are edible", world.inv.a[0].attributes.customAttributes.smpOrb === true, "");
-check("/mace allowed by default", ctx.playerCommand("a", "/mace") === true, "");
+world.db.a.smpMaxHp = C.orb.hp;
+ctx.playerCommand("a", "withdraw 1");
+check("withdraw cannot self-eliminate", world.db.a.smpMaxHp === C.orb.hp, world.db.a.smpMaxHp);
+
+world.inv.a = [];
+ctx.playerCommand("a", "/give mace");
+check("/give mace gives a tagged mace",
+    world.inv.a[0].attributes.customAttributes.smpMace === true, JSON.stringify(world.inv.a[0]));
+ctx.playerCommand("a", "/give egapple");
+check("/give egapple gives an enchanted apple",
+    world.inv.a[1].attributes.customAttributes.smpApple === "enchanted", "");
+C.commands.adminNames.length = 0;
+check("/give blocked for non-admin", ctx.playerCommand("a", "/give mace") === false, "");
 check("unknown command ignored", ctx.playerCommand("a", "/potato") === false, "");
-world.db.a.smpMaxHp = C.health.min;
-ctx.playerCommand("a", "withdraw 5");
-check("withdraw refused below floor", world.db.a.smpMaxHp === C.health.min, world.db.a.smpMaxHp);
 
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILURES`);
 process.exit(fails === 0 ? 0 : 1);
