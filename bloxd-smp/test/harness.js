@@ -3,7 +3,7 @@ const fs = require("fs"), vm = require("vm"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "smp.js"), "utf8");
 
 const world = {
-    db: {}, lobbyDb: {}, opts: {}, health: {}, shield: {}, inv: {}, sel: {}, pos: {},
+    db: {}, lobbyDb: {}, opts: {}, health: {}, alive: {}, shield: {}, inv: {}, sel: {}, pos: {},
     drops: [], log: [], impulses: [], effects: [], kicks: [], recipes: {},
     names: { a: "Alice", b: "Bob" }, dbIds: { a: "db-a", b: "db-b" },
     mobs: [], facing: [0, 0, 1], blocks: {}, rects: [], chunkLoaded: true, sets: 0, damages: [], entitySettings: {},
@@ -21,6 +21,7 @@ const api = {
     getPosition: id => world.pos[id] || [0, 64, 0],
     getHealth: id => world.health[id] ?? 100,
     setHealth: (id, hp) => { world.health[id] = hp; },
+    isAlive: id => world.alive[id] !== false,
     getShieldAmount: id => world.shield[id] ?? 0,
     setShieldAmount: (id, v) => { world.shield[id] = v; },
     applyEffect: (id, name, ms, info) => world.effects.push({ id, name, ms, info }),

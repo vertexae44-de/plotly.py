@@ -1,4 +1,4 @@
-const { ctx, world, api, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -411,14 +411,13 @@ check("removing the off-hand shield clears the HUD chip",
 world.sel.a = 0;
 
 // ---------------------------------------------------- shield writes on a dead player
-// setShieldAmount rejects a lifeform with null health (mid-death, already kicked).
-// That window is real: a fatal hit or a tick can land on it, so every write to the
-// shield resource must check first instead of letting the engine throw.
+// setShieldAmount rejects a lifeform that isn't alive right now (mid-death, on the
+// respawn screen, already kicked). That window is real: a fatal hit or a tick can
+// land on it, so every write to the shield resource must check first instead of
+// letting the engine throw.
 {
-    const realGetHealth = api.getHealth;
-    api.getHealth = id => (id === "a" ? null : realGetHealth(id));
-
-    check("isAlive is false once a player's health goes null", ctx.isAlive("a") === false, "");
+    world.alive.a = false;
+    check("isAlive reflects a dead player", ctx.isAlive("a") === false, "");
 
     world.shield.a = 0;
     ctx.topUpShield("a");
@@ -430,8 +429,8 @@ world.sel.a = 0;
     check("applyShieldAbsorption never touches the shield resource of a dead defender",
         world.shield.a === 0, world.shield.a);
 
-    api.getHealth = realGetHealth;
-    check("isAlive recovers once health is a number again", ctx.isAlive("a") === true, "");
+    world.alive.a = true;
+    check("isAlive recovers once the player is alive again", ctx.isAlive("a") === true, "");
 }
 
 // ------------------------------------------------------------ off-hand swapping

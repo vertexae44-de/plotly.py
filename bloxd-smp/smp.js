@@ -1525,14 +1525,13 @@ function shieldState(playerId) {
 }
 
 /**
- * setShieldAmount rejects a lifeform whose health is currently null - a
- * player mid-death, already kicked, or otherwise gone. tick() and a fatal
- * hit can both reach the shield code in that exact window, so every write
- * to the shield resource checks this first rather than letting the engine
- * throw.
+ * setShieldAmount rejects a lifeform that is not alive right now - mid-death,
+ * on the respawn screen, or already kicked. tick() and a fatal hit can both
+ * reach the shield code in that exact window, so every write to the shield
+ * resource checks the engine's own isAlive first rather than letting it throw.
  */
 function isAlive(lifeformId) {
-    return typeof api.getHealth(lifeformId) === "number";
+    return api.isAlive(lifeformId);
 }
 
 /** Tops the numeric shield up to the working minimum when a guard goes up. */
