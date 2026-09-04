@@ -659,8 +659,8 @@ const CONFIG = {
     // only "explosion" this whole script can make is the same trick Crystal
     // PvP already uses: damage everyone in a radius and draw particles/sound
     // over it. So both of these are built the same way, and "TNT" in both
-    // recipes is substituted with a real Bloxd item that is actually
-    // explosive - Moonstone Remote Explosive - rather than an item that does
+    // recipes is substituted with a real Bloxd block that is actually
+    // explosive - Moonstone Explosive - rather than an item that does
     // not exist.
     orbital: {
         enabled: true,
@@ -668,7 +668,7 @@ const CONFIG = {
         item: "Master Rod",
         name: "Orbital Strike Cannon",
         recipe: [
-            { items: ["Moonstone Remote Explosive"], amt: 500 },
+            { items: ["Moonstone Explosive"], amt: 500 },
             { items: ["Arrow"], amt: 30 },
             { items: ["Diamond Bow"], amt: 2 },
             { items: ["Knight Heart"], amt: 400 },
@@ -687,7 +687,7 @@ const CONFIG = {
         recipe: [
             { items: ["Gold Bow"], amt: 1 },
             { items: ["Knight Heart"], amt: 250 },
-            { items: ["Moonstone Remote Explosive"], amt: 230 },
+            { items: ["Moonstone Explosive"], amt: 230 },
         ],
         radius: 4,
         damage: 55,

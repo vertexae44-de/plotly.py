@@ -1366,7 +1366,7 @@ check("respawn falls back to the Overworld position with no bed set",
 
 // ----------------------------------------------------- Orbital Strike Cannon & Stabshot
 check("orbital cannon substitutes a real explosive item for the nonexistent TNT",
-    C.orbital.recipe.some(r => r.items[0] === "Moonstone Remote Explosive" && r.amt === 500),
+    C.orbital.recipe.some(r => r.items[0] === "Moonstone Explosive" && r.amt === 500),
     JSON.stringify(C.orbital.recipe));
 check("orbital cannon is the Master Rod, breaking on use is the point",
     C.orbital.item === "Master Rod", C.orbital.item);
@@ -1375,7 +1375,7 @@ check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (()
     const r = C.stabshot.recipe;
     return r.some(x => x.items[0] === "Gold Bow" && x.amt === 1)
         && r.some(x => x.items[0] === "Knight Heart" && x.amt === 250)
-        && r.some(x => x.items[0] === "Moonstone Remote Explosive" && x.amt === 230);
+        && r.some(x => x.items[0] === "Moonstone Explosive" && x.amt === 230);
 })(), JSON.stringify(C.stabshot.recipe));
 
 world.inv.a = [{ name: C.orbital.item, amount: null, attributes: ctx.orbitalAttributes() }];

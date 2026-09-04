@@ -54,15 +54,15 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
-| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Remote Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
-| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Remote Explosive |
+| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
+| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
 
-Bloxd has no TNT item and no explosion-trigger API, so **Moonstone Remote Explosive** (a real item)
-stands in for "TNT" in the two rod recipes, the same way Wind Charge, the shield and Repair Kit
-already reuse real items for concepts Bloxd doesn't have.
+Bloxd has no TNT item and no explosion-trigger API, so **Moonstone Explosive** (a real block)
+stands in for "TNT" in the two rod recipes, the same way Wind Charge and the shield already reuse
+real items for concepts Bloxd doesn't have.
 
 ## Hearts
 
@@ -520,7 +520,7 @@ Things the Bloxd API genuinely does not expose, worked around rather than faked:
 - **No sea-creature mob type.** The ocean's sea mob is an existing mob (`Slime` by default),
   renamed and re-skinned.
 - **No TNT item, no explosion-trigger API.** The Orbital Strike Cannon and Stabshot substitute
-  Moonstone Remote Explosive for "TNT" and fake their blast the same way Crystal PvP does:
+  Moonstone Explosive for "TNT" and fake their blast the same way Crystal PvP does:
   damage-in-a-radius plus particles, not a real detonation.
 - **No way to read the armour slots.** Armour gets a durability number from the same
   materials/kinds formula as everything else, and can be mended if you pull it into your hand, but
