@@ -129,7 +129,7 @@ light, sky light and gravity through per-player client options.
 | --- | --- | --- | --- | --- |
 | Overworld | `0, 0` | 1× | — | normal |
 | The Nether | `30000, 0` | 8× | Purple Portal | red fog, short view distance |
-| The End | `0, 30000` | 1× | Black Portal | dark violet fog, 0.7× gravity |
+| The End | `0, -30000` | 1× | Black Portal | dark violet fog, 0.7× gravity |
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
 brings you home. Nether coordinates are divided by 8 exactly like Minecraft, so a long walk there is

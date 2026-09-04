@@ -367,7 +367,7 @@ const CONFIG = {
             },
             end: {
                 name: "The End",
-                origin: [0, 30000],
+                origin: [0, -30000],
                 scale: 1,
                 portalBlock: "Black Portal",
                 platformBlock: "Obsidian",
