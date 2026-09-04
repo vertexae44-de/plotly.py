@@ -243,7 +243,7 @@ const CONFIG = {
         // what stopped the shield working at all. This one has no built-in
         // click behaviour to fight with.
         item: "Brown Paintball",
-        name: "Bulwark",
+        name: "Shield",
         durability: 500,
 
         raiseShieldAmount: 30,     // tops shield up to at least this when raised
@@ -252,8 +252,17 @@ const CONFIG = {
         blockDurabilityCost: 2,    // per hit blocked
 
         armNode: "ArmLeftMesh",    // the "off-hand" arm - opposite the weapon hand
-        meshColour: [176, 184, 196],
-        hudChip: "\uD83D\uDEE1 Shield raised",
+
+        // The shield is on your arm the whole time you have one, whether it is
+        // guarding or not - it just sits lower and duller when it isn't, so
+        // you can see at a glance which state you are in.
+        meshColour: [176, 184, 196],          // bright, up in front, blocking
+        meshColourLowered: [110, 118, 130],   // dull, tucked down, not blocking
+        meshOffset: [0, -0.2, 0.15],
+        meshOffsetLowered: [0, -0.5, -0.05],
+
+        hudChipBlocking: "\uD83D\uDEE1 Blocking",
+        hudChipLowered: "\uD83D\uDEE1 Shield lowered",
 
         recipe: [
             { items: ["Maple Wood Planks"], amt: 6 },
@@ -1476,43 +1485,97 @@ function offhandSwapEffects(playerId) {
 }
 
 // -----------------------------------------------------------------------------
-// Shield (Bulwark)
+// Shield
 // -----------------------------------------------------------------------------
 
-/** Shows the shield on the off arm and the HUD chip, topping up the numeric shield. */
-function shieldVisualsOn(playerId) {
+/**
+ * Which of three states a player's shield is in right now:
+ *
+ *   "blocking"  guarding - off-hand shields always are, a held one when raised
+ *   "lowered"   they have a shield in hand but the guard is down
+ *   "none"      no shield anywhere the script cares about
+ *
+ * Derived from live inventory every time rather than tracked, so it cannot
+ * drift out of step with what the player is actually carrying.
+ */
+function shieldState(playerId) {
+    if (!CONFIG.shield.enabled) {
+        return "none";
+    }
+    const state = stateOf(playerId);
+    const held = heldSlot(playerId);
+    const inHand = !!(held && customAttrs(held.item)[ATTR_SHIELD]);
+
+    if (!state.offhandShieldOn && !inHand) {
+        return "none";
+    }
+    // A shield in the off-hand guards the whole time it sits there; a held one
+    // only once the guard is up. Either way, a guard with no shield resource
+    // behind it is not actually stopping anything, so it reads as lowered -
+    // which is exactly what shieldBlock does with it too.
+    const guarding = state.offhandShieldOn || state.shieldRaised;
+    if (guarding && api.getShieldAmount(playerId) > 0) {
+        return "blocking";
+    }
+    return "lowered";
+}
+
+/** Tops the numeric shield up to the working minimum when a guard goes up. */
+function topUpShield(playerId) {
     const c = CONFIG.shield;
     if (api.getShieldAmount(playerId) < c.raiseShieldAmount) {
         api.setShieldAmount(playerId, c.raiseShieldAmount);
     }
-    api.updateEntityNodeMeshAttachment(
-        playerId, c.armNode, "Box",
-        { width: 0.5, height: 0.7, depth: 0.12, diffuseColor: c.meshColour },
-        [0, -0.2, 0.15]
-    );
-    api.setClientOption(playerId, "headerChips", [c.hudChip]);
 }
 
-/** Clears the off-arm mesh and the HUD chip. */
-function shieldVisualsOff(playerId) {
-    api.updateEntityNodeMeshAttachment(playerId, CONFIG.shield.armNode, null);
-    api.setClientOption(playerId, "headerChips", []);
+/**
+ * Puts the shield on the player's off arm and names the state in the HUD.
+ * The shield is visible the whole time they have one - off-hand or in hand,
+ * guarding or not - it just sits lower and duller when the guard is down.
+ *
+ * Only touches the client when the state actually changes, so this is cheap
+ * enough to call every tick.
+ */
+function applyShieldVisuals(playerId) {
+    const c = CONFIG.shield;
+    const state = stateOf(playerId);
+    const now = shieldState(playerId);
+    if (state.shieldVisual === now) {
+        return;
+    }
+    state.shieldVisual = now;
+
+    if (now === "none") {
+        api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
+        api.setClientOption(playerId, "headerChips", []);
+        return;
+    }
+
+    const blocking = now === "blocking";
+    api.updateEntityNodeMeshAttachment(
+        playerId, c.armNode, "Box",
+        {
+            width: 0.5, height: 0.7, depth: 0.12,
+            diffuseColor: blocking ? c.meshColour : c.meshColourLowered,
+        },
+        blocking ? c.meshOffset : c.meshOffsetLowered
+    );
+    api.setClientOption(playerId, "headerChips",
+        [blocking ? c.hudChipBlocking : c.hudChipLowered]);
 }
 
 /** Raises the shield by hand: hold it and right click. */
 function raiseShield(playerId) {
     stateOf(playerId).shieldRaised = true;
-    shieldVisualsOn(playerId);
+    topUpShield(playerId);
+    applyShieldVisuals(playerId);
     tell(playerId, "Shield raised.", "#9fb4c7");
 }
 
-/** Lowers the hand-raised shield. Leaves a passive off-hand shield's visuals alone. */
+/** Drops the guard. The shield stays on the arm, just lowered. */
 function lowerShield(playerId) {
-    const state = stateOf(playerId);
-    state.shieldRaised = false;
-    if (!state.offhandShieldOn) {
-        shieldVisualsOff(playerId);
-    }
+    stateOf(playerId).shieldRaised = false;
+    applyShieldVisuals(playerId);
 }
 
 function toggleShield(playerId) {
@@ -1560,16 +1623,13 @@ function syncOffhand(playerId) {
     if (!CONFIG.shield.enabled) {
         return;
     }
-    const valid = !!(item && customAttrs(item)[ATTR_SHIELD]);
-
-    if (valid && !state.offhandShieldOn) {
-        state.offhandShieldOn = true;
-        shieldVisualsOn(playerId);
-    } else if (!valid && state.offhandShieldOn) {
-        state.offhandShieldOn = false;
-        if (!state.shieldRaised) {
-            shieldVisualsOff(playerId);
-        }
+    // Just the flag - applyShieldVisuals reads it and decides what to draw.
+    const wasOn = state.offhandShieldOn;
+    state.offhandShieldOn = !!(item && customAttrs(item)[ATTR_SHIELD]);
+    if (state.offhandShieldOn && !wasOn) {
+        // Seating a shield here is the moment its guard goes up, so this is
+        // where it charges. Re-seating an emptied one recharges it too.
+        topUpShield(playerId);
     }
 }
 
@@ -2342,13 +2402,13 @@ function tick() {
         }
         state.lastY = pos[1];
 
-        // A shield left raised with nothing backing it (swapped away, died
-        // and respawned) is lowered automatically - independent of whether
-        // dimensions are enabled, so it always runs.
+        // A guard left up with nothing backing it (swapped away, died and
+        // respawned) drops automatically - independent of whether dimensions
+        // are enabled, so it always runs.
         if (CONFIG.shield.enabled && state.shieldRaised) {
             const slot = heldSlot(playerId);
             if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
-                lowerShield(playerId);
+                state.shieldRaised = false;
             }
         }
 
@@ -2356,6 +2416,12 @@ function tick() {
         // dragging something in or out in the inventory screen counts too.
         if (CONFIG.offhand.enabled) {
             syncOffhand(playerId);
+        }
+
+        // Then redraw the shield from whatever the inventory now says. This is
+        // what makes simply HOLDING one show it on your arm, with no click.
+        if (CONFIG.shield.enabled) {
+            applyShieldVisuals(playerId);
         }
 
         // Catches respawns, admin teleports and simply walking over a border.

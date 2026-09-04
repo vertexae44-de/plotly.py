@@ -288,7 +288,7 @@ check("repairing the mace still uses maceAttributes' durability",
 check("shield is a real Bloxd item, not a fake one", C.shield.item === "Brown Paintball", C.shield.item);
 check("the shield is not built on a native throwable",
     C.shield.item.indexOf("Explosive") === -1, C.shield.item);
-check("shield is renamed", C.shield.name === "Bulwark", C.shield.name);
+check("shield is renamed", C.shield.name === "Shield", C.shield.name);
 check("shield is craftable", !!world.recipes.a[C.shield.item], Object.keys(world.recipes.a));
 check("crafted shields carry their tag",
     world.recipes.a[C.shield.item][0].attributes.customAttributes.smpShield === true, "");
@@ -306,8 +306,8 @@ check("raising the shield tops up the numeric shield",
 check("raising the shield attaches a mesh to the off arm",
     world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
     JSON.stringify(world.meshAttachments.a));
-check("raising the shield sets the top-left HUD chip",
-    world.opts.a.headerChips && world.opts.a.headerChips[0] === C.shield.hudChip,
+check("raising the shield says BLOCKING in the top-left HUD",
+    world.opts.a.headerChips && world.opts.a.headerChips[0] === C.shield.hudChipBlocking,
     JSON.stringify(world.opts.a.headerChips));
 
 // a raised shield blocks a chunk of incoming player damage and drains the shield, not health
@@ -327,8 +327,26 @@ check("blocking wears the shield item",
 // lowering it removes the mesh and the HUD chip
 ctx.playerCommand("a", "/shield");
 check("lowering the shield clears the flag", ctx.stateOf("a").shieldRaised === false, "");
-check("lowering the shield detaches the mesh", world.meshAttachments.a === null, world.meshAttachments.a);
-check("lowering the shield clears the HUD chip", world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
+check("a lowered shield STAYS on your arm - you are still carrying it",
+    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
+    JSON.stringify(world.meshAttachments.a));
+check("a lowered shield hangs lower than a raised one",
+    world.meshAttachments.a.offset[1] < C.shield.meshOffset[1],
+    JSON.stringify(world.meshAttachments.a.offset));
+check("a lowered shield is drawn duller",
+    world.meshAttachments.a.opts.diffuseColor[0] < C.shield.meshColour[0],
+    JSON.stringify(world.meshAttachments.a.opts.diffuseColor));
+check("lowering the shield says LOWERED in the HUD",
+    world.opts.a.headerChips[0] === C.shield.hudChipLowered,
+    JSON.stringify(world.opts.a.headerChips));
+
+// putting the shield away entirely is what actually clears the arm
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+ctx.applyShieldVisuals("a");
+check("dropping the shield takes it off your arm", world.meshAttachments.a === null, "");
+check("dropping the shield clears the HUD", world.opts.a.headerChips.length === 0,
+    JSON.stringify(world.opts.a.headerChips));
+world.inv.a = [shieldItem(C.shield.durability)];
 
 // with it lowered, hits go through untouched
 world.health.a = 100;
@@ -368,8 +386,9 @@ check("the off-hand shield tops up the numeric shield",
     world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
 check("the off-hand shield attaches the off-arm mesh",
     world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode, "");
-check("the off-hand shield sets the HUD chip",
-    world.opts.a.headerChips[0] === C.shield.hudChip, JSON.stringify(world.opts.a.headerChips));
+check("the off-hand shield says BLOCKING in the HUD",
+    world.opts.a.headerChips[0] === C.shield.hudChipBlocking,
+    JSON.stringify(world.opts.a.headerChips));
 
 const offhandShieldBefore = world.shield.a;
 const offhandBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
