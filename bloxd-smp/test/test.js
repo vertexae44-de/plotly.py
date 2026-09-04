@@ -378,6 +378,7 @@ check("off-hand + crouching says BLOCKING in the HUD",
     JSON.stringify(world.opts.a.headerChips));
 
 const offhandShieldBefore = world.shield.a;
+world.sounds.length = 0; world.log.length = 0;
 const offhandBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
 check("crouching with an off-hand shield blocks damage while a different weapon is held",
     offhandBlockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), offhandBlockedDmg);
@@ -387,6 +388,10 @@ check("blocking wears the off-hand shield, not the held weapon",
     world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur
         === C.shield.durability - C.shield.blockDurabilityCost,
     world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur);
+check("an actual block plays a sound everyone nearby can hear, not just a silent number change",
+    world.sounds.some(s => s.soundName === "hit2"), JSON.stringify(world.sounds));
+check("an actual block flashes a crosshair message too",
+    world.log.some(l => l.indexOf("Blocked!") !== -1), JSON.stringify(world.log));
 
 // standing back up drops the guard immediately, even mid-fight
 world.crouching.a = false;
@@ -1438,9 +1443,10 @@ check("respawn falls back to the Overworld position with no bed set",
 check("orbital cannon substitutes a real explosive item for the nonexistent TNT",
     C.orbital.recipe.some(r => r.items[0] === "Moonstone Explosive" && r.amt === 500),
     JSON.stringify(C.orbital.recipe));
-check("orbital cannon is the Master Rod, breaking on use is the point",
-    C.orbital.item === "Master Rod", C.orbital.item);
-check("stabshot is the Obsidian Rod", C.stabshot.item === "Obsidian Rod", C.stabshot.item);
+check("orbital cannon is not built on a fishing rod (native casting swallows the click)",
+    C.orbital.item === "Iron Bar", C.orbital.item);
+check("stabshot is not built on a fishing rod either",
+    C.stabshot.item === "Gold Bar", C.stabshot.item);
 check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (() => {
     const r = C.stabshot.recipe;
     return r.some(x => x.items[0] === "Gold Bow" && x.amt === 1)

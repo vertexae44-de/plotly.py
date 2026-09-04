@@ -22,8 +22,8 @@
 | **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Villagers** | Real `NPC` mobs scattered near spawn — right-click one to trade. |
 | **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
-| **Orbital Strike Cannon** | One-time-use Master Rod — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
-| **Stabshot** | One-time-use Obsidian Rod — drills a shaft of Moonstone Explosive charges straight down to bedrock. |
+| **Orbital Strike Cannon** | One-time-use Iron Bar — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
+| **Stabshot** | One-time-use Gold Bar — drills a shaft of Moonstone Explosive charges straight down to bedrock. |
 | **Bed spawn** | Stand on any bed to set your respawn point there. |
 | **Crafting** | Almost everything above has a real recipe. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -56,15 +56,15 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
-| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
-| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
+| **Orbital Strike Cannon** (Iron Bar) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
+| **Stabshot** (Gold Bar) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
 | **"what the skibidi bop un dada really bought this ok"** (Diorite) | 39000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
 
 Bloxd has no TNT item and no explosion-trigger API, so **Moonstone Explosive** (a real block)
-stands in for "TNT" in the two rod recipes, the same way Wind Charge and the shield already reuse
+stands in for "TNT" in both recipes, the same way Wind Charge and the shield already reuse
 real items for concepts Bloxd doesn't have.
 
 ## Hearts
@@ -393,6 +393,11 @@ off-hand above — deliberately narrow now:
   whether you're currently crouching or not; it just sits lower and duller when you're not.
 - **The status shows in the literal top-left corner** of your screen, via Bloxd's own `headerChips`
   client option — the HUD strip that already carries your FPS counter and coordinates.
+- **The instant a hit actually lands on a raised guard**, everyone nearby (not just the defender)
+  sees a `shieldOuter` particle burst over the defender and hears a `hit2` clack — the arm mesh and
+  the HUD chip are the idle "guard is up" look, this is the one-shot "a hit just got blocked" feedback.
+  The defender also gets a quick "Blocked!" crosshair flash. Nothing plays if the guard soaks nothing
+  (empty shield resource, not crouching, not in the off-hand, etc.) — only on a real absorption.
 
 **Scope, stated plainly:** blocking covers player-vs-player hits (the path this script controls).
 It does **not** reduce damage from real Bloxd mobs (`onMobDamagingPlayer` isn't hooked) or crystal
@@ -450,20 +455,27 @@ Bloxd has **no TNT item and no explosion-trigger API** — the only "explosion" 
 make is the same trick Crystal PvP already uses: damage everyone in a radius and draw particles and
 sound over it. Both weapons really do spawn real **Moonstone Explosive** blocks at every impact
 point rather than computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to
-your facing direction if you're not looking at a block). **Both are one-time use**: the rod breaks
+your facing direction if you're not looking at a block). **Both are one-time use**: the item breaks
 the instant it fires, whichever one it is.
 
-- **Orbital Strike Cannon** (a `Master Rod`) — right click drops a **ring** of `orbital.ringCount`
+- **Orbital Strike Cannon** (an `Iron Bar`) — right click drops a **ring** of `orbital.ringCount`
   (10) Moonstone Explosive charges, `orbital.ringRadius` (50) blocks out from where you're aiming.
   Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that falls from
   `orbital.fallHeight` above the ground and detonates roughly where it lands, after
   `orbital.fallDelayMs`. The landing height under each ring point is found by scanning straight down
   for the first solid block; if that column isn't loaded or nothing solid turns up, that one charge
   falls back to detonating at your own height instead of guessing.
-- **Stabshot** (an `Obsidian Rod`) — right click places a single **vertical shaft** of Moonstone
+- **Stabshot** (a `Gold Bar`) — right click places a single **vertical shaft** of Moonstone
   Explosive charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
   `stabshot.columnStepY` (6) blocks apart, each block placed immediately and set off in sequence
   (`stabshot.stepDelayMs` apart) so it reads as drilling downward rather than one instant blast.
+
+**Why plain material items, not `Master Rod`/`Obsidian Rod`:** the first version used those two -
+real Bloxd items that happen to be **fishing rods** - and firing silently did nothing. A fishing
+rod has its own native right-click behaviour (casting a line) that swallows the click before
+`onPlayerAltAction` ever runs, exactly the same class of bug that broke the shield when it was
+first built on `Brown Paintball Explosive Item`, a native throwable. The fix is the same one:
+a plain material item (`Iron Bar` / `Gold Bar`) has no click behaviour of its own to fight with.
 
 There is no timer API in World Code, so both weapons' delays are tracked the same way terrain
 generation is queued — a small array of pending charges drained every `tick()`. Every explosion also

@@ -27,10 +27,10 @@
 //  & Void
 //  Villagers        real NPC mobs scattered near spawn, right click to trade
 //  Ocean            a ring of water near spawn with a custom sea mob
-//  Orbital Strike   one-time Master Rod, rings the ground 50 blocks out with
+//  Orbital Strike   one-time use, rings the ground 50 blocks out with
 //                   falling Moonstone Explosive charges
-//  Stabshot         one-time Obsidian Rod, drills a shaft of Moonstone
-//                   Explosive charges straight down to bedrock
+//  Stabshot         one-time use, drills a shaft of Moonstone Explosive
+//                   charges straight down to bedrock
 //  Bed spawn        stand on any bed to set your respawn point
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
@@ -706,10 +706,18 @@ const CONFIG = {
     // computing damage invisibly: the orbital's charges are dropped as real
     // physics item entities that fall before detonating, and the stabshot's
     // are placed directly down the drill shaft. Both are one-time use now -
-    // the rod breaks the instant it fires, whichever one it is.
+    // the item breaks the instant it fires, whichever one it is.
+    //
+    // Neither base item is a Rod any more - "Master Rod"/"Obsidian Rod" are
+    // real Bloxd FISHING rods, and casting a line is a native right-click
+    // behaviour that swallowed the click before onPlayerAltAction ever ran,
+    // so firing silently did nothing. Exactly the same class of bug that
+    // broke the shield when it was first built on a native throwable - the
+    // fix is the same too: a plain material item with no click behaviour of
+    // its own to fight with.
     orbital: {
         enabled: true,
-        item: "Master Rod",
+        item: "Iron Bar",
         name: "Orbital Strike Cannon",
         recipe: [
             { items: ["Moonstone Explosive"], amt: 500 },
@@ -732,7 +740,7 @@ const CONFIG = {
     },
     stabshot: {
         enabled: true,
-        item: "Obsidian Rod",
+        item: "Gold Bar",
         name: "Stabshot",
         recipe: [
             { items: ["Gold Bow"], amt: 1 },
@@ -1083,7 +1091,7 @@ function orbitalAttributes() {
         customDisplayName: o.name,
         customDescription: "Right click to drop a ring of " + o.ringCount + " Moonstone Explosive charges,"
             + " " + o.ringRadius + " blocks out from where you are looking.\n"
-            + "One-time use: the rod breaks the moment it fires.",
+            + "One-time use: it breaks the moment it fires.",
         customAttributes: { [ATTR_ORBITAL]: true },
     };
 }
@@ -1094,7 +1102,7 @@ function stabshotAttributes() {
         customDisplayName: s.name,
         customDescription: "Right click to drill a shaft of Moonstone Explosive charges straight down"
             + " to bedrock where you are looking.\n"
-            + "One-time use: the rod breaks the moment it fires.",
+            + "One-time use: it breaks the moment it fires.",
         customAttributes: { [ATTR_STABSHOT]: true },
     };
 }
@@ -2171,8 +2179,32 @@ function shieldBlock(attackerId, defenderId, damage) {
         return damage;
     }
     const blocked = applyShieldAbsorption(defenderId, off, damage);
+    if (blocked < damage) {
+        announceShieldBlock(defenderId);
+    }
     shieldDisableCheck(attackerId, defenderId);
     return blocked;
+}
+
+/**
+ * Feedback for the instant a hit actually lands on a raised guard - not the
+ * idle look applyShieldVisuals keeps up the whole time a shield sits
+ * blocking, but a one-shot spark plus a clack everyone nearby hears, so
+ * blocking a hit reads as something happening rather than just quietly
+ * reducing a damage number.
+ */
+function announceShieldBlock(defenderId) {
+    const pos = api.getPosition(defenderId);
+    if (!pos) {
+        return;
+    }
+    api.playParticleEffect({
+        presetId: "shieldOuter",
+        pos1: [pos[0] - 0.4, pos[1] + 0.8, pos[2] - 0.4],
+        pos2: [pos[0] + 0.4, pos[1] + 1.6, pos[2] + 0.4],
+    });
+    api.broadcastSound("hit2", 0.8, 1.3, { playerIdOrPos: pos, maxHearDist: 20 });
+    api.queueCrosshairText(defenderId, "Blocked!", 500);
 }
 
 // -----------------------------------------------------------------------------
@@ -2571,7 +2603,7 @@ const pendingStrikes = [];
 /**
  * A ring of Moonstone Explosive charges around where the player is aiming,
  * each one a real physics item drop that falls before it detonates roughly
- * where it lands. One-time use: the rod breaks the instant it fires.
+ * where it lands. One-time use: it breaks the instant it fires.
  */
 function fireOrbital(playerId, slot) {
     const o = CONFIG.orbital;
@@ -2602,7 +2634,7 @@ function fireOrbital(playerId, slot) {
 /**
  * A single shaft of Moonstone Explosive charges, placed straight down from
  * where the player is aiming to bedrock, drilling downward as they go off
- * in sequence. One-time use: the rod breaks the instant it fires.
+ * in sequence. One-time use: it breaks the instant it fires.
  */
 function fireStabshot(playerId, slot) {
     const s = CONFIG.stabshot;
