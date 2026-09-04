@@ -18,7 +18,7 @@
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
-| **`!anon`** | Hides your nametag and your name in chat. |
+| **`!anon`** | Hides your body, your nametag and your name in chat. |
 | **Death announcements** | One clean message and a server-wide toll for every death — no double kill messages. |
 
 ## Install
@@ -203,9 +203,15 @@ stacks with the mace smash and the spear lunge.
 ## Anonymous mode
 
 Type **`!anon`** in chat (or `/anon`). Your floating nametag is replaced with "Anonymous" for
-everyone, including players who join later, and your chat messages are re-sent with your name
-stripped off. Type it again to reveal yourself. The setting is saved per player, so it survives a
-relog.
+everyone, including players who join later, your chat messages are re-sent with your name
+stripped off, and your body turns fully invisible via the engine's own `Invisible` effect — a
+nametag swap alone still leaves a recognisable skin walking around. Type it again to reveal
+yourself. The setting is saved per player, so it survives a relog. Set `anonymous.invisible: false`
+if you would rather keep just the name-hiding.
+
+Going invisible also means nothing is drawn *on* you: if you are carrying a shield, the shield mesh
+on your arm is hidden along with the rest of you (your own HUD chip still tells you whether you're
+blocking — that's on your screen only). The moment you reveal yourself, the shield reappears.
 
 **The killfeed leak is handled.** The engine's killfeed prints real names and offers no way to
 rewrite them — so while *anyone* is anonymous it is switched off for everybody

@@ -18,7 +18,7 @@
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
-//  !anon            hides your nametag and your name in chat
+//  !anon            hides your body, your nametag and your name in chat
 //  Crafting         mace, spear, apples, portals and crystals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
@@ -538,6 +538,10 @@ const CONFIG = {
         displayName: "Anonymous",
         hideNameTag: true,
         hideInChat: true,
+        // Anonymity that only blanks a nametag is thin - people recognise a
+        // skin. This turns the body off too, using the engine's own "Invisible"
+        // effect, so going anonymous actually hides you.
+        invisible: true,
         // The native killfeed panel is handled globally by killFeed.* below, not
         // per-anon here - see the death announcements section.
         colour: "#9aa0a6",
@@ -1540,10 +1544,15 @@ function applyShieldVisuals(playerId) {
     const c = CONFIG.shield;
     const state = stateOf(playerId);
     const now = shieldState(playerId);
-    if (state.shieldVisual === now) {
+    // An invisible body may carry nothing visible: a shield box hanging in the
+    // air where a hidden player stands gives them away completely. The HUD chip
+    // is drawn on their own screen only, so they can still read their own state.
+    const hidden = anonHidden(playerId);
+    const key = now + (hidden ? "|hidden" : "");
+    if (state.shieldVisual === key) {
         return;
     }
-    state.shieldVisual = now;
+    state.shieldVisual = key;
 
     if (now === "none") {
         api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
@@ -1552,14 +1561,18 @@ function applyShieldVisuals(playerId) {
     }
 
     const blocking = now === "blocking";
-    api.updateEntityNodeMeshAttachment(
-        playerId, c.armNode, "Box",
-        {
-            width: 0.5, height: 0.7, depth: 0.12,
-            diffuseColor: blocking ? c.meshColour : c.meshColourLowered,
-        },
-        blocking ? c.meshOffset : c.meshOffsetLowered
-    );
+    if (hidden) {
+        api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
+    } else {
+        api.updateEntityNodeMeshAttachment(
+            playerId, c.armNode, "Box",
+            {
+                width: 0.5, height: 0.7, depth: 0.12,
+                diffuseColor: blocking ? c.meshColour : c.meshColourLowered,
+            },
+            blocking ? c.meshOffset : c.meshOffsetLowered
+        );
+    }
     api.setClientOption(playerId, "headerChips",
         [blocking ? c.hudChipBlocking : c.hudChipLowered]);
 }
@@ -2023,6 +2036,27 @@ function applyAnonNameTag(playerId, anon) {
     );
 }
 
+/**
+ * Turns the body itself on or off. "Invisible" is one of the engine's inbuilt
+ * effects, and a null duration is how this script asks for one that does not
+ * time out - the same way the off-hand icon is applied.
+ */
+function applyAnonInvisibility(playerId, anon) {
+    if (!CONFIG.anonymous.invisible) {
+        return;
+    }
+    if (anon) {
+        api.applyEffect(playerId, "Invisible", null);
+    } else {
+        api.removeEffect(playerId, "Invisible");
+    }
+}
+
+/** True while this player's body is hidden, so nothing may be drawn on it. */
+function anonHidden(playerId) {
+    return CONFIG.anonymous.enabled && CONFIG.anonymous.invisible && isAnon(playerId);
+}
+
 /** The name everyone else should see for this player, anonymity included. */
 function displayNameOf(playerId) {
     if (CONFIG.anonymous.enabled && isAnon(playerId)) {
@@ -2072,6 +2106,7 @@ function announceDeath(victim, killer, eliminated) {
 function setAnon(playerId, anon) {
     api.setPlayerDbValue(playerId, DB_ANON, anon ? 1 : 0);
     applyAnonNameTag(playerId, anon);
+    applyAnonInvisibility(playerId, anon);
     tell(playerId, anon
         ? "You are now " + CONFIG.anonymous.displayName + ". Type "
             + CONFIG.anonymous.chatCommand + " again to reveal yourself."
@@ -2358,6 +2393,7 @@ function onPlayerJoin(playerId) {
 
     if (CONFIG.anonymous.enabled && isAnon(playerId)) {
         applyAnonNameTag(playerId, true);
+        applyAnonInvisibility(playerId, true);
     }
 
     // The native killfeed panel is switched off for good, not just during

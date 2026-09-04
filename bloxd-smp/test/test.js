@@ -984,6 +984,11 @@ check("nametag replaced",
     world.entitySettings.a.nameTagInfo
         && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName,
     JSON.stringify(world.entitySettings.a));
+const invisEffect = () => world.effects.filter(e => e.id === "a" && e.name === "Invisible");
+check("going anonymous makes you invisible", invisEffect().length === 1,
+    JSON.stringify(world.effects));
+check("the invisibility does not time out", invisEffect()[0].ms === null,
+    JSON.stringify(invisEffect()[0]));
 world.log.length = 0;
 check("anon chat is suppressed", ctx.onPlayerChat("a", "hello there", "global") === false, "");
 check("anon chat is rebroadcast without the name",
@@ -993,7 +998,33 @@ check("a normal player's chat is untouched", ctx.onPlayerChat("b", "hi", "global
 check("!anon toggles back off", ctx.onPlayerChat("a", "!anon", "global") === false, "");
 check("anon flag cleared", world.db.a.smpAnon === 0, world.db.a.smpAnon);
 check("nametag restored", world.entitySettings.a.nameTagInfo === null, JSON.stringify(world.entitySettings.a));
+check("revealing yourself makes you visible again", invisEffect().length === 0,
+    JSON.stringify(world.effects));
 check("chat is normal again", ctx.onPlayerChat("a", "hello", "global") === undefined, "");
+
+// A hidden body must not carry a visible shield: a box hanging in mid-air where
+// an invisible player stands defeats the whole point of going anonymous. Their
+// own HUD chip is on their screen only, so that stays.
+world.inv.a = [];
+world.inv.a[C.offhand.slotIndex] = shieldItem(C.shield.durability);
+world.sel.a = 5;
+ctx.onPlayerChat("a", "!anon", "global");
+world.meshAttachments.a = undefined;
+world.opts.a.headerChips = [];
+ctx.tick();
+check("an invisible player's shield is not drawn on their arm",
+    world.meshAttachments.a === null, JSON.stringify(world.meshAttachments.a));
+check("an invisible player still sees their own shield chip",
+    world.opts.a.headerChips[0] === C.shield.hudChipBlocking,
+    JSON.stringify(world.opts.a.headerChips));
+ctx.onPlayerChat("a", "!anon", "global");
+ctx.tick();
+check("becoming visible again puts the shield back on the arm",
+    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
+    JSON.stringify(world.meshAttachments.a));
+world.inv.a = [];
+world.sel.a = 0;
+ctx.tick();
 // the native killfeed panel is off for good, from the moment they join - there
 // is no per-anon toggling any more, so nobody ever sees the automatic entry
 check("the native killfeed panel is disabled on join",
@@ -1071,6 +1102,8 @@ ctx.onPlayerJoin("a");
 check("anon survives a rejoin",
     world.entitySettings.a.nameTagInfo
         && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName, "");
+check("invisibility survives a rejoin",
+    world.effects.some(e => e.id === "a" && e.name === "Invisible"), JSON.stringify(world.effects));
 world.db.a.smpAnon = 0;
 ctx.onPlayerJoin("a");
 
