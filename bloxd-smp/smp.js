@@ -196,9 +196,9 @@ const CONFIG = {
     // one just past the hotbar) is reserved by convention instead - a rule
     // this script enforces, checked every tick. Whatever sits there is "off-handed": it shows as a status
     // effect icon, and if it happens to be a Bulwark it protects you
-    // automatically, leaving your main hand free for a sword. Right click a
-    // plain item to swap it in, right click with an empty hand to take it
-    // back, or /offhand to force-swap anything (a shield included).
+    // automatically, leaving your main hand free for a sword. You put it
+    // there yourself: drag it into the slot, or use /offhand or the
+    // touchscreen button.
     //
     // The item genuinely stays in the inventory rather than being held in a
     // variable, so a rejoin or a server restart can never lose it.
@@ -213,10 +213,12 @@ const CONFIG = {
         swapSound: "swoosh",
         colour: "#9fe6a0",
 
-        // Bloxd has no key-binding hook, so these are the no-chat ways in:
-        // right click whatever you are holding, or - on touchscreens - the
-        // engine's own action button, labelled here.
-        swapOnRightClick: true,
+        // Filling the off-hand is deliberate, never a side effect of a click:
+        // drag an item into the slot, or use /offhand or the touchscreen
+        // button. Right click is left alone so it keeps meaning "use this
+        // item" - a held shield blocks with it rather than losing it to the
+        // off-hand. Set swapOnRightClick true to go back to click-to-swap.
+        swapOnRightClick: false,
         touchButton: "🛡 Off-hand",   // null hides the button
     },
 
@@ -727,9 +729,9 @@ function shieldAttributes(durabilityLeft) {
     const left = durabilityLeft == null ? max : durabilityLeft;
     return {
         customDisplayName: c.name,
-        customDescription: "Right click to wear it in your off-hand.\n"
-            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while worn,\n"
-            + "leaving your main hand free for a weapon.\n"
+        customDescription: "Right click to raise it, right click again to lower it.\n"
+            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while up.\n"
+            + "Or put it in your off-hand slot to block without holding it.\n"
             + durabilityBar(left, max),
         customAttributes: { [ATTR_SHIELD]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
     };
@@ -2382,8 +2384,9 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
 function onPlayerAltAction(playerId) {
     const slot = heldSlot(playerId);
     if (!slot) {
-        // An empty hand pulls whatever is in the off-hand back out.
-        if (CONFIG.offhand.enabled) {
+        // An empty hand pulls the off-hand item back out, when click-to-swap
+        // is on. Off by default: /offhand and the touch button do this.
+        if (CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
             swapOffhand(playerId);
         }
         return;
@@ -2400,15 +2403,12 @@ function onPlayerAltAction(playerId) {
         spearLunge(playerId, slot);
     } else if (custom[ATTR_WINDCHARGE]) {
         useWindChargeItem(playerId, slot);
-    } else if (custom[ATTR_SHIELD] && CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
-        // A shield's right click puts it straight in your off-hand, the way
-        // Minecraft's F key does - no chat, one click, and your main hand is
-        // free for a sword. /shield still raises one by hand if you'd rather.
-        swapOffhand(playerId);
     } else if (custom[ATTR_SHIELD]) {
+        // Hold the shield up to block, click again to drop the guard. Putting
+        // one in the off-hand instead is a deliberate act - dragging it there,
+        // /offhand or the touchscreen button - never a side effect of a click.
         toggleShield(playerId);
-    } else if (CONFIG.offhand.enabled) {
-        // Anything with no other right-click use of its own goes off-hand too.
+    } else if (CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
         swapOffhand(playerId);
     }
 }
@@ -2542,11 +2542,11 @@ function playerCommand(playerId, command) {
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
                 + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
-                + "craft a " + CONFIG.shield.name + " and RIGHT CLICK it to wear it in your "
-                + "off-hand (the top-left slot of your backpack, not the hotbar) - then fight "
-                + "with a sword and stay guarded at the same time. Right click any item to swap "
-                + "it off-hand, right click with an empty hand to take it back, or use the "
-                + "on-screen button on mobile. /offhand and /shield do the same from chat | "
+                + "craft a " + CONFIG.shield.name + " - hold it and RIGHT CLICK to raise your "
+                + "guard, right click again to drop it | "
+                + "or drag it into your off-hand slot (top-left of your backpack, not the "
+                + "hotbar) and it blocks by itself, leaving your hand free for a sword - "
+                + "/offhand or the on-screen button put it there too | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "

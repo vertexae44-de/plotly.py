@@ -130,19 +130,14 @@ check("apple tooltip mentions both effects", (() => {
     return /Health Regen/.test(desc) && /[Ff]ire resistance/.test(desc);
 })(), ctx.appleAttributes("enchanted").customDescription);
 
-// a plain apple is not edible as a gapple - it just goes off-hand like any
-// other ordinary item, and heals nobody
+// a plain apple is not edible as a gapple, and right click leaves it alone
 world.health.a = 50;
 world.db.a.smpMaxHp = 110;
 world.inv.a = [{ name: "Apple", amount: 5, attributes: undefined }];
 world.sel.a = 0;
 ctx.onPlayerAltAction("a");
-check("a plain apple is not eaten", world.health.a === 50 && world.db.a.smpMaxHp === 110,
-    world.health.a + "/" + world.db.a.smpMaxHp);
-check("a plain apple goes off-hand instead, whole stack intact",
-    world.inv.a[C.offhand.slotIndex] && world.inv.a[C.offhand.slotIndex].amount === 5,
-    JSON.stringify(world.inv.a[C.offhand.slotIndex]));
-world.inv.a = [];
+check("plain apple untouched",
+    world.inv.a[0].amount === 5 && world.health.a === 50 && world.db.a.smpMaxHp === 110, "");
 
 // ------------------------------------------------------------------ mace smash
 world.inv.a = [maceItem()];
@@ -408,8 +403,16 @@ world.effects.length = 0;
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = { name: "Torch", amount: 4, attributes: undefined };
+
+// right click must NOT quietly move things: filling the off-hand is deliberate
 ctx.onPlayerAltAction("a");
-check("right-clicking a plain item puts it in the off-hand",
+check("right-clicking a plain item leaves it in your hand",
+    world.inv.a[3] && world.inv.a[3].name === "Torch", JSON.stringify(world.inv.a[3]));
+check("right-clicking a plain item puts nothing in the off-hand",
+    !world.inv.a[OFF], JSON.stringify(world.inv.a[OFF]));
+
+ctx.playerCommand("a", "/offhand");
+check("/offhand puts the held item in the off-hand",
     world.inv.a[OFF] && world.inv.a[OFF].name === "Torch", JSON.stringify(world.inv.a[OFF]));
 check("the swapped item leaves your hand", world.inv.a[3] === null, JSON.stringify(world.inv.a[3]));
 check("the whole stack moves, not one item",
@@ -426,7 +429,7 @@ check("the off-hand effect never expires on its own",
 
 // swapping a second item returns the first one to your hand
 world.inv.a[3] = { name: "Apple", amount: 1, attributes: undefined };
-ctx.onPlayerAltAction("a");
+ctx.playerCommand("a", "/offhand");
 check("swapping again off-hands the new item",
     world.inv.a[OFF].name === "Apple", JSON.stringify(world.inv.a[OFF]));
 check("swapping again hands the old one back",
@@ -437,12 +440,12 @@ check("the old item's effect icon is cleared",
 
 // an empty hand pulls the off-hand item back out
 world.inv.a[3] = null;
-ctx.onPlayerAltAction("a");
+ctx.playerCommand("a", "/offhand");
 check("an empty hand takes the off-hand item back",
     world.inv.a[3] && world.inv.a[3].name === "Apple", JSON.stringify(world.inv.a[3]));
 check("the off-hand is left empty", world.inv.a[OFF] === null, JSON.stringify(world.inv.a[OFF]));
 
-// /offhand works on items whose right-click is already spoken for, like the shield
+// /offhand also moves a shield, whose right click means "block"
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
@@ -455,21 +458,30 @@ ctx.tick();
 check("a shield put there by /offhand protects passively",
     ctx.stateOf("a").offhandShieldOn === true, "");
 
-// right-clicking a held shield equips it off-hand - no chat needed
+// right-clicking a HELD shield raises the guard, and never moves the item
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
+world.shield.a = 0;
 ctx.stateOf("a").shieldRaised = false;
+ctx.stateOf("a").offhandShieldOn = false;
 ctx.onPlayerAltAction("a");
-check("right-clicking a held shield equips it off-hand without any chat command",
-    world.inv.a[OFF] && world.inv.a[OFF].attributes.customAttributes.smpShield === true,
-    JSON.stringify(world.inv.a[OFF]));
-check("right-clicking a shield off-hand does not also raise it by hand",
-    ctx.stateOf("a").shieldRaised === false, "");
-check("right-clicking a shield off-hand frees the main hand", world.inv.a[3] === null, "");
-ctx.tick();
-check("a shield equipped by right-click protects passively",
-    ctx.stateOf("a").offhandShieldOn === true, "");
+check("right-clicking a held shield raises the guard",
+    ctx.stateOf("a").shieldRaised === true, "");
+check("raising the guard never moves the shield out of your hand",
+    world.inv.a[3] && world.inv.a[3].attributes.customAttributes.smpShield === true,
+    JSON.stringify(world.inv.a[3]));
+check("raising the guard puts nothing in the off-hand", !world.inv.a[OFF], "");
+
+const guardedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a hand-raised guard blocks the hit",
+    guardedDmg === Math.round(20 * (1 - C.shield.blockFraction)), guardedDmg);
+
+ctx.onPlayerAltAction("a");
+check("right-clicking again drops the guard", ctx.stateOf("a").shieldRaised === false, "");
+const unguardedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a dropped guard blocks nothing", unguardedDmg === undefined, unguardedDmg);
+ctx.stateOf("a").shieldRaised = false;
 
 // the touchscreen action button does the same swap, for phone players
 world.inv.a = [];
