@@ -128,9 +128,9 @@ light, sky light and gravity through per-player client options.
 | | Region centre | Scale | Portal | Feel |
 | --- | --- | --- | --- | --- |
 | Overworld | `0, 0` | 1× | — | normal |
-| The Nether | `0, -10000` | 8× | Purple Portal | red fog, short view distance |
-| The End | `0, -30000` | 1× | Black Portal | dark violet fog, 0.7× gravity |
-| The Void | `0, -50000` | 1× | none | near-black fog, 0.5× gravity |
+| The Nether | `0, -10000` | 8× | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `0, -30000` | 1× | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `0, -50000` | 1× | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
 
 They run in a line out along negative z, 20000 apart. Each claims ±`regionHalfSize` (**5000**)
 around its centre — that has to stay at or under half the spacing, or neighbouring claims overlap
@@ -143,18 +143,36 @@ a short one back. `/where` tells you which dimension you are in; admins get `/di
 Crossing a region border on foot also re-dresses the world, so respawns and teleports are handled
 without a portal.
 
+### Fog
+
+Bloxd exposes exactly two fog controls, and every dimension sets **both** — a colour alone would
+land with the player's own draw distance and be invisible:
+
+| | `fogColourOverride` | `fogChunkDistanceOverride` |
+| --- | --- | --- |
+| The Nether | `#6b1105` (thick red haze) | 5 chunks |
+| The End | `#2e0f52` (deep violet) | 8 chunks |
+| The Void | `#050508` (near black) | 3 chunks |
+| Overworld | — reset to the player's own setting | — |
+
+Lower the chunk distance for thicker fog. Anything a dimension does not set is put back to default
+on arrival, so leaving one never bleeds its look into the next — tests cover the push and the
+reset.
+
 ### Terrain
 
 Both regions **generate as you explore them**. Chunks fill in around every player in a Nether or End
 region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the server.
 
-- **Nether** — a closed cavern: bedrock floor, rolling red-sandstone ground with magma blotches, a
-  lava sea in the dips, and a ceiling overhead. **Ores** run through the rock below the surface:
+- **Nether** — a closed cavern of **Dark Red Stone**, top to bottom, so it reads as one solid
+  netherrack mass: bedrock floor, rolling ground with magma blotches, a lava sea in the dips, and a
+  Dark Red Brick ceiling overhead. **Ores** run through the rock below the surface:
   Coal, Iron and Gold in quantity, plus thin seams of **Moonstone** (below y34) and **Lunite**
   (below y28). The mace costs 40 Moonstone and the Nether yields roughly 4 per chunk, so arming
   yourself is a genuine expedition.
-- **The End** — floating islands over open void, tapering at their edges, with occasional obsidian
-  spires. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players
+- **The End** — floating islands of **Yellowstone** over open void, tapering at their edges, with
+  occasional obsidian spires. Yellowstone is the closest thing Bloxd has to end stone: pale,
+  moonlit, and uniform all the way through, so an island looks carved from one piece. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players
   always have ground under them. Its rock is **richer per block** than the Nether's — Iron,
   Emerald, Moonstone, Diamond and Lunite — because most End columns are open void, so there is
   far less stone to dig through.

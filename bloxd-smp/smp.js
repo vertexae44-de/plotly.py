@@ -424,11 +424,13 @@ const CONFIG = {
 
                 blocks: {
                     floor: "Bedrock",
-                    base: "Red Sandstone",
-                    top: "Red Sand",
+                    // Dark Red Stone top and bottom, so it reads as one solid
+                    // netherrack mass rather than sandstone with a sandy lid.
+                    base: "Dark Red Stone",
+                    top: "Dark Red Stone",
                     accent: "Magma",
                     liquid: "Lava",
-                    ceiling: "Red Sandstone Bricks",
+                    ceiling: "Dark Red Brick",
                 },
             },
 
@@ -468,8 +470,11 @@ const CONFIG = {
                 ],
 
                 blocks: {
-                    base: "Bone Block",
-                    top: "White Concrete",
+                    // Yellowstone is the closest thing Bloxd has to end stone -
+                    // pale, moonlit, and uniform all the way through, so an
+                    // island looks carved from one piece.
+                    base: "Yellowstone",
+                    top: "Yellowstone",
                     pillar: "Obsidian",
                 },
             },

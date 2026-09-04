@@ -871,6 +871,50 @@ Object.keys(C.dimensions.list).filter(k => k !== "overworld").forEach(key => {
 check("nether fog is red", /^#[6-9a-f]/.test(NDIM.clientOptions.fogColourOverride), NDIM.clientOptions.fogColourOverride);
 check("end fog is purple", EDIM.clientOptions.fogColourOverride === "#2e0f52", EDIM.clientOptions.fogColourOverride);
 
+// every dimension that dresses the world has to set BOTH fog options, or the
+// colour lands with the default draw distance and the effect is invisible
+check("every dimension sets a fog colour and a fog distance", (() => {
+    for (const key of Object.keys(C.dimensions.list)) {
+        const o = C.dimensions.list[key].clientOptions || {};
+        if (Object.keys(o).length === 0) {
+            continue;   // the overworld deliberately dresses nothing
+        }
+        if (!o.fogColourOverride || typeof o.fogChunkDistanceOverride !== "number") {
+            return false;
+        }
+    }
+    return true;
+})(), "");
+
+// and the fog has to actually reach the player when they arrive
+world.pos.b = [NDIM.origin[0], 64, NDIM.origin[1]];
+ctx.stateOf("b").dimension = null;
+ctx.enterDimension("b", "nether", false);
+check("arriving in the nether pushes its fog colour to the client",
+    world.opts.b.fogColourOverride === NDIM.clientOptions.fogColourOverride,
+    world.opts.b.fogColourOverride);
+check("arriving in the nether pushes its fog distance too",
+    world.opts.b.fogChunkDistanceOverride === NDIM.clientOptions.fogChunkDistanceOverride,
+    world.opts.b.fogChunkDistanceOverride);
+
+ctx.enterDimension("b", "end", false);
+check("moving to the end swaps the fog rather than stacking it",
+    world.opts.b.fogColourOverride === EDIM.clientOptions.fogColourOverride,
+    world.opts.b.fogColourOverride);
+
+ctx.enterDimension("b", "overworld", false);
+check("going home clears the fog back to the client's own setting",
+    world.opts.b.fogColourOverride === "DEFAULT" && world.opts.b.fogChunkDistanceOverride === "DEFAULT",
+    world.opts.b.fogColourOverride + "/" + world.opts.b.fogChunkDistanceOverride);
+
+// ---------------------------------------------------------------- block palette
+check("the nether is built from dark red stone",
+    GEN.nether.blocks.base === "Dark Red Stone" && GEN.nether.blocks.top === "Dark Red Stone",
+    GEN.nether.blocks.base + "/" + GEN.nether.blocks.top);
+check("the end is built from yellowstone",
+    GEN.end.blocks.base === "Yellowstone" && GEN.end.blocks.top === "Yellowstone",
+    GEN.end.blocks.base + "/" + GEN.end.blocks.top);
+
 // ------------------------------------------------------------------- crystal pvp
 world.damages.length = 0;
 world.impulses.length = 0;
