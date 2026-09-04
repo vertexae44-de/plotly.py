@@ -131,7 +131,7 @@ light, sky light and gravity through per-player client options.
 | Overworld | `0, 0` | 1× | — | normal |
 | The Nether | `0, -10000` | 8× | Purple Portal | red fog (`#6b1105`), 5-chunk view |
 | The End | `0, -30000` | 1× | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `0, -50000` | 1× | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
+| The Void | `0, 50000` | 1× | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
 
 They run in a line out along negative z, 20000 apart. Each claims ±`regionHalfSize` (**5000**)
 around its centre — that has to stay at or under half the spacing, or neighbouring claims overlap

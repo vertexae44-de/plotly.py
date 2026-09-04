@@ -381,7 +381,7 @@ const CONFIG = {
             },
             "void": {
                 name: "The Void",
-                origin: [0, -50000],
+                origin: [0, 50000],
                 scale: 1,
                 platformBlock: "Obsidian",
                 // No portalBlock: the only way out is the resurrection orbs.
