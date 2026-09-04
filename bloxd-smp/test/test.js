@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
+const { ctx, world, api, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -409,6 +409,30 @@ check("removing the off-hand shield detaches the mesh", world.meshAttachments.a 
 check("removing the off-hand shield clears the HUD chip",
     world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
 world.sel.a = 0;
+
+// ---------------------------------------------------- shield writes on a dead player
+// setShieldAmount rejects a lifeform with null health (mid-death, already kicked).
+// That window is real: a fatal hit or a tick can land on it, so every write to the
+// shield resource must check first instead of letting the engine throw.
+{
+    const realGetHealth = api.getHealth;
+    api.getHealth = id => (id === "a" ? null : realGetHealth(id));
+
+    check("isAlive is false once a player's health goes null", ctx.isAlive("a") === false, "");
+
+    world.shield.a = 0;
+    ctx.topUpShield("a");
+    check("topUpShield is a no-op on a dead player", world.shield.a === 0, world.shield.a);
+
+    const blocked = ctx.applyShieldAbsorption("a", null, 20);
+    check("applyShieldAbsorption passes damage through unblocked for a dead defender",
+        blocked === 20, blocked);
+    check("applyShieldAbsorption never touches the shield resource of a dead defender",
+        world.shield.a === 0, world.shield.a);
+
+    api.getHealth = realGetHealth;
+    check("isAlive recovers once health is a number again", ctx.isAlive("a") === true, "");
+}
 
 // ------------------------------------------------------------ off-hand swapping
 // Right-click swaps a plain held item into the off-hand slot; the two slots

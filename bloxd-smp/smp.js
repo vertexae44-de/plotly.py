@@ -1197,7 +1197,7 @@ function eatApple(playerId, slot, tier) {
     const maxHp = getMaxHp(playerId);
     api.setHealth(playerId, Math.min(maxHp, api.getHealth(playerId) + apple.heal));
 
-    if (apple.shield > 0) {
+    if (apple.shield > 0 && isAlive(playerId)) {
         api.setShieldAmount(playerId, api.getShieldAmount(playerId) + apple.shield);
     }
     if (apple.regenMs > 0) {
@@ -1524,8 +1524,22 @@ function shieldState(playerId) {
     return "lowered";
 }
 
+/**
+ * setShieldAmount rejects a lifeform whose health is currently null - a
+ * player mid-death, already kicked, or otherwise gone. tick() and a fatal
+ * hit can both reach the shield code in that exact window, so every write
+ * to the shield resource checks this first rather than letting the engine
+ * throw.
+ */
+function isAlive(lifeformId) {
+    return typeof api.getHealth(lifeformId) === "number";
+}
+
 /** Tops the numeric shield up to the working minimum when a guard goes up. */
 function topUpShield(playerId) {
+    if (!isAlive(playerId)) {
+        return;
+    }
     const c = CONFIG.shield;
     if (api.getShieldAmount(playerId) < c.raiseShieldAmount) {
         api.setShieldAmount(playerId, c.raiseShieldAmount);
@@ -1649,6 +1663,9 @@ function syncOffhand(playerId) {
 /** Absorbs part of a hit into the numeric shield and wears the item that blocked it. */
 function applyShieldAbsorption(defenderId, slot, damage) {
     const c = CONFIG.shield;
+    if (!isAlive(defenderId)) {
+        return damage;
+    }
     const shieldLeft = api.getShieldAmount(defenderId);
     if (shieldLeft <= 0) {
         if (stateOf(defenderId).shieldRaised) {
