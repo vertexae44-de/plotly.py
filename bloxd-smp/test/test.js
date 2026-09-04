@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue, voidGuardians, npcTrades, pendingStrikes } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -263,53 +263,67 @@ ctx.stateOf("a").lastWindCharge = 0;
 ctx.onPlayerAltAction("a");
 check("the last wind charge clears the slot", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
 
-// -------------------------------------------------------------------- repair kit
-check("repair kit is a real Bloxd block, not a fake one", C.repair.item === "Yellow Portal", C.repair.item);
-check("repair kit is craftable", !!world.recipes.a[C.repair.item], Object.keys(world.recipes.a));
-check("repair kit recipe never touches the resurrection orb item",
-    C.repair.item !== C.resurrection.item, JSON.stringify([C.repair.item, C.resurrection.item]));
+// -------------------------------------------------------------------- mending
+check("mending spends Aura XP Potions, not a level stat", C.mending.item === "Aura XP Potion", C.mending.item);
+check("mending has a splash variant", C.mending.splashItem === "Splash Aura XP Potion", C.mending.splashItem);
 
 world.inv.a = [{ name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 100, smpDurMax: 400 } } }];
 world.sel.a = 0;
-ctx.playerCommand("a", "/repair");
-check("with no kit in hand, repair refuses", world.inv.a[0].attributes.customAttributes.smpDur === 100,
+ctx.playerCommand("a", "/mend");
+check("with no potions, mend refuses", world.inv.a[0].attributes.customAttributes.smpDur === 100,
     world.inv.a[0].attributes.customAttributes.smpDur);
 
 world.inv.a = [
     { name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 100, smpDurMax: 400 } } },
-    { name: C.repair.item, amount: 3, attributes: ctx.repairKitAttributes() },
+    { name: C.mending.item, amount: 3, attributes: undefined },
 ];
 world.sel.a = 0;
-ctx.playerCommand("a", "/repair");
-check("repair restores half of max durability",
-    world.inv.a[0].attributes.customAttributes.smpDur === 100 + Math.round(400 * C.repair.restoreFraction),
+ctx.playerCommand("a", "/mend");
+check("mend restores a fraction of max durability",
+    world.inv.a[0].attributes.customAttributes.smpDur === 100 + Math.round(400 * C.mending.restoreFraction),
     world.inv.a[0].attributes.customAttributes.smpDur);
-check("repair consumes exactly one kit", world.inv.a[1].amount === 2, world.inv.a[1].amount);
+check("mend consumes exactly costPerMend potions",
+    world.inv.a[1].amount === 3 - C.mending.costPerMend, world.inv.a[1].amount);
 
 world.inv.a[0].attributes.customAttributes.smpDur = 390;
-ctx.playerCommand("a", "/repair");
-check("repair never overshoots the max", world.inv.a[0].attributes.customAttributes.smpDur === 400,
+ctx.playerCommand("a", "/mend");
+check("mend never overshoots the max", world.inv.a[0].attributes.customAttributes.smpDur === 400,
     world.inv.a[0].attributes.customAttributes.smpDur);
 
-const kitsBefore = world.inv.a[1].amount;
-ctx.playerCommand("a", "/repair");
-check("a full item does not spend a kit", world.inv.a[1].amount === kitsBefore, world.inv.a[1].amount);
+const potionsBefore = world.inv.a[1].amount;
+ctx.playerCommand("a", "/mend");
+check("a full item does not spend a potion", world.inv.a[1].amount === potionsBefore, world.inv.a[1].amount);
 
-world.inv.a = [{ name: "Dirt", amount: 5, attributes: undefined }, { name: C.repair.item, amount: 1, attributes: ctx.repairKitAttributes() }];
+world.inv.a = [{ name: "Dirt", amount: 5, attributes: undefined }, { name: C.mending.item, amount: 1, attributes: undefined }];
 world.sel.a = 0;
-ctx.playerCommand("a", "/repair");
-check("an item with no durability cannot be repaired", world.inv.a[1].amount === 1, world.inv.a[1].amount);
+ctx.playerCommand("a", "/mend");
+check("an item with no durability cannot be mended", world.inv.a[1].amount === 1, world.inv.a[1].amount);
 
-// /repair keeps the mace's bespoke tooltip in sync, via the shared withDurability helper
-world.inv.a = [maceItem(), { name: C.repair.item, amount: 1, attributes: ctx.repairKitAttributes() }];
+// /mend keeps the mace's bespoke tooltip in sync, via the shared withDurability helper
+world.inv.a = [maceItem(), { name: C.mending.item, amount: 1, attributes: undefined }];
 world.inv.a[0].attributes = ctx.maceAttributes(50);
 world.sel.a = 0;
-ctx.playerCommand("a", "/repair");
-check("repairing the mace keeps its Wind Burst tooltip",
+ctx.playerCommand("a", "/mend");
+check("mending the mace keeps its Wind Burst tooltip",
     /Wind Burst/.test(world.inv.a[0].attributes.customDescription), world.inv.a[0].attributes.customDescription);
-check("repairing the mace still uses maceAttributes' durability",
-    world.inv.a[0].attributes.customAttributes.smpDur === 50 + Math.round(C.mace.durability * C.repair.restoreFraction),
+check("mending the mace still uses maceAttributes' durability",
+    world.inv.a[0].attributes.customAttributes.smpDur === 50 + Math.round(C.mace.durability * C.mending.restoreFraction),
     world.inv.a[0].attributes.customAttributes.smpDur);
+
+// Splash Aura XP Potion mends the off-hand slot instead of whatever is held
+// (you are necessarily holding the potion itself when you throw it).
+world.inv.a = [{ name: C.mending.item, amount: 5, attributes: undefined }];
+world.inv.a[C.offhand.slotIndex] = { name: "Iron Pickaxe", amount: null, attributes: { customAttributes: { smpDur: 100, smpDurMax: 400 } } };
+world.sel.a = 0;
+ctx.onPlayerUsedThrowable("a", C.mending.splashItem, "proj1");
+check("a splash potion mends the off-hand item",
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur === 100 + Math.round(400 * C.mending.restoreFraction),
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur);
+check("a splash potion is consumed", world.inv.a[0].amount === 5 - C.mending.costPerMend, world.inv.a[0].amount);
+
+world.inv.a = [{ name: C.mending.item, amount: 5, attributes: undefined }];
+ctx.onPlayerUsedThrowable("a", "Splash Aura XP Potion II", "proj2");
+check("a different throwable does not trigger mending", world.inv.a[0].amount === 5, world.inv.a[0].amount);
 
 // ---------------------------------------------------------------------- shield
 check("shield is a real Bloxd item, not a fake one", C.shield.item === "Brown Paintball", C.shield.item);
@@ -322,114 +336,80 @@ check("crafted shields carry their tag",
 
 const shieldItem = (dur) => ({ name: C.shield.item, amount: null, attributes: ctx.shieldAttributes(dur) });
 
-world.shield.a = 0;
-world.inv.a = [shieldItem(C.shield.durability)];
-world.sel.a = 0;
-world.meshAttachments.a = undefined;
-ctx.playerCommand("a", "/shield");
-check("/shield raises it by hand and sets the flag", ctx.stateOf("a").shieldRaised === true, "");
-check("raising the shield tops up the numeric shield",
-    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
-check("raising the shield attaches a mesh to the off arm",
-    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
-    JSON.stringify(world.meshAttachments.a));
-check("raising the shield says BLOCKING in the top-left HUD",
-    world.opts.a.headerChips && world.opts.a.headerChips[0] === C.shield.hudChipBlocking,
-    JSON.stringify(world.opts.a.headerChips));
-
-// a raised shield blocks a chunk of incoming player damage and drains the shield, not health
-world.pos.a = [0, 64, 0]; world.pos.b = [1, 64, 0];
-world.inv.b = [{ name: "Iron Sword", amount: null, attributes: undefined }];
-world.sel.b = 0;
-const shieldBefore = world.shield.a;
-const blockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("a raised shield reduces the damage",
-    blockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), blockedDmg);
-check("blocking drains the numeric shield, not just absorbing for free",
-    world.shield.a < shieldBefore, world.shield.a);
-check("blocking wears the shield item",
-    world.inv.a[0].attributes.customAttributes.smpDur === C.shield.durability - C.shield.blockDurabilityCost,
-    world.inv.a[0].attributes.customAttributes.smpDur);
-
-// lowering it removes the mesh and the HUD chip
-ctx.playerCommand("a", "/shield");
-check("lowering the shield clears the flag", ctx.stateOf("a").shieldRaised === false, "");
-check("a lowered shield STAYS on your arm - you are still carrying it",
-    world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode,
-    JSON.stringify(world.meshAttachments.a));
-check("a lowered shield hangs lower than a raised one",
-    world.meshAttachments.a.offset[1] < C.shield.meshOffset[1],
-    JSON.stringify(world.meshAttachments.a.offset));
-check("a lowered shield is drawn duller",
-    world.meshAttachments.a.opts.diffuseColor[0] < C.shield.meshColour[0],
-    JSON.stringify(world.meshAttachments.a.opts.diffuseColor));
-check("lowering the shield says LOWERED in the HUD",
-    world.opts.a.headerChips[0] === C.shield.hudChipLowered,
-    JSON.stringify(world.opts.a.headerChips));
-
-// putting the shield away entirely is what actually clears the arm
-world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
-ctx.refreshHudChips("a");
-check("dropping the shield takes it off your arm", world.meshAttachments.a === null, "");
-check("dropping the shield clears the shield HUD chip",
-    world.opts.a.headerChips.indexOf(C.shield.hudChipBlocking) === -1
-        && world.opts.a.headerChips.indexOf(C.shield.hudChipLowered) === -1,
-    JSON.stringify(world.opts.a.headerChips));
-world.inv.a = [shieldItem(C.shield.durability)];
-
-// with it lowered, hits go through untouched
-world.health.a = 100;
-const unblockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("a lowered shield blocks nothing", unblockedDmg === undefined, unblockedDmg);
-
-// running out of shield breaks the guard rather than blocking for free
-world.inv.a = [shieldItem(C.shield.durability)];
-ctx.stateOf("a").shieldRaised = true;
-world.shield.a = 0;
-const brokenGuardDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("an empty shield stops blocking", brokenGuardDmg === undefined, brokenGuardDmg);
-check("an empty shield auto-lowers", ctx.stateOf("a").shieldRaised === false, "");
-
-// switching away from the shield mid-raise is caught and cleaned up by the tick safety-check
-world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
-ctx.stateOf("a").shieldRaised = true;
-world.pos.a = [500, 64, 500];
-ctx.tick();
-check("switching away from a raised shield lowers it on the next tick",
-    ctx.stateOf("a").shieldRaised === false, "");
-
-// ------------------------------------------------------- passive off-hand shield
-// The first backpack slot acts as a pseudo off-hand: parking a Bulwark there
-// protects the player automatically, every tick, with no need to hold it.
+// Holding a shield in your main hand does nothing at all any more - blocking
+// belongs entirely to the off-hand + crouching.
 world.meshAttachments.a = undefined;
 world.opts.a.headerChips = [];
 world.shield.a = 0;
+world.crouching.a = false;
+world.sel.a = 0;
+world.inv.a = [shieldItem(C.shield.durability)];
+ctx.tick();
+check("a held (not off-hand) shield never shows on the arm", world.meshAttachments.a == null, "");
+const heldOnlyDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a held (not off-hand) shield blocks nothing", heldOnlyDmg === undefined, heldOnlyDmg);
+
+// ------------------------------------------------------- off-hand + crouch shield
+// The only way a shield ever guards: sitting in the off-hand slot AND crouching.
+world.meshAttachments.a = undefined;
+world.opts.a.headerChips = [];
+world.shield.a = 0;
+world.crouching.a = false;
 world.sel.a = 5;   // main hand is a different, unrelated slot
 world.inv.a = [];
 world.inv.a[C.offhand.slotIndex] = shieldItem(C.shield.durability);
 world.inv.a[5] = { name: "Iron Sword", amount: null, attributes: undefined };
 ctx.tick();
-check("parking a shield off-hand raises it without holding it",
-    ctx.stateOf("a").offhandShieldOn === true, "");
-check("the off-hand shield tops up the numeric shield",
-    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
-check("the off-hand shield attaches the off-arm mesh",
+check("parking a shield off-hand shows it on the arm even before crouching",
     world.meshAttachments.a && world.meshAttachments.a.node === C.shield.armNode, "");
-check("the off-hand shield says BLOCKING in the HUD",
+check("not crouching means the HUD says lowered, not blocking",
+    world.opts.a.headerChips[0] === C.shield.hudChipLowered,
+    JSON.stringify(world.opts.a.headerChips));
+const notCrouchingDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("an off-hand shield without crouching blocks nothing",
+    notCrouchingDmg === undefined, notCrouchingDmg);
+
+world.crouching.a = true;
+ctx.tick();
+check("off-hand + crouching tops up the numeric shield",
+    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
+check("off-hand + crouching says BLOCKING in the HUD",
     world.opts.a.headerChips[0] === C.shield.hudChipBlocking,
     JSON.stringify(world.opts.a.headerChips));
 
 const offhandShieldBefore = world.shield.a;
 const offhandBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("the off-hand shield blocks damage while a different weapon is held",
+check("crouching with an off-hand shield blocks damage while a different weapon is held",
     offhandBlockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), offhandBlockedDmg);
-check("the off-hand shield drains the numeric shield",
+check("blocking drains the numeric shield, not just absorbing for free",
     world.shield.a < offhandShieldBefore, world.shield.a);
-check("the off-hand shield wears, the held weapon does not",
+check("blocking wears the off-hand shield, not the held weapon",
     world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur
         === C.shield.durability - C.shield.blockDurabilityCost,
     world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur);
 
+// standing back up drops the guard immediately, even mid-fight
+world.crouching.a = false;
+const standUpDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("standing up stops blocking", standUpDmg === undefined, standUpDmg);
+world.crouching.a = true;
+ctx.tick();
+
+// running out of shield charge stops blocking, but tick() recharges it every
+// tick you are still guarding - this is the actual fix for the shield having
+// silently stopped working: it used to only top up on the moment it was seated.
+world.shield.a = 0;
+const emptyChargeDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a momentarily empty shield resource blocks nothing that instant",
+    emptyChargeDmg === undefined, emptyChargeDmg);
+ctx.tick();
+check("guarding recharges the shield resource every tick, not just once",
+    world.shield.a === C.shield.raiseShieldAmount, world.shield.a);
+const rechargedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("after recharging, the shield blocks again",
+    rechargedDmg === Math.round(20 * (1 - C.shield.blockFraction)), rechargedDmg);
+
+// putting the shield away entirely is what actually clears the arm
 world.inv.a[C.offhand.slotIndex] = null;
 ctx.tick();
 check("removing the off-hand shield clears the flag",
@@ -440,6 +420,7 @@ check("removing the off-hand shield clears the shield HUD chip",
         && world.opts.a.headerChips.indexOf(C.shield.hudChipLowered) === -1,
     JSON.stringify(world.opts.a.headerChips));
 world.sel.a = 0;
+world.crouching.a = false;
 
 // ---------------------------------------------------- shield writes on a dead player
 // setShieldAmount rejects a lifeform that isn't alive right now (mid-death, on the
@@ -518,43 +499,36 @@ check("an empty hand takes the off-hand item back",
     world.inv.a[3] && world.inv.a[3].name === "Apple", JSON.stringify(world.inv.a[3]));
 check("the off-hand is left empty", world.inv.a[OFF] === null, JSON.stringify(world.inv.a[OFF]));
 
-// /offhand also moves a shield, whose right click means "block"
+// /offhand moves a shield there too, and it only guards once crouching as well
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
+world.crouching.a = false;
 ctx.playerCommand("a", "/offhand");
 check("/offhand puts a shield in the off-hand from chat too",
     world.inv.a[OFF] && world.inv.a[OFF].attributes.customAttributes.smpShield === true,
     JSON.stringify(world.inv.a[OFF]));
 check("/offhand frees your main hand for a weapon", world.inv.a[3] === null, "");
 ctx.tick();
-check("a shield put there by /offhand protects passively",
-    ctx.stateOf("a").offhandShieldOn === true, "");
+check("a shield off-handed by /offhand is not guarding until crouched",
+    ctx.stateOf("a").offhandShieldOn === true && !ctx.shieldGuarding("a"), "");
+world.crouching.a = true;
+ctx.tick();
+check("crouching with it makes shieldGuarding true", ctx.shieldGuarding("a") === true, "");
 
-// right-clicking a HELD shield raises the guard, and never moves the item
+// right-clicking a held (not off-hand) shield does nothing at all now
+world.crouching.a = false;
 world.inv.a = [];
 world.sel.a = 3;
 world.inv.a[3] = shieldItem(C.shield.durability);
 world.shield.a = 0;
-ctx.stateOf("a").shieldRaised = false;
-ctx.stateOf("a").offhandShieldOn = false;
 ctx.onPlayerAltAction("a");
-check("right-clicking a held shield raises the guard",
-    ctx.stateOf("a").shieldRaised === true, "");
-check("raising the guard never moves the shield out of your hand",
+check("right-clicking a held shield never moves it",
     world.inv.a[3] && world.inv.a[3].attributes.customAttributes.smpShield === true,
     JSON.stringify(world.inv.a[3]));
-check("raising the guard puts nothing in the off-hand", !world.inv.a[OFF], "");
-
-const guardedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("a hand-raised guard blocks the hit",
-    guardedDmg === Math.round(20 * (1 - C.shield.blockFraction)), guardedDmg);
-
-ctx.onPlayerAltAction("a");
-check("right-clicking again drops the guard", ctx.stateOf("a").shieldRaised === false, "");
-const unguardedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
-check("a dropped guard blocks nothing", unguardedDmg === undefined, unguardedDmg);
-ctx.stateOf("a").shieldRaised = false;
+check("right-clicking a held shield puts nothing in the off-hand", !world.inv.a[OFF], "");
+check("right-clicking a held shield never tops up the shield resource",
+    world.shield.a === 0, world.shield.a);
 
 // the touchscreen action button does the same swap, for phone players
 world.inv.a = [];
@@ -569,7 +543,6 @@ check("releasing the touchscreen button does not swap back",
 check("joining sets up the touchscreen off-hand button",
     world.opts.a.touchscreenActionButton === C.offhand.touchButton,
     world.opts.a.touchscreenActionButton);
-ctx.stateOf("a").shieldRaised = false;
 world.inv.a = [];
 world.sel.a = 0;
 ctx.tick();
@@ -608,7 +581,8 @@ check("coloured wood gear gets wood tier",
 check("unknown material falls back to default",
     durOf("Draugr Sword") === C.durability.defaultMaterialUses, durOf("Draugr Sword"));
 check("non-gear has no durability", durOf("Dirt") === 0 && durOf("Apple") === 0, "");
-check("gold hang glider is not gear", durOf("Gold Hang Glider") === 0, durOf("Gold Hang Glider"));
+check("gold hang glider has durability, same materials/kinds formula as everything else",
+    durOf("Gold Hang Glider") === Math.round(90 * C.durability.kinds.Glider), durOf("Gold Hang Glider"));
 
 // an item that was never in the old hardcoded list now wears out
 world.inv.a = [{ name: "Diamond Dagger", amount: null, attributes: undefined }];
@@ -661,21 +635,34 @@ check("orbs are spent, change given back",
 check("you come back with hearts", world.db.b.smpMaxHp === C.resurrection.heartsOnReturn, world.db.b.smpMaxHp);
 check("resurrection is announced", world.log.some(l => /Void/.test(l)), "");
 
-// the Void generates platforms and orbs to mine
+// the Void generates dark, cracked platforms to stand on - no orbs in the
+// terrain any more, those only ever come from slain guardians now
 world.blocks = {};
-let orbCount = 0, solidCount = 0;
+let solidCount = 0;
 for (let i = 0; i < 4000; i++) {
     world.blocks = {};
-    ctx.buildVoidColumn(0, 0, (i % 80) - 40, ((i / 80) | 0) - 25, 0);
+    ctx.buildVoidColumn(0, 0, (i % 80) - 40, ((i / 80) | 0) - 25);
     const vals = Object.keys(world.blocks).map(k => world.blocks[k]);
     if (vals.length) solidCount++;
-    if (vals.indexOf(C.dimensions.generation["void"].blocks.orb) !== -1) orbCount++;
 }
 check("the Void has platforms to stand on", solidCount > 0, solidCount);
 check("the Void is mostly empty", solidCount < 4000 * 0.5, solidCount);
-check("resurrection orbs spawn in the Void", orbCount > 0, orbCount);
-check("orbs are rare", orbCount < solidCount * 0.2, orbCount + " of " + solidCount);
 check("the Void has no portal out", VOID.portalBlock === undefined, VOID.portalBlock);
+
+// killing a void guardian is the only source of an Orb of Resurrection
+world.inv.a = [];
+voidGuardians["guardTest1"] = true;
+world.mobs.push("guardTest1");
+ctx.onPlayerKilledMob("a", "guardTest1", 20, "Iron Sword");
+check("slaying a tagged guardian gives a resurrection orb",
+    world.inv.a.some(s => s && s.name === C.resurrection.item), JSON.stringify(world.inv.a));
+check("a slain guardian is untagged so it cannot pay out twice",
+    voidGuardians["guardTest1"] === undefined, "");
+
+world.inv.a = [];
+ctx.onPlayerKilledMob("a", "someRandomMob", 20, "Iron Sword");
+check("killing an ordinary mob gives no orb",
+    !world.inv.a.some(s => s && s.name === C.resurrection.item), JSON.stringify(world.inv.a));
 
 // kick mode still works for anyone who prefers a hard ban
 C.ban.mode = "kick";
@@ -737,17 +724,19 @@ ctx.refreshHudChips("a");
 check("a non-durable held item shows no durability chip",
     world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
 
-world.inv.a = [shieldItem(C.shield.durability)];
-ctx.stateOf("a").shieldRaised = true;
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.inv.a[C.offhand.slotIndex] = shieldItem(C.shield.durability);
+ctx.stateOf("a").offhandShieldOn = true;
+world.crouching.a = true;
 world.shield.a = C.shield.raiseShieldAmount;
 world.opts.a.headerChips = [];
 ctx.refreshHudChips("a");
-check("the shield chip and its own durability chip can both show at once",
+check("the shield chip and the held item's own durability chip can both show at once",
     world.opts.a.headerChips.length === 2
         && world.opts.a.headerChips[0] === C.shield.hudChipBlocking
-        && world.opts.a.headerChips[1].indexOf("Shield") !== -1,
+        && world.opts.a.headerChips[1].indexOf("Sword") !== -1,
     JSON.stringify(world.opts.a.headerChips));
-ctx.stateOf("a").shieldRaised = false;
+world.crouching.a = false;
 world.inv.a = [];
 world.opts.a.headerChips = [];
 
@@ -767,20 +756,22 @@ check("different seeds give different terrain",
 
 // run a player around the nether until the first chunk finishes
 world.blocks = {}; world.rects.length = 0;
-world.pos.a = [0, NDIM.groundY + 60, 0];
+world.pos.a = [NDIM.originX, 60, NDIM.originZ];
 ctx.stateOf("a").dimension = null;
 ctx.stateOf("a").lastGenChunk = null;
+const markerKey = NDIM.originX + "," + GEN.markerY + "," + NDIM.originZ;
 let genTicks = 0;
-while (genTicks < 3000 && world.blocks["0," + NDIM.groundY + ",0"] !== GEN.markerBlock) {
+while (genTicks < 3000 && world.blocks[markerKey] !== GEN.markerBlock) {
     ctx.tick();
     genTicks++;
 }
-const nAt = y => world.blocks["0," + (NDIM.groundY + y) + ",0"];
+const nAt = y => world.blocks[NDIM.originX + "," + y + "," + NDIM.originZ];
 check("nether chunk generates", genTicks < 3000, genTicks + " ticks");
 check("nether has a bedrock floor", nAt(GEN.nether.floorY) === GEN.nether.blocks.floor, nAt(GEN.nether.floorY));
 check("nether has a ceiling", nAt(GEN.nether.ceilingY) === GEN.nether.blocks.ceiling, nAt(GEN.nether.ceilingY));
 check("nether has a lava sea", nAt(GEN.nether.lavaLevel) === GEN.nether.blocks.liquid, nAt(GEN.nether.lavaLevel));
-check("chunk is marked generated", ctx.chunkGenerated("nether", 0, 0), "");
+check("chunk is marked generated",
+    ctx.chunkGenerated("nether", NDIM.originX / GEN.chunkSize, NDIM.originZ / GEN.chunkSize), "");
 // Drain the whole queue first - the 5x5 around the player is still building,
 // and ore placement writes blocks every tick, so "nothing changed" only means
 // anything once there is no work left.
@@ -799,11 +790,12 @@ check("a generated chunk is never rebuilt",
 
 // the end builds islands over void
 world.blocks = {};
-world.pos.a = [0, EDIM.groundY + 60, 0];
+world.pos.a = [EDIM.originX, 60, EDIM.originZ];
 ctx.stateOf("a").dimension = null;
 ctx.stateOf("a").lastGenChunk = null;
+const endMarkerKey = EDIM.originX + "," + GEN.markerY + "," + EDIM.originZ;
 let endTicks = 0;
-while (endTicks < 3000 && world.blocks["0," + EDIM.groundY + ",0"] !== GEN.markerBlock) {
+while (endTicks < 3000 && world.blocks[endMarkerKey] !== GEN.markerBlock) {
     ctx.tick();
     endTicks++;
 }
@@ -814,7 +806,7 @@ check("end has island blocks", endSolid > 0, endSolid);
 check("end arrival point is solid ground",
     ctx.buildEndColumn === undefined || (() => {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, 0, 0, 0);
+        ctx.buildEndColumn(0, 0, 0, 0);
         return Object.keys(world.blocks).length > 0;
     })(), "centre island missing");
 check("far end columns can still be void", (() => {
@@ -822,7 +814,7 @@ check("far end columns can still be void", (() => {
     let anyVoid = false;
     for (let i = 1; i < 60 && !anyVoid; i++) {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, i * 37, i * 53, 0);
+        ctx.buildEndColumn(0, 0, i * 37, i * 53);
         if (Object.keys(world.blocks).length === 0) anyVoid = true;
     }
     return anyVoid;
@@ -855,17 +847,17 @@ check("end columns actually contain ores", eFound.length > 0, eFound.join(","));
 
 // the same column, built twice, must come back byte-identical
 world.blocks = {};
-ctx.buildNetherColumn(0, 0, 41, 67, 0);
+ctx.buildNetherColumn(0, 0, 41, 67);
 const firstPass = JSON.stringify(world.blocks);
 world.blocks = {};
-ctx.buildNetherColumn(0, 0, 41, 67, 0);
+ctx.buildNetherColumn(0, 0, 41, 67);
 check("ore placement is deterministic", JSON.stringify(world.blocks) === firstPass, "");
 
 // nothing structural may be replaced by an ore
 check("ores never replace the bedrock floor", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         if (world.blocks["0," + GEN.nether.floorY + ",0"] !== GEN.nether.blocks.floor) {
             return false;
         }
@@ -876,7 +868,7 @@ check("ores never replace the bedrock floor", (() => {
 check("ores never replace the nether ceiling", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         if (world.blocks["0," + GEN.nether.ceilingY + ",0"] !== GEN.nether.blocks.ceiling) {
             return false;
         }
@@ -887,7 +879,7 @@ check("ores never replace the nether ceiling", (() => {
 check("ores never replace the end's surface layer", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildEndColumn(0, 0, i * 11, i * 17);
         const keys = Object.keys(world.blocks);
         if (keys.length === 0) {
             continue;   // open void, nothing to check
@@ -911,7 +903,7 @@ check("ores with a maxY stay below it", (() => {
     }
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         for (const k of Object.keys(world.blocks)) {
             const hit = capped.find(o => o.block === world.blocks[k]);
             if (hit && parseInt(k.split(",")[1], 10) > hit.maxY) {
@@ -931,54 +923,61 @@ check("overworld chunks are never queued", (() => {
 })(), Object.keys(genDone).join(" "));
 
 // ------------------------------------------------------------ region geometry
-// Dimensions now claim a band of +/- verticalHalfSize around their groundY,
-// not a box of x/z. If two bands ever overlap, dimensionAt returns whichever
-// is listed first and the other dimension silently stops existing - so check
-// every pair stays clear.
+// Dimensions claim a square of +/- regionHalfSize around their own X/Z origin
+// now - the layout that was tested and confirmed working in-game, restored
+// after the Y-banded version silently failed (Void never generated, Nether/
+// End arrivals fell through - Bloxd's real buildable range does not reach as
+// deep as assumed). If two regions ever overlap, dimensionAt returns
+// whichever is listed first and the other dimension silently stops existing -
+// so check every pair stays clear.
 (() => {
-    const half = C.dimensions.verticalHalfSize;
-    const names = Object.keys(C.dimensions.list).filter(k => C.dimensions.list[k].groundY != null);
+    const half = C.dimensions.regionHalfSize;
+    const names = Object.keys(C.dimensions.list).filter(k => C.dimensions.list[k].originX != null);
     let clash = null;
     for (let i = 0; i < names.length; i++) {
         for (let j = i + 1; j < names.length; j++) {
-            const a = C.dimensions.list[names[i]].groundY;
-            const b = C.dimensions.list[names[j]].groundY;
-            const apart = Math.abs(a - b);
-            if (apart < half * 2) {
-                clash = names[i] + " and " + names[j] + " are only " + apart + " apart";
+            const a = C.dimensions.list[names[i]];
+            const b = C.dimensions.list[names[j]];
+            const apartX = Math.abs(a.originX - b.originX);
+            const apartZ = Math.abs(a.originZ - b.originZ);
+            if (apartX < half * 2 && apartZ < half * 2) {
+                clash = names[i] + " and " + names[j] + " overlap";
             }
         }
     }
-    check("no two dimension Y-bands overlap", clash === null, clash || "");
+    check("no two dimension regions overlap", clash === null, clash || "");
 })();
 
 // every dimension also has to land back on itself: put a player at its
-// groundY and dimensionAt must name that same dimension
+// origin and dimensionAt must name that same dimension
 Object.keys(C.dimensions.list).forEach(key => {
-    const gY = C.dimensions.list[key].groundY;
-    if (gY == null) {
-        return;   // the overworld has no fixed band to test this way
+    const d = C.dimensions.list[key];
+    if (d.originX == null) {
+        return;   // the overworld has no fixed region to test this way
     }
-    check("a player at the groundY of " + key + " is in " + key,
-        ctx.dimensionAt([0, gY, 0]) === key, ctx.dimensionAt([0, gY, 0]));
+    const pos = [d.originX, 60, d.originZ];
+    check("a player at the origin of " + key + " is in " + key,
+        ctx.dimensionAt(pos) === key, ctx.dimensionAt(pos));
 });
 
-// a round trip has to land you back at the same x/z and the same height you
-// left, for every dimension that has a portal
+// a round trip has to land you back at the same x/y/z you left, for every
+// dimension that has a portal
 Object.keys(C.dimensions.list).filter(k => k !== "overworld").forEach(key => {
-    const startY = 77;   // an arbitrary overworld height, nowhere near any band
-    world.pos.b = [321, startY, 654];
+    const d = C.dimensions.list[key];
+    const startPos = [321, 77, 654];   // an arbitrary overworld position, nowhere near any region
+    world.pos.b = startPos.slice();
     ctx.stateOf("b").dimension = "overworld";
-    ctx.stateOf("b").overworldY = undefined;
+    ctx.stateOf("b").overworldPos = undefined;
     ctx.travelTo("b", key);
     const arrived = ctx.dimensionAt(world.pos.b);
     check("travelling to " + key + " from the overworld lands inside it",
         arrived === key, arrived + " at " + world.pos.b);
-    check("x/z carry straight across when travelling to " + key,
-        world.pos.b[0] === 321 && world.pos.b[2] === 654, world.pos.b);
+    check("arriving in " + key + " lands at its origin",
+        world.pos.b[0] === d.originX && world.pos.b[2] === d.originZ, world.pos.b);
     ctx.travelTo("b", "overworld");
-    check("coming back from " + key + " returns you to the height you left",
-        world.pos.b[1] === startY, world.pos.b);
+    check("coming back from " + key + " returns you to where you left",
+        world.pos.b[0] === startPos[0] && world.pos.b[1] === startPos[1] && world.pos.b[2] === startPos[2],
+        world.pos.b);
 });
 
 // ------------------------------------------------------------------ dimension look
@@ -1001,7 +1000,7 @@ check("every dimension sets a fog colour and a fog distance", (() => {
 })(), "");
 
 // and the fog has to actually reach the player when they arrive
-world.pos.b = [0, NDIM.groundY + 64, 0];
+world.pos.b = [NDIM.originX, 64, NDIM.originZ];
 ctx.stateOf("b").dimension = null;
 ctx.enterDimension("b", "nether", false);
 check("arriving in the nether pushes its fog colour to the client",
@@ -1103,6 +1102,7 @@ check("chat is normal again", ctx.onPlayerChat("a", "hello", "global") === undef
 world.inv.a = [];
 world.inv.a[C.offhand.slotIndex] = shieldItem(C.shield.durability);
 world.sel.a = 5;
+world.crouching.a = true;
 ctx.onPlayerChat("a", "!anon", "global");
 world.meshAttachments.a = undefined;
 world.opts.a.headerChips = [];
@@ -1119,6 +1119,7 @@ check("becoming visible again puts the shield back on the arm",
     JSON.stringify(world.meshAttachments.a));
 world.inv.a = [];
 world.sel.a = 0;
+world.crouching.a = false;
 ctx.tick();
 // the native killfeed panel is off for good, from the moment they join - there
 // is no per-anon toggling any more, so nobody ever sees the automatic entry
@@ -1172,7 +1173,7 @@ world.db.b.smpMaxHp = 100;
 if (ctx.dimensionAt(world.pos.b) === "void") ctx.travelTo("b", "overworld");
 
 // dying again while still exiled in the Void raises no further noise
-world.pos.b = [0, C.dimensions.list["void"].groundY + 64, 0];
+world.pos.b = [C.dimensions.list["void"].originX, 64, C.dimensions.list["void"].originZ];
 ctx.tick();
 world.log.length = 0; world.sounds.length = 0;
 ctx.onAttemptKillPlayer("b", "a");
@@ -1224,6 +1225,187 @@ check("/give egapple gives an enchanted apple",
 C.commands.adminNames.length = 0;
 check("/give blocked for non-admin", ctx.playerCommand("a", "/give mace") === false, "");
 check("unknown command ignored", ctx.playerCommand("a", "/potato") === false, "");
+
+// ------------------------------------------------------------------- dagger
+check("dagger is a real Bloxd item", C.dagger.item === "Moonstone Dagger", C.dagger.item);
+check("dagger recipe costs 5 rotten flesh",
+    C.dagger.recipe.some(r => r.items[0] === "Rotten Flesh" && r.amt === 5), JSON.stringify(C.dagger.recipe));
+check("dagger recipe costs 90 moonstone",
+    C.dagger.recipe.some(r => r.items[0] === "Moonstone" && r.amt === 90), "");
+check("dagger recipe costs 4 sticks",
+    C.dagger.recipe.some(r => r.items[0] === "Stick" && r.amt === 4), "");
+check("dagger is craftable", !!world.recipes.a[C.dagger.item], Object.keys(world.recipes.a));
+check("crafted daggers carry their tag",
+    world.recipes.a[C.dagger.item][0].attributes.customAttributes.smpDagger === true, "");
+
+world.inv.b = [{ name: C.dagger.item, amount: null, attributes: ctx.daggerAttributes() }];
+world.sel.b = 0;
+world.alive.a = true;
+world.effects.length = 0;
+ctx.onPlayerDamagingOtherPlayer("b", "a", 10);
+check("a dagger hit poisons the target",
+    world.effects.some(e => e.id === "a" && e.name === "Poisoned" && e.ms === C.dagger.poisonMs),
+    JSON.stringify(world.effects));
+check("a dagger hit wears the dagger",
+    world.inv.b[0].attributes.customAttributes.smpDur === durOf(C.dagger.item) - C.durability.costPerHit,
+    world.inv.b[0].attributes.customAttributes.smpDur);
+
+// --------------------------------------------------------------- plain maces
+check("all five plain mace tiers are configured",
+    C.plainMaces.tiers.map(t => t.item).join(",")
+        === "Wood Mace,Stone Mace,Iron Mace,Gold Mace,Diamond Mace",
+    C.plainMaces.tiers.map(t => t.item).join(","));
+C.plainMaces.tiers.forEach(tier => {
+    check(tier.item + " is craftable", !!world.recipes.a[tier.item], Object.keys(world.recipes.a));
+    check(tier.item + " carries no smash tag (it is plain)",
+        !world.recipes.a[tier.item][0].attributes.customAttributes
+            || world.recipes.a[tier.item][0].attributes.customAttributes.smpMace === undefined, "");
+});
+
+world.inv.b = [{ name: "Iron Mace", amount: null, attributes: ctx.plainDurableAttributes("Iron Mace") }];
+world.sel.b = 0;
+world.pos.a = [0, 64, 0]; world.pos.b = [1, 64, 0];
+ctx.stateOf("b").fallDistance = 0;   // no smash bonus without ATTR_MACE anyway
+const plainMaceDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 10);
+check("a plain mace does not get the smash bonus", plainMaceDmg === undefined, plainMaceDmg);
+check("a plain mace still wears down",
+    world.inv.b[0].attributes.customAttributes.smpDur === durOf("Iron Mace") - C.durability.costPerHit,
+    world.inv.b[0].attributes.customAttributes.smpDur);
+
+// -------------------------------------------------------------- reforge (attribute swap)
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: { customAttributes: { smpDur: 10, smpDurMax: 250 } } }];
+world.inv.a[C.offhand.slotIndex] = { name: "Gold Sword", amount: null, attributes: { customAttributes: { smpDur: 200, smpDurMax: 250 } } };
+world.sel.a = 0;
+ctx.playerCommand("a", "/reforge");
+check("reforge swaps the held item's attributes onto the off-hand item",
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur === 10,
+    world.inv.a[C.offhand.slotIndex].attributes.customAttributes.smpDur);
+check("reforge swaps the off-hand item's attributes onto the held item",
+    world.inv.a[0].attributes.customAttributes.smpDur === 200,
+    world.inv.a[0].attributes.customAttributes.smpDur);
+check("reforge never changes either item's base name",
+    world.inv.a[0].name === "Iron Sword" && world.inv.a[C.offhand.slotIndex].name === "Gold Sword", "");
+
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.inv.a[C.offhand.slotIndex] = null;
+check("reforge with nothing in the off-hand does nothing",
+    ctx.playerCommand("a", "/reforge") === true && world.inv.a[0].name === "Iron Sword", "");
+
+// -------------------------------------------------------------- glider durability
+check("gliders are given durability attributes when crafted",
+    typeof world.recipes.a["Diamond Hang Glider"][0].attributes.customAttributes.smpDurMax === "number",
+    JSON.stringify(world.recipes.a["Diamond Hang Glider"][0].attributes));
+
+world.inv.a = [{ name: "Diamond Hang Glider", amount: null, attributes: ctx.gliderAttributes("Diamond Hang Glider") }];
+world.sel.a = 0;
+const gliderMaxDur = durOf("Diamond Hang Glider");
+ctx.onPlayerEnteredVehicle("a");
+check("mounting while holding a glider wears it",
+    world.inv.a[0].attributes.customAttributes.smpDur === gliderMaxDur - C.durability.gliderWearPerFlight,
+    world.inv.a[0].attributes.customAttributes.smpDur);
+
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.sel.a = 0;
+ctx.onPlayerEnteredVehicle("a");
+check("mounting while holding something else does not touch it",
+    world.inv.a[0].attributes === undefined, JSON.stringify(world.inv.a[0]));
+
+// ------------------------------------------------------------------- villagers
+check("villagers use the real NPC mob type", C.npc.mobType === "NPC", C.npc.mobType);
+check("villager skins are all real NPC variations",
+    C.npc.variations.every(v => ["default", "emma", "leo", "isabel", "sanjay", "imara", "enoch", "sara", "carmen"].indexOf(v) !== -1),
+    JSON.stringify(C.npc.variations));
+check("world init spawned the configured number of villagers",
+    world.spawnedMobs.filter(m => m.mobType === "NPC").length === C.npc.countInOverworld,
+    world.spawnedMobs.filter(m => m.mobType === "NPC").length);
+
+const someNpcId = Object.keys(npcTrades)[0];
+check("every spawned villager was assigned a trade", !!someNpcId, "");
+const trade = npcTrades[someNpcId];
+world.inv.a = [{ name: trade.want, amount: trade.wantAmt, attributes: undefined }];
+ctx.onPlayerClick("a", true, 0, 0, 0, "Air", someNpcId);
+check("right-clicking a villager with enough items trades",
+    world.inv.a.some(s => s && s.name === trade.give), JSON.stringify(world.inv.a));
+
+world.inv.a = [];
+ctx.onPlayerClick("a", true, 0, 0, 0, "Air", someNpcId);
+check("trading with too few items gives nothing", world.inv.a.length === 0, JSON.stringify(world.inv.a));
+
+world.inv.a = [{ name: trade.want, amount: trade.wantAmt, attributes: undefined }];
+ctx.onPlayerClick("a", false, 0, 0, 0, "Air", someNpcId);
+check("a left click on a villager does not trade", world.inv.a.length === 1, JSON.stringify(world.inv.a));
+
+check("ocean sea mobs were spawned since Bloxd has no native sea creature",
+    world.spawnedMobs.filter(m => m.mobType === C.ocean.seaMob.mobType).length >= C.ocean.seaMob.countPerRing,
+    world.spawnedMobs.filter(m => m.mobType === C.ocean.seaMob.mobType).length);
+
+// ------------------------------------------------------------------- bed spawn
+world.db.a.smpSpawnPos = undefined;
+ctx.onBlockStandStart("a", 5, 64, 5, "Red Bed");
+check("standing on a bed records a spawn point",
+    world.db.a.smpSpawnPos === JSON.stringify([5, 64, 5]), world.db.a.smpSpawnPos);
+check("standing on unrelated blocks does not", (() => {
+    world.db.a.smpSpawnPos = undefined;
+    ctx.onBlockStandStart("a", 1, 64, 1, "Stone");
+    return world.db.a.smpSpawnPos === undefined;
+})(), world.db.a.smpSpawnPos);
+
+check("isBedBlock matches every colour and the head half",
+    ctx.isBedBlock("White Bed") && ctx.isBedBlock("_Black Bed Head") && ctx.isBedBlock("Purple Strongbed"), "");
+check("isBedBlock does not match unrelated blocks",
+    !ctx.isBedBlock("Stone") && !ctx.isBedBlock("Bedrock"), "");
+
+world.db.a.smpSpawnPos = JSON.stringify([7, 70, 7]);
+const respawnPos = ctx.onRespawnRequest("a");
+check("respawn uses the recorded bed position", JSON.stringify(respawnPos) === JSON.stringify([7, 70, 7]), respawnPos);
+
+world.db.b.smpSpawnPos = undefined;
+const fallbackPos = ctx.onRespawnRequest("b");
+check("respawn falls back to the Overworld position with no bed set",
+    JSON.stringify(fallbackPos) === JSON.stringify(C.dimensions.overworldFallbackPos), fallbackPos);
+
+// ----------------------------------------------------- Orbital Strike Cannon & Stabshot
+check("orbital cannon substitutes a real explosive item for the nonexistent TNT",
+    C.orbital.recipe.some(r => r.items[0] === "Moonstone Remote Explosive" && r.amt === 500),
+    JSON.stringify(C.orbital.recipe));
+check("orbital cannon is the Master Rod, breaking on use is the point",
+    C.orbital.item === "Master Rod", C.orbital.item);
+check("stabshot is the Obsidian Rod", C.stabshot.item === "Obsidian Rod", C.stabshot.item);
+check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (() => {
+    const r = C.stabshot.recipe;
+    return r.some(x => x.items[0] === "Gold Bow" && x.amt === 1)
+        && r.some(x => x.items[0] === "Knight Heart" && x.amt === 250)
+        && r.some(x => x.items[0] === "Moonstone Remote Explosive" && x.amt === 230);
+})(), JSON.stringify(C.stabshot.recipe));
+
+world.inv.a = [{ name: C.orbital.item, amount: null, attributes: ctx.orbitalAttributes() }];
+world.sel.a = 0;
+world.pos.a = [0, 64, 0];
+world.targetInfo.a = { position: [10, 64, 10] };
+pendingStrikes.length = 0;
+ctx.onPlayerAltAction("a");
+check("firing the orbital cannon breaks it immediately", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
+check("firing the orbital cannon queues a delayed strike", pendingStrikes.length === 1, pendingStrikes.length);
+world.damages.length = 0;
+world.pos.b = [10, 64, 10];
+ctx.processPendingStrikes();
+check("the orbital strike does not land before its delay", world.damages.length === 0, world.damages.length);
+pendingStrikes[0].fireAt = -1;   // force it due, since api.now() is real wall-clock time in tests
+ctx.processPendingStrikes();
+check("the orbital strike lands once due", world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+check("a landed strike is removed from the queue", pendingStrikes.length === 0, pendingStrikes.length);
+
+world.inv.a = [{ name: C.stabshot.item, amount: null, attributes: ctx.stabshotAttributes() }];
+world.sel.a = 0;
+world.damages.length = 0;
+ctx.stateOf("a").lastStabshot = 0;
+world.targetInfo.a = { position: [10, 64, 10] };
+ctx.onPlayerAltAction("a");
+check("stabshot does not consume the rod", world.inv.a[0] !== null, JSON.stringify(world.inv.a[0]));
+check("stabshot hits immediately, no delay", world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+world.damages.length = 0;
+ctx.onPlayerAltAction("a");
+check("stabshot is on a cooldown", world.damages.length === 0, world.damages.length);
 
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILURES`);
 process.exit(fails === 0 ? 0 : 1);

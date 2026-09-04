@@ -10,6 +10,7 @@ const world = {
     mobSeq: 0, meshEntities: [], headings: {}, meshSpawnFails: false,
     sounds: [], meshAttachments: {},
     worldChanges: [], protectedBlocks: {},
+    crouching: {}, spawnedMobs: [], mobSpawnFails: false, targetInfo: {},
 };
 const ids = ["a", "b"];
 
@@ -22,6 +23,15 @@ const api = {
     getHealth: id => world.health[id] ?? 100,
     setHealth: (id, hp) => { world.health[id] = hp; },
     isAlive: id => world.alive[id] !== false,
+    isPlayerCrouching: id => !!world.crouching[id],
+    getPlayerTargetInfo: id => world.targetInfo[id] !== undefined ? world.targetInfo[id] : null,
+    attemptSpawnMob: (mobType, x, y, z, opts) => {
+        if (world.mobSpawnFails) return null;
+        const id = "mob" + (++world.mobSeq);
+        world.spawnedMobs.push({ id, mobType, x, y, z, opts });
+        world.mobs.push(id);
+        return id;
+    },
     getShieldAmount: id => world.shield[id] ?? 0,
     setShieldAmount: (id, v) => { world.shield[id] = v; },
     applyEffect: (id, name, ms, info) => world.effects.push({ id, name, ms, info }),
@@ -122,5 +132,11 @@ const CONFIG = vm.runInContext("CONFIG", ctx);
 const durabilityCache = vm.runInContext("durabilityCache", ctx);
 const genDone = vm.runInContext("genDone", ctx);
 const genQueue = vm.runInContext("genQueue", ctx);
+const voidGuardians = vm.runInContext("voidGuardians", ctx);
+const npcTrades = vm.runInContext("npcTrades", ctx);
+const pendingStrikes = vm.runInContext("pendingStrikes", ctx);
 
-module.exports = { ctx, world, api, CONFIG, durabilityCache, genDone, genQueue };
+module.exports = {
+    ctx, world, api, CONFIG, durabilityCache, genDone, genQueue,
+    voidGuardians, npcTrades, pendingStrikes,
+};

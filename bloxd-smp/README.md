@@ -5,17 +5,26 @@
 | Feature | What it does |
 | --- | --- |
 | **Hearts** | A player kill costs the victim a heart and drops it as a **Heart** (an Aura XP Orb). Right-click to eat it — **1 Heart = 1 heart, no limit**. |
-| **Exile to the Void at 0 hearts** | Lose your last heart and you are stranded in a fourth dimension until you mine 3 Orbs of Resurrection. |
+| **Exile to the Void at 0 hearts** | Lose your last heart and you are stranded in dark, abandoned ruins until you kill 3 guardians for Orbs of Resurrection. |
 | **Moonstone Mace** | Hit from the air to smash — works on **players and mobs** — with Wind Burst and Density. Expensive to craft. |
+| **Plain maces** | Wood/Stone/Iron/Gold/Diamond — no smash, no Wind Burst, just an ordinary weapon at a steep price. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
+| **Moonstone Dagger** | Poisons whatever it hits. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
-| **Repair Kit** | Craftable. `/repair` restores half of whatever you're holding's max durability. |
-| **Bulwark shield** | Hold it and right-click to raise your guard. Or park it in the off-hand slot and it blocks 60% by itself, hand free for a sword. |
-| **Off-hand slot** | A backpack slot (outside the hotbar) carries a second item: drag it in, `/offhand`, or the touchscreen button. Shown as a status icon. |
-| **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip and a second live chip in the HUD for whatever you're holding. |
-| **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
-| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
+| **Hang Gliders** | This world's elytra — a real Bloxd item, steep recipe. Nothing stops you swinging the mace while gliding. |
+| **Mending** | `/mend`, or throw a Splash Aura XP Potion at your off-hand — both spend Aura XP Potions, since Bloxd has no XP/level stat to spend instead. |
+| **Bulwark shield** | Park it in the off-hand slot **and crouch** — that is the only way it ever blocks, 60% of incoming player damage. |
+| **Off-hand slot** | Slot 44 carries a second item, outside the hotbar: drag it in, `/offhand`, or the touchscreen button. Shown as a status icon. |
+| **Reforge** | `/reforge` swaps the custom attributes between your held item and your off-hand item. |
+| **Durability** | Bloxd has none natively. Every tool, weapon, bow, armour piece and glider gets one, shown as a wear bar in the tooltip and a second live chip in the HUD for whatever you're holding. |
+| **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
+| **Villagers** | Real `NPC` mobs scattered near spawn — right-click one to trade. |
+| **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
+| **Orbital Strike Cannon** | One-time-use Master Rod — right-click to call down a delayed blast where you're looking. |
+| **Stabshot** | Reusable Obsidian Rod — an instant blast on a cooldown. |
+| **Bed spawn** | Stand on any bed to set your respawn point there. |
+| **Crafting** | Almost everything above has a real recipe. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your body, your nametag and your name in chat. |
@@ -34,9 +43,10 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | Item | Recipe |
 | --- | --- |
 | **Moonstone Mace** | **400 Moonstone + 4 Knight Heart + 2 Stick** |
+| **Wood / Stone / Iron / Gold / Diamond Mace** | 80 Maple Wood Planks + 20 Stick / 120 Stone + 20 Stick / 150 Iron Bar + 20 Stick / 180 Gold Bar + 20 Stick / 200 Diamond + 20 Stick |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
+| **Moonstone Dagger** | 5 Rotten Flesh + 90 Moonstone + 4 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
-| **Repair Kit** ×2 | 4 Iron Fragment + 2 Stick |
 | **Bulwark shield** | 6 Maple Wood Planks + 1 Iron Bar |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
@@ -44,9 +54,15 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
+| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Remote Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
+| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Remote Explosive |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
+
+Bloxd has no TNT item and no explosion-trigger API, so **Moonstone Remote Explosive** (a real item)
+stands in for "TNT" in the two rod recipes, the same way Wind Charge, the shield and Repair Kit
+already reuse real items for concepts Bloxd doesn't have.
 
 ## Hearts
 
@@ -120,7 +136,9 @@ Density 3 - the further you fall, the harder it hits.
 
 Wear is spent on **hits and blocks broken**, so it applies to what you are holding. Armour gets a
 durability value and shows it in the tooltip, but does not tick down when you take a hit — Bloxd's
-API does not expose the armour slots, so there is nothing to hook.
+API does not expose the armour slots, so there is nothing to hook. Gliders get one too, but wear on
+mount instead (`onPlayerEnteredVehicle`, `durability.gliderWearPerFlight` per flight) — there is no
+per-tick "still gliding" event to hook, so a flat cost per launch is the closest real proxy.
 
 ### HUD durability chip
 
@@ -141,35 +159,37 @@ no way to read what is in the armour slots at all, the same limit that keeps arm
 ticking down on a hit. Only the held item is visible to the script, so only the held item can be
 shown here.
 
-## Nether and the End
+## Nether, End & Void
 
 **Bloxd has one world — there is no dimension API.** So these are built the only way the engine
 allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
 light, sky light and gravity through per-player client options.
 
-| | Y (height) | Portal | Feel |
+| | X/Z origin | Portal | Feel |
 | --- | --- | --- | --- |
 | Overworld | wherever you normally build | — | normal |
-| The Nether | `y = -10000` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
-| The End | `y = -30000` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `y = -50000` | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
+| The Nether | `x = -10000, z = 0` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `x = -30000, z = 0` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `x = 50000, z = 0` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
 
-**This is a Y-based layout, not the more usual X/Z one.** Each dimension is stacked directly below
-the Overworld at a wildly different height rather than spread out sideways — a portal is a vertical
-drop, and your x/z position carries straight across unchanged. `dimensions.verticalHalfSize`
-(**500**) is how far above/below that Y still counts as "inside" the dimension; with 20000+ blocks
-between each one, that only has to clear whatever generation actually builds, not fight a
-neighbour. **This depends on Bloxd's vertical build range reaching that far down** — confirmed to
-y=-100000 by testing, so all three sit safely inside it, but if a future world's limit is smaller,
-lower every `groundY` (and `verticalHalfSize` if needed) to fit.
+**This is the X/Z layout, and it's the one that actually works in-game.** An earlier version tried
+stacking the three regions directly below the Overworld by height instead (`y = -10000` /
+`-30000` / `-50000`) on the assumption Bloxd's buildable range reached that far down. It didn't:
+Void terrain never generated at all, and Nether/End arrivals fell straight through the platform.
+This X/Z version — spread sideways instead of down, at ordinary, safely-buildable heights — is the
+one that was tested and confirmed working, and the one shipped here.
+
+`dimensions.regionHalfSize` (**4000**) is how far from that origin still counts as "inside" the
+dimension; with 20000+ blocks between each origin, that only has to clear whatever generation
+actually builds, not fight a neighbour.
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
-brings you home — the game remembers the Overworld height you left from (`state.overworldY`) so a
-round trip lands you back roughly where you started, not at a fixed fallback. `/where` tells you
-which dimension you are in; admins get `/dim <name>`.
+brings you home — the game remembers the Overworld position you left from (`state.overworldPos`)
+so a round trip lands you back exactly where you started, not at a fixed fallback. `/where` tells
+you which dimension you are in; admins get `/dim <name>`.
 
-Crossing a dimension's Y-band by falling, flying, or being moved also re-dresses the world, so
-respawns and teleports are handled without a portal.
+Crossing a dimension's region boundary by falling, flying, or being moved also re-dresses the
+world, so respawns and teleports are handled without a portal.
 
 ### Fog
 
@@ -180,7 +200,7 @@ land with the player's own draw distance and be invisible:
 | --- | --- | --- |
 | The Nether | `#6b1105` (thick red haze) | 5 chunks |
 | The End | `#2e0f52` (deep violet) | 8 chunks |
-| The Void | `#050508` (near black) | 3 chunks |
+| The Void | `#020204` (near black, deliberately darker than the other two) | 3 chunks |
 | Overworld | — reset to the player's own setting | — |
 
 Lower the chunk distance for thicker fog. Anything a dimension does not set is put back to default
@@ -189,8 +209,8 @@ reset.
 
 ### Terrain
 
-Both regions **generate as you explore them**. Chunks fill in around every player in a Nether or End
-region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the server.
+All three regions **generate as you explore them**. Chunks fill in around every player, spread over
+ticks (`columnsPerTick`) so a big reveal never stalls the server.
 
 - **Nether** — a closed cavern of **Dark Red Stone**, top to bottom, so it reads as one solid
   netherrack mass: bedrock floor, rolling ground with magma blotches, a lava sea in the dips, and a
@@ -204,15 +224,18 @@ region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the se
   always have ground under them. Its rock is **richer per block** than the Nether's — Iron,
   Emerald, Moonstone, Diamond and Lunite — because most End columns are open void, so there is
   far less stone to dig through.
-- **The Void** — far sparser black platforms in the dark, some carrying an Orb of Resurrection.
+- **The Void** — dark, cracked platforms (Black Concrete under Cracked Stone Bricks, with Mossy
+  Stone Bricks patches) that read as abandoned rather than merely empty. Scattered among them are
+  small ruined **towers and houses** built from Stone Bricks and Mossy Stone Bricks, each one
+  guarded by 3 hostile mobs — see **The Void, and the way out** below for how those actually pay
+  out an escape.
 
 Terrain is **deterministic value noise**, not `Math.random`: the same column always produces the same
 blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one
 block at `markerY` and **never rebuilt**, so anything players construct there is safe.
 
-**Before you use this, confirm in-game that terrain actually generates this far down** — if it
-does not, Bloxd's real vertical range is smaller than assumed here; bring every `groundY` closer to
-0 until it works, keeping them well over `2 × verticalHalfSize` apart from each other. Set
+This X/Z-based layout is the one that was tested and confirmed working in-game (see **Nether, End
+& Void** above for why it replaced an earlier Y-based attempt that silently failed). Set
 `dimensions.enabled: false` to turn the whole system off.
 
 ## Crystal PvP
@@ -251,12 +274,15 @@ if you would rather keep the killfeed and accept the leak.
 ## The Void, and the way out
 
 Running out of hearts no longer ends your run — it **exiles you**. You are dropped into a fourth
-region, the Void: near-black fog, three-chunk view distance, half gravity, and sparse black platforms
-in the dark. You keep 3 hearts so you can move, and dying there costs nothing.
+region, the Void: near-black fog, three-chunk view distance, half gravity, and dark, cracked
+platforms scattered with abandoned ruins. You keep 3 hearts so you can move, and dying there costs
+nothing.
 
-Scattered on those platforms are **Orbs of Resurrection** — green portal blocks. Mine **3** of them
-and the Void spits you back into the overworld with 5 hearts. `/orbs` shows your count. There is no
-portal out; the orbs are the only exit.
+**Orbs of Resurrection no longer come from mining.** Each ruin (a tower or a house, picked at
+random) is guarded by 3 hostile mobs (`Draugr Skeleton` by default) — kill them and each one drops
+a Green Portal block, tagged as an Orb of Resurrection. Mine nothing; the guardians are the only
+source. Collect **3** and the Void spits you back into the overworld with 5 hearts. `/orbs` shows
+your count. There is still no portal out — killing guardians is the only exit.
 
 ```js
 ban: {
@@ -268,7 +294,16 @@ resurrection: {
     required: 3,
     heartsOnReturn: 50, // 5 hearts
 },
+dimensions.generation["void"].structures: {
+    chance: 0.05,               // rolled once per generated chunk
+    guardiansPerStructure: 3,
+    guardianMob: "Draugr Skeleton",
+    crystalChance: 0.5,         // a finished structure's chance to also hold a Crystal
+},
 ```
+
+A finished ruin has a `crystalChance` of also holding a **Crystal** block, so the void guardians'
+fights can turn into Crystal PvP fights too.
 
 Set `ban.mode: "kick"` to go back to permanent bans (`/bans` and `/unban` still work in that mode).
 
@@ -282,16 +317,21 @@ no Wind Charge item, so this is a tagged **Iron Fragment**.
 - Doesn't touch the mace's own wind-charge-in-midair ability — both work independently, and
   hitting one's cooldown never affects the other.
 
-## Repair Kit
+## Mending
 
-Craft one from **4 Iron Fragment + 2 Stick** (a tagged **Yellow Portal** under the hood — a block
-with no other use in this mod, so counting how many a player holds is never ambiguous, the same
-trick the resurrection orbs use). Hold the damaged item you want fixed and run **`/repair`**: one
-kit restores `repair.restoreFraction` (50% by default) of that item's max durability, capped at
-full. Works on **anything** `durabilityForName` recognises — every tool, weapon, bow and armour
-piece in the game, not only this mod's own gear — and keeps a mace or spear's special tooltip
-(Wind Burst, lunge bonus) in sync rather than falling back to a bare number, via the same
-`withDurability` helper that ordinary wear uses.
+Bloxd exposes **no XP/level stat to World Code at all** — there is nothing to read or spend. So
+"spending XP" here means spending **Aura XP Potions**, a real, already-stackable item, instead of a
+number the API can't touch. This replaces the old Repair Kit item outright.
+
+- Hold the damaged item you want fixed and run **`/mend`**: it spends `mending.costPerMend` (1 by
+  default) Aura XP Potions and restores `mending.restoreFraction` (35% by default) of that item's
+  max durability, capped at full.
+- Or **throw a Splash Aura XP Potion** — since you're necessarily holding the potion itself at that
+  moment, this mends whatever is sitting in your **off-hand** slot instead of your main hand.
+- Works on **anything** `durabilityForName` recognises — every tool, weapon, bow, armour piece and
+  glider in the game, not only this mod's own gear — and keeps a mace or spear's special tooltip
+  (Wind Burst, lunge bonus) in sync rather than falling back to a bare number, via the same
+  `withDurability` helper that ordinary wear uses.
 
 ## Off-hand
 
@@ -300,8 +340,9 @@ plain numbered storage the engine treats identically; there is no equip slot any
 So one slot is reserved *by convention*: a rule this script enforces by re-reading it every tick.
 Whatever sits there is "off-handed".
 
-**It lives outside the hotbar.** Bloxd's hotbar is indexes 0-9, so the off-hand is index **10** —
-the first cell of your backpack, top-left of the inventory grid. It costs you no weapon slot.
+**It lives outside the hotbar.** Bloxd's hotbar is indexes 0-9; the off-hand is index **44** —
+well inside the backpack grid, past anything the hotbar or a normal loadout would ever touch by
+accident. It costs you no weapon slot.
 
 **Filling it is always deliberate** — never a side effect of a click, so right-click keeps meaning
 "use this item" and a held shield blocks with it instead of vanishing out of your hand:
@@ -323,34 +364,32 @@ If you'd rather right-click do the swapping, set `offhand.swapOnRightClick` back
 ## Shield (Bulwark)
 
 Bloxd has no dedicated shield item either, so this builds one from real primitives on top of the
-off-hand above:
+off-hand above — deliberately narrow now:
 
 - Craft a **Bulwark** from **6 Maple Wood Planks + 1 Iron Bar**.
-- **Two ways to use it:**
-  - **Hold it and right-click** → your guard goes up. Right-click again to drop it. This is the
-    timed, active way to block, and the shield never leaves your hand. (`/shield` does the same.)
-  - **Or put it in the off-hand slot** (`offhand.slotIndex`, top-left of the
-    inventory grid) and it protects you automatically, every tick, with your main hand free for a
-    weapon — no clicking needed. This is a rule this script enforces on an ordinary slot, not a
-    native engine feature, so it only works because the script checks that exact slot on every
-    tick; putting the Bulwark in any other slot does nothing special.
-  - Either way, while active it tops up your numeric shield (Bloxd's own
-    `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
-    `shield.blockFraction` (60% by default) of incoming **player** damage, and drains your
-    shield instead of your health for the part it absorbed. The off-hand slot is checked first, so
-    if both are somehow active the passive one takes priority.
-- **For PvP that means shield + sword at once:** put the Bulwark in your off-hand, hold your sword, and you
-  swing with the sword while the shield keeps soaking 60% of what hits you. You never have to choose
-  between carrying a weapon and carrying a guard.
-- **The "off-hand" arm** is a real mesh — a small plate — attached to your other arm
-  (`updateEntityNodeMeshAttachment` on `ArmLeftMesh`) for as long as either mechanism is active.
-  That's the closest thing to a visual off-hand the engine actually supports.
+- **It only guards when BOTH of these are true at once:**
+  1. it is sitting in your **off-hand slot** (44), and
+  2. you are **crouching** (`api.isPlayerCrouching`).
+
+  Let go of either — stand up, or take it out of the off-hand — and the guard drops immediately.
+  There is **no hand-raised mode any more**: a shield in your main hand does nothing at all, right
+  click included. `/shield` is now an info command that tells you your current state, not a way to
+  raise one by hand.
+- While guarding it tops up your numeric shield (Bloxd's own `setShieldAmount`/`getShieldAmount`
+  resource — the same one Golden Apples feed) **every tick**, not just the moment you seat it, so a
+  shield that ran dry mid-fight recharges on its own the next tick you're still crouched with it
+  out — it blocks `shield.blockFraction` (60% by default) of incoming **player** damage and drains
+  your shield instead of your health for the part it absorbed.
+- **For PvP that means shield + sword at once:** put the Bulwark in your off-hand, hold your sword,
+  and crouch when you want the guard up — you swing with the sword while the shield soaks 60% of
+  what hits you. You never have to choose between carrying a weapon and carrying a guard, only
+  between attacking and blocking at any given moment (you can't swing effectively while crouched
+  and blocking anyway, which is the intended trade-off).
+- **The off-hand arm** is a real mesh — a small plate — attached to your other arm
+  (`updateEntityNodeMeshAttachment` on `ArmLeftMesh`) for as long as a shield sits in the off-hand,
+  whether you're currently crouching or not; it just sits lower and duller when you're not.
 - **The status shows in the literal top-left corner** of your screen, via Bloxd's own `headerChips`
   client option — the HUD strip that already carries your FPS counter and coordinates.
-- Running out of shield **breaks the hand-raised guard** (auto-lowers it) rather than blocking for
-  free once it hits zero — the off-hand one simply stops absorbing until the numeric shield refills.
-  Switching away from a hand-raised shield, or dying, also auto-lowers it — checked once a tick,
-  same tick that syncs the off-hand slot.
 
 **Scope, stated plainly:** blocking covers player-vs-player hits (the path this script controls).
 It does **not** reduce damage from real Bloxd mobs (`onMobDamagingPlayer` isn't hooked) or crystal
@@ -359,9 +398,61 @@ blasts (explosions bypass it, as in most games).
 **Why a plain `Brown Paintball`:** the first attempt used `Brown Paintball Explosive Item`, and the
 shield simply did not work — that item is one of Bloxd's **native throwables**, so the engine's own
 throw behaviour fired on click instead of this script's. The plain paintball has no built-in click
-behaviour to fight with, so right-click reaches the off-hand swap as intended.
+behaviour to fight with.
 
-## Deaths## Deaths — one message, one sound, every time
+## Reforge
+
+**`/reforge`** — hold one item and carry another in your off-hand slot, and it swaps the two items'
+`customAttributes` (durability, poison tag, everything a `customAttributes` object can carry)
+between them. Base item names never change, only what each one carries — so you could, for
+example, move a mace's Wind Burst/Density tag onto a fresh copy while leaving the old one a plain
+weapon. There is no crafting cost; it's a straight swap.
+
+## Villagers
+
+Bloxd has **no Villager mob** and no documented item-barter trade UI, so this uses the real `NPC`
+mob type (it ships with named human skins: `emma`, `leo`, `isabel`, `sanjay`, `imara`, `enoch`,
+`sara`, `carmen`) and does the trade itself through the same inventory calls crafting uses — not
+the native shop system, whose `currency` field is undocumented and not worth guessing at.
+
+`npc.countInOverworld` villagers spawn once, scattered around `npc.spawnCentre` at
+`npc.spawnRadius`, the first time a player joins. Each one is assigned exactly one fixed trade from
+`npc.trades` (cycling through the list), the way a Minecraft villager offers one trade rather than
+your whole wishlist. **Right click** a villager to trade — it fails cleanly with a chat message if
+you don't have enough of what it wants.
+
+## Ocean
+
+Bloxd ships **no sea-creature mob type at all**, so `ocean.seaMob` is the same trick as the shield
+and Wind Charge: an existing mob (`Slime` by default), renamed and re-skinned to read as something
+else — an "Abyssal Crawler". A ring of sand and water generates once near world spawn
+(`ocean.ringRadius`/`ocean.ringWidth`/`ocean.waterLevel`), stocked with `ocean.seaMob.countPerRing`
+of them.
+
+## Orbital Strike Cannon & Stabshot
+
+Bloxd has **no TNT item and no explosion-trigger API** — the only "explosion" this whole script can
+make is the same trick Crystal PvP already uses: damage everyone in a radius and draw particles and
+sound over it. Both of these are built that way, aimed with `getPlayerTargetInfo` (falling back to
+your facing direction if you're not looking at a block).
+
+- **Orbital Strike Cannon** (a `Master Rod`) — right click calls down a strike at where you're
+  aiming, landing `orbital.delayMs` (1.2s) later. **One-time use**: the rod breaks the instant you
+  fire it, whether or not the strike lands on anything. There is no timer API in World Code, so the
+  delay is tracked the same way terrain generation is — a small queue drained every `tick()`.
+- **Stabshot** (an `Obsidian Rod`) — right click strikes immediately, no delay, but **reusable** on
+  a cooldown (`stabshot.cooldownMs`).
+
+Both radii, damages and knockback are tunable in `CONFIG.orbital` / `CONFIG.stabshot`.
+
+## Bed spawn points
+
+Standing on any bed (any colour, `Bed` or `Strongbed`, head half included) sets your respawn point
+there — Bloxd has no `onPlayerSleep` callback to hook, so standing on it is the closest real
+trigger to "sleeping in it". No bed set yet, and you come back at `dimensions.overworldFallbackPos`
+in the Overworld instead.
+
+## Deaths — one message, one sound, every time
 
 Bloxd's native killfeed panel prints an automatic entry for every kill with **no way to relabel or
 suppress just that entry**. Leaving it on next to a custom message is exactly what caused a kill to
@@ -387,7 +478,7 @@ single call site:
 - **Anonymity still swaps the name** inside that one message, same as before.
 
 The toll (`deathSound`) uses `maxHearDist: 1000000` — far past any real distance in the world,
-including the 30000-block dimension offsets — so it is heard by every player, anywhere, every time.
+including the 50000-block dimension offsets — so it is heard by every player, anywhere, every time.
 Set `killFeed.enabled: false` or `deathSound.enabled: false` to turn either half off independently.
 
 ## Bans
@@ -407,16 +498,37 @@ instead of eliminations.
 | `/where` | everyone | Which dimension you are in |
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
-| `/repair` | everyone | Repair whatever you're holding using a Repair Kit |
+| `/mend` | everyone | Mend whatever you're holding, spending Aura XP Potions |
 | `/offhand` | everyone | Swap what you're holding into the off-hand slot (works on the shield too) |
-| `/shield` | everyone | Raise or lower a held shield by hand, instead of off-handing it |
-| `/give mace\|spear\|windcharge\|repairkit\|shield\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
-| `/dim overworld\|nether\|end` | admins | Travel between dimensions |
+| `/shield` | everyone | Shows your current shield state (off-hand + crouch is the only way it ever blocks) |
+| `/reforge` | everyone | Swap attributes between your held item and your off-hand item |
+| `/give mace\|spear\|dagger\|windcharge\|shield\|orbital\|stabshot\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
+| `/dim overworld\|nether\|end\|void` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
 
 Admins are matched by in-game name — fill in `CONFIG.commands.adminNames`, which starts empty.
 **`/unban` needs at least one admin name in there**, so set it before anyone gets eliminated.
+
+## Known limitations
+
+Things the Bloxd API genuinely does not expose, worked around rather than faked:
+
+- **No XP/level stat.** Mending spends a real item (Aura XP Potion) instead.
+- **No Villager mob, no documented trade-UI currency.** Villagers are the real `NPC` mob type,
+  traded through plain inventory calls rather than the native shop.
+- **No sea-creature mob type.** The ocean's sea mob is an existing mob (`Slime` by default),
+  renamed and re-skinned.
+- **No TNT item, no explosion-trigger API.** The Orbital Strike Cannon and Stabshot substitute
+  Moonstone Remote Explosive for "TNT" and fake their blast the same way Crystal PvP does:
+  damage-in-a-radius plus particles, not a real detonation.
+- **No way to read the armour slots.** Armour gets a durability number from the same
+  materials/kinds formula as everything else, and can be mended if you pull it into your hand, but
+  it never wears down automatically from a hit while worn — there's nothing to hook.
+- **No armour-enchant API.** Native armour enchants (Health, Health Regen, etc., if a player finds
+  or buys them outside this script) are outside anything World Code can see or strip.
+- **No timer/`setTimeout`.** The Orbital Strike Cannon's fire delay is tracked the same way terrain
+  generation is queued — a small array drained every `tick()`.
 
 ## Tuning
 
@@ -455,20 +567,21 @@ Bloxd health runs 0–100, not 0–20, so a "heart" here is 10 HP (`hpPerHeart`)
 cd test && node test.js
 ```
 
-268 assertions covering hearts, the one-orb-per-player cap, dimension detection, coordinate
-scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
-lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
-blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
-Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed
-mobs, walking a step at a time, greeting, retaliating in range and on cooldown, fleeing, dying and
-coming back as the same person, finding and chopping timber from the top of a
-trunk down, refusing to reach outside their patch, building a hut with the right material and
-skipping protected spots, the Wind Charge item's own cooldown and consumption, that it never
-interferes with the mace's own charge, that /repair restores durability without overshooting and
-keeps a mace's bespoke tooltip in sync, the shield's block fraction and shield-drain, its off-arm
-mesh and HUD chip appearing and clearing, an empty shield auto-breaking, an untended raised shield
-auto-lowering on the next tick, and that every death sends exactly
-one message and one toll however it happened, both apples (heal, shield, regen, fire
-resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
-durability derivation and breakage, crafting registration and costs, elimination and unban, and
-every command.
+350+ assertions covering hearts, the one-orb-per-player cap, dimension detection, X/Z region
+geometry and round trips, portals and their cooldown, terrain generation (determinism, the
+nether's floor, lava and ceiling, end islands and void, chunks never rebuilt, the overworld left
+alone), crystal blast falloff and kill credit, the boat bonus, exile to the Void and the
+resurrection price, Void platform generation, the durability bar, anonymity in chat, on nametags
+and in the killfeed, the Wind Charge item's own cooldown and consumption, that it never interferes
+with the mace's own charge, that /mend restores durability without overshooting and keeps a mace's
+bespoke tooltip in sync (and that a splash potion mends the off-hand instead of the held item), the
+shield's block fraction and shield-drain, its off-arm mesh and HUD chip appearing and clearing, a
+shield only guarding with the off-hand + crouch combination and never from a held item, the shield
+resource recharging every guarding tick rather than only once, that every death sends exactly one
+message and one toll however it happened, both apples (heal, shield, regen, fire resistance),
+smash damage against players and mobs, Density and Wind Burst, the spear lunge, the dagger's poison
+and wear, the five plain mace tiers craftable with no smash tag, reforge swapping attributes both
+ways, glider durability and its per-flight wear, villager spawning and trading, ocean sea mob
+spawning, bed spawn points and the respawn fallback, the Orbital Strike Cannon's delayed one-time
+blast and the Stabshot's instant reusable one, durability derivation and breakage, crafting
+registration and costs, elimination and unban, and every command.

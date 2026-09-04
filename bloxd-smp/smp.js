@@ -4,23 +4,35 @@
 //  Paste this whole file into World Settings -> Code -> World Code.
 //
 //  Hearts           a player kill drops Hearts. Eat one, gain one heart, no limit
-//  The Void         hit 0 hearts and you are exiled until you find 3 orbs
+//  The Void         hit 0 hearts and you are exiled to dark abandoned ruins -
+//                   kill 3 guardians there for orbs to escape
 //  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
+//  Plain maces      Wood/Stone/Iron/Gold/Diamond - no smash, just steep cost
 //  Moonstone Spear  right click to lunge, hit hard while lunging
+//  Moonstone Dagger poisons whatever it hits
 //  Wind Charge      craft from Mango + Iron Fragment, right click to launch
-//  Repair Kit       craft from Iron Fragment + Stick, /repair to restore wear
-//  Bulwark shield   hold it, right click to raise your guard. Or put it in
-//                   your off-hand and it blocks 60% while you swing a sword
-//  Off-hand         your backpack's first slot carries a second item, outside
-//                   the hotbar. Drag it in, /offhand, or the on-screen button
+//  Hang Gliders     this world's elytra - steep recipe, works fine with a mace
+//  Mending          /mend, or throw a Splash Aura XP Potion at your off-hand -
+//                   both spend Aura XP Potions, the closest thing to "XP" here
+//  Bulwark shield   put it in your off-hand and crouch to block 60% - nothing
+//                   else makes it guard
+//  Off-hand         slot 44 carries a second item, outside the hotbar.
+//                   Drag it in, /offhand, or the on-screen button
+//  Reforge          /reforge swaps attributes between your held item and off-hand
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
-//  Durability       Bloxd has none, so this adds it to every tool and weapon,
-//                   with a live HUD chip for whatever you're holding
-//  Nether & End     portals, own fog/light/gravity, stacked far below by height
+//  Durability       Bloxd has none, so this adds it to every tool, weapon,
+//                   piece of armour and glider, with a live HUD chip
+//  Nether, End      portals, own fog/light/gravity, far-apart regions
+//  & Void
+//  Villagers        real NPC mobs scattered near spawn, right click to trade
+//  Ocean            a ring of water near spawn with a custom sea mob
+//  Orbital Strike   one-time Master Rod, calls down a delayed blast
+//  Stabshot         reusable Obsidian Rod, instant blast on a cooldown
+//  Bed spawn        stand on any bed to set your respawn point
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
 //  !anon            hides your body, your nametag and your name in chat
-//  Crafting         mace, spear, apples, portals and crystals have recipes
+//  Crafting         nearly everything above has a recipe
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
 //  so one "heart" here is hpPerHeart points.
@@ -49,7 +61,7 @@ const CONFIG = {
 
     // ---- Escaping the Void --------------------------------------------------
     resurrection: {
-        item: "Green Portal",           // a real block, mined out of the Void
+        item: "Green Portal",           // a real block, dropped by a slain void guardian
         name: "Orb of Resurrection",
         required: 3,
         heartsOnReturn: 50,             // 5 hearts, a second chance not a reset
@@ -164,6 +176,37 @@ const CONFIG = {
         ],
     },
 
+    // ---- Moonstone Dagger -------------------------------------------------------
+    // A real Bloxd item ("Moonstone Dagger"), tagged so a hit with it also
+    // poisons the target - its one enchant, always on, not something you add
+    // separately.
+    dagger: {
+        item: "Moonstone Dagger",
+        name: "Moonstone Dagger",
+        poisonMs: 4000,
+        recipe: [
+            { items: ["Rotten Flesh"], amt: 5 },
+            { items: ["Moonstone"], amt: 90 },
+            { items: ["Stick"], amt: 4 },
+        ],
+    },
+
+    // ---- Plain maces --------------------------------------------------------
+    // Five ordinary tiers - real Bloxd items ("Wood/Stone/Iron/Gold/Diamond
+    // Mace") - with none of the Moonstone Mace's Wind Burst/Density/smash
+    // ability. Just a weapon with durability, priced steeply per tier so
+    // owning one is still a real investment even without the smash kit.
+    plainMaces: {
+        enabled: true,
+        tiers: [
+            { item: "Wood Mace", recipe: [{ items: ["Maple Wood Planks"], amt: 80 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Stone Mace", recipe: [{ items: ["Stone"], amt: 120 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Iron Mace", recipe: [{ items: ["Iron Bar"], amt: 150 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Gold Mace", recipe: [{ items: ["Gold Bar"], amt: 180 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Diamond Mace", recipe: [{ items: ["Diamond"], amt: 200 }, { items: ["Stick"], amt: 20 }] },
+        ],
+    },
+
     // ---- Wind Charge ----------------------------------------------------------
     // A standalone throwable-style launch, separate from the mace's own wind
     // charge - anyone can carry a stack of these, not just whoever is holding
@@ -182,22 +225,20 @@ const CONFIG = {
         produces: 4,
     },
 
-    // ---- Repair Kit -----------------------------------------------------------
-    // Restores durability on whatever you're holding via /repair - works on any
-    // durable item in the game, not just this mod's own weapons. The base item
-    // (a portal block) has no other use anywhere in this script, so counting how
-    // many a player holds by name is always unambiguous - the same trick the
-    // Orbs of Resurrection use.
-    repair: {
+    // ---- Mending --------------------------------------------------------------
+    // Bloxd exposes no XP/level stat to World Code at all, so "spending XP"
+    // here means spending Aura XP Potions - a real, already-stackable item -
+    // instead of a level number nothing in the API can read or touch. This
+    // replaces the old Repair Kit item outright: /mend restores durability on
+    // whatever you are holding, and throwing a Splash Aura XP Potion does the
+    // same to whatever you are holding at the moment it lands. Works on any
+    // durable item in the game, not only this mod's own weapons.
+    mending: {
         enabled: true,
-        item: "Yellow Portal",
-        name: "Repair Kit",
-        restoreFraction: 0.5,   // one kit restores half of an item's max durability
-        recipe: [
-            { items: ["Iron Fragment"], amt: 4 },
-            { items: ["Stick"], amt: 2 },
-        ],
-        produces: 2,
+        item: "Aura XP Potion",
+        splashItem: "Splash Aura XP Potion",
+        costPerMend: 1,             // potions consumed per /mend or splash
+        restoreFraction: 0.35,      // fraction of max durability restored each time
     },
 
     // ---- Off-hand -------------------------------------------------------------
@@ -214,10 +255,11 @@ const CONFIG = {
     // variable, so a rejoin or a server restart can never lose it.
     offhand: {
         enabled: true,
-        // The hotbar is indexes 0-9, so 10 is the FIRST BACKPACK SLOT - the
-        // top-left cell of the inventory grid, outside the hotbar entirely.
-        // The off-hand costs you no hotbar space this way.
-        slotIndex: 10,
+        // Slot 44 - deep in the backpack grid, well past the hotbar (0-9) and
+        // past where the old slot 10 sat. Picked by explicit request rather
+        // than convention; nothing else in a normal inventory lands there by
+        // accident, so it is just as safe a reserved slot as 10 was.
+        slotIndex: 44,
         effectIcon: true,    // show the carried item as a status effect icon
         particles: true,     // a glint puff on every swap
         swapSound: "swoosh",
@@ -225,54 +267,49 @@ const CONFIG = {
 
         // Filling the off-hand is deliberate, never a side effect of a click:
         // drag an item into the slot, or use /offhand or the touchscreen
-        // button. Right click is left alone so it keeps meaning "use this
-        // item" - a held shield blocks with it rather than losing it to the
-        // off-hand. Set swapOnRightClick true to go back to click-to-swap.
+        // button. Set swapOnRightClick true to go back to click-to-swap.
         swapOnRightClick: false,
         touchButton: "🛡 Off-hand",   // null hides the button
     },
 
     // ---- Shield (Bulwark) ------------------------------------------------------
     // Bloxd has no dedicated shield item, so this rebuilds one from real
-    // primitives: hold it and right click to raise it manually, OR park it in
-    // the off-hand slot above and it protects you passively, without needing
-    // to be selected - so you can fight with a sword and be guarded at the
-    // same time. Either way it shows on your OTHER arm as a mesh attachment
-    // and a status chip in the top-left HUD strip (the engine's own
-    // headerChips option), while it soaks a fraction of incoming player
-    // damage using Bloxd's own numeric shield resource.
+    // primitives. It is deliberately narrow: a shield does nothing at all
+    // unless it is BOTH sitting in the off-hand slot above AND you are
+    // crouching (api.isPlayerCrouching) - let go of either and the guard
+    // drops immediately. There is no hand-raised mode any more; a shield
+    // sitting in your main hand is just an item, since blocking now belongs
+    // entirely to crouch + off-hand. It shows on your other arm as a mesh
+    // attachment and a status chip in the top-left HUD strip, while it soaks
+    // a fraction of incoming player damage using Bloxd's own numeric shield
+    // resource.
     //
     // Scope: blocks player-vs-player hits. It does not reduce real-mob damage
-    // (never hooked to onMobDamagingPlayer) or crystal blasts (explosions
-    // bypass it, same as most games).
+    // (never hooked to onMobDamagingPlayer) or crystal/orbital blasts
+    // (explosions bypass it, same as most games).
     shield: {
         enabled: true,
         // A plain Brown Paintball, deliberately NOT the "Brown Paintball
-        // Explosive Item": that one is a native throwable, so the engine's own
-        // throw behaviour fired on click instead of this script's, which is
-        // what stopped the shield working at all. This one has no built-in
-        // click behaviour to fight with.
+        // Explosive Item": that one is a native throwable with its own click
+        // behaviour, which fights this script's for the same click.
         item: "Brown Paintball",
         name: "Shield",
         durability: 500,
 
-        raiseShieldAmount: 30,     // tops shield up to at least this when raised
+        raiseShieldAmount: 30,     // tops the shield resource up to at least this while crouched
         maxShieldOption: 60,       // raises the client's shield ceiling so it can show
         blockFraction: 0.6,        // fraction of incoming player damage blocked
         blockDurabilityCost: 2,    // per hit blocked
 
         armNode: "ArmLeftMesh",    // the "off-hand" arm - opposite the weapon hand
 
-        // The shield is on your arm the whole time you have one, whether it is
-        // guarding or not - it just sits lower and duller when it isn't, so
-        // you can see at a glance which state you are in.
         meshColour: [176, 184, 196],          // bright, up in front, blocking
         meshColourLowered: [110, 118, 130],   // dull, tucked down, not blocking
         meshOffset: [0, -0.2, 0.15],
         meshOffsetLowered: [0, -0.5, -0.05],
 
         hudChipBlocking: "\uD83D\uDEE1 Blocking",
-        hudChipLowered: "\uD83D\uDEE1 Shield lowered",
+        hudChipLowered: "\uD83D\uDEE1 In off-hand \u2014 crouch to block",
 
         recipe: [
             { items: ["Maple Wood Planks"], amt: 6 },
@@ -311,10 +348,15 @@ const CONFIG = {
         },
     },
 
-    // ---- Hang Gliders ---------------------------------------------------------
-    // All four are real Bloxd items with their own native crafting recipes;
-    // this overrides every one of them to the same steep cost, so which
-    // material a glider is skinned in is a cosmetic choice, not a cheaper path.
+    // ---- Hang Gliders (this world's elytra) ------------------------------------
+    // Bloxd has no elytra item; the hang glider is the closest real equivalent -
+    // same role (strap in, jump, glide), so it stands in for one outright rather
+    // than being built from something unrelated. All four are real Bloxd items
+    // with their own native crafting recipes; this overrides every one of them
+    // to the same steep cost, so which material a glider is skinned in is a
+    // cosmetic choice, not a cheaper path. Nothing in this script stops you
+    // swinging the mace while gliding - Bloxd doesn't gate combat on vehicle
+    // state - so the "elytra + mace" combo just works by not being blocked.
     gliders: {
         enabled: true,
         items: ["Wood Hang Glider", "Iron Hang Glider", "Gold Hang Glider", "Diamond Hang Glider"],
@@ -341,6 +383,7 @@ const CONFIG = {
             Boomerang: 0.9, Axe: 1, Pickaxe: 1,
             Spade: 0.9, Shovel: 0.9, Hoe: 0.8, Bow: 1.2, Crossbow: 1.2, Shield: 1.5,
             Helmet: 0.8, Chestplate: 1.3, Leggings: 1.2, Boots: 0.9, Gauntlets: 0.8,
+            Glider: 1.6,
         },
         // Gear whose name has a kind but no known material word.
         defaultMaterialUses: 200,
@@ -357,6 +400,19 @@ const CONFIG = {
         // HOLDING: Bloxd's API does not expose the armour slots, so an equipped
         // helmet/chestplate/leggings/boots/gauntlets durability bar is not
         // something this script can read or draw - there is nothing to hook.
+        //
+        // Armour and gliders both DO get a durability number from the same
+        // materials/kinds formula above (Helmet/Chestplate/Leggings/Boots/
+        // Gauntlets/Glider are all in the kinds table), and both are
+        // mendable via /mend or a splash potion whenever you are holding one
+        // in your hand. What armour cannot get is automatic wear from being
+        // hit while worn - the same missing-armour-slot limitation - so an
+        // equipped helmet's durability never ticks down on its own. A
+        // glider's does: every time you mount one (onPlayerEnteredVehicle),
+        // if it is what you are holding, this spends a small flat cost -
+        // there is no dedicated "still gliding" event to hook per second of
+        // flight, so cost-per-flight is the closest real proxy available.
+        gliderWearPerFlight: 4,
         hudBar: {
             enabled: true,
             segments: 8,
@@ -366,28 +422,23 @@ const CONFIG = {
 
     // ---- Dimensions ---------------------------------------------------------
     // Bloxd has ONE world, so these are far-apart regions of it dressed up with
-    // their own fog, light and gravity. Check your world is big enough for the
-    // offsets below and lower them if it is not.
+    // their own fog, light and gravity, separated by X - the layout that was
+    // tested and confirmed working in-game. (A later version stacked them by Y
+    // instead, at y=-10000/-30000/-50000; that silently failed in practice -
+    // Void terrain never generated and Nether/End arrivals fell straight
+    // through, because Bloxd's real buildable range does not reach that deep
+    // no matter what the docs suggested. Reverted back to X-separated regions,
+    // which do not have that problem.)
     dimensions: {
         enabled: true,
-        // Dimensions used to sit in far-apart X/Z locations - that version
-        // was tested and confirmed working in-game. This instead stacks
-        // them at different Y (height) values - Nether at y=-10000, End at
-        // y=-30000, Void at y=-50000 - all sharing the same x/z, so a
-        // portal is a vertical drop rather than a horizontal walk. Bloxd's
-        // vertical build range reaches at least y=-100000, so all three
-        // sit safely inside it.
-        //
-        // How far above/below its groundY still counts as "inside" a
-        // dimension. The three below sit at least 20000 apart, so this only
-        // has to clear the tallest thing generation ever builds (well under
-        // 500 blocks) - it is not fighting neighbouring claims the way the
-        // old X/Z half-size was.
-        verticalHalfSize: 500,
+        // How far from its origin still counts as "inside" a dimension. The
+        // regions below sit 20000+ apart on X, so this only has to be wider
+        // than whatever generation ever builds.
+        regionHalfSize: 4000,
         // Where a player lands back in the Overworld if this session never
-        // recorded the height they left from (e.g. they joined already
-        // inside a dimension).
-        overworldFallbackY: 100,
+        // recorded where they left from (e.g. they joined already inside a
+        // dimension).
+        overworldFallbackPos: [0, 80, 0],
         buildArrivalPlatform: true,
         platformRadius: 3,
         travelCooldownMs: 1500,    // stops portals ping-ponging you
@@ -395,14 +446,14 @@ const CONFIG = {
         list: {
             overworld: {
                 name: "Overworld",
-                groundY: null,      // no Y-band of its own - it's whatever no other claims
+                originX: null, originZ: null,   // no region of its own - it's whatever no other claims
                 platformBlock: "Stone",
                 clientOptions: {},  // empty = the normal look
             },
             nether: {
                 name: "The Nether",
-                groundY: -10000,
-                arrivalY: 56,        // local height within the band you land at
+                originX: -10000, originZ: 0,
+                arrivalY: 56,
                 portalBlock: "Purple Portal",
                 platformBlock: "Magma",
                 clientOptions: {
@@ -415,21 +466,24 @@ const CONFIG = {
             },
             "void": {
                 name: "The Void",
-                groundY: -50000,
-                arrivalY: 65,
-                platformBlock: "Obsidian",
+                originX: 50000, originZ: 0,
+                arrivalY: 68,
+                platformBlock: "Cracked Stone Bricks",
                 // No portalBlock: the only way out is the resurrection orbs.
                 clientOptions: {
-                    fogColourOverride: "#050508",
+                    // Eerie and near-black - darker than the old palette on
+                    // purpose, so it reads as somewhere gone wrong rather than
+                    // just dim.
+                    fogColourOverride: "#020204",
                     fogChunkDistanceOverride: 3,      // you can barely see
-                    ambientLightColourOverride: "#0a0a12",
-                    skyLightColourOverride: "#15151f",
+                    ambientLightColourOverride: "#06060a",
+                    skyLightColourOverride: "#0c0c14",
                     gravityMultiplier: 0.5,
                 },
             },
             end: {
                 name: "The End",
-                groundY: -30000,
+                originX: -30000, originZ: 0,
                 arrivalY: 60,
                 portalBlock: "Black Portal",
                 platformBlock: "Obsidian",
@@ -444,8 +498,11 @@ const CONFIG = {
         },
 
         // ---- Terrain generation ---------------------------------------------
-        // The Nether and End regions start as empty void. This fills chunks in
-        // around players as they explore, so the dimensions are real places.
+        // The Nether, End and Void regions start as empty air. This fills
+        // chunks in around players as they explore, so the dimensions are
+        // real places. Every height below is a LOCAL offset from the region's
+        // own origin, not a world-absolute Y - all three regions sit at
+        // ordinary, safely-buildable altitudes now.
         generation: {
             enabled: true,
             chunkSize: 16,
@@ -494,13 +551,32 @@ const CONFIG = {
                 seed: 4242,
                 baseY: 60,
                 centreIslandRadius: 10,
-                islandScale: 30, islandThreshold: 0.72,   // far rarer than the End
-                thickness: 3, driftScale: 24, drift: 12,
-                orbChance: 0.006,     // how often a platform top carries an orb
+                islandScale: 30, islandThreshold: 0.6,
+                thickness: 4, driftScale: 24, drift: 12,
+                // Dark, cracked and overgrown with rot - an abandoned place,
+                // not just a dim one.
                 blocks: {
                     base: "Black Concrete",
-                    top: "Obsidian",
-                    orb: "Green Portal",
+                    top: "Cracked Stone Bricks",
+                    accent: "Mossy Stone Bricks",
+                    accentChance: 0.25,
+                },
+
+                // Orbs of Resurrection no longer come from mining - they only
+                // ever drop from the guardian mobs stationed in these ruins.
+                // A structure only tries to place on a wide enough, solid
+                // enough platform top, checked once per finished chunk rather
+                // than per column, so towers and houses come out whole.
+                structures: {
+                    chance: 0.05,           // rolled once per generated chunk
+                    minPlatformRadius: 4,   // how much flat top the roll requires
+                    guardiansPerStructure: 3,
+                    guardianMob: "Draugr Skeleton",
+                    guardianVariation: "default",
+                    crystalChance: 0.5,     // a finished structure's chance to also hold a Crystal
+                    wallBlock: "Stone Bricks",
+                    accentBlock: "Mossy Stone Bricks",
+                    floorBlock: "Cracked Stone Bricks",
                 },
             },
 
@@ -578,6 +654,100 @@ const CONFIG = {
         ejectUp: 7,
     },
 
+    // ---- Orbital Strike Cannon & Stabshot ---------------------------------
+    // Bloxd has neither a TNT item nor an API call that detonates one - the
+    // only "explosion" this whole script can make is the same trick Crystal
+    // PvP already uses: damage everyone in a radius and draw particles/sound
+    // over it. So both of these are built the same way, and "TNT" in both
+    // recipes is substituted with a real Bloxd item that is actually
+    // explosive - Moonstone Remote Explosive - rather than an item that does
+    // not exist.
+    orbital: {
+        enabled: true,
+        // A Master Rod, one real use per craft: firing it breaks it.
+        item: "Master Rod",
+        name: "Orbital Strike Cannon",
+        recipe: [
+            { items: ["Moonstone Remote Explosive"], amt: 500 },
+            { items: ["Arrow"], amt: 30 },
+            { items: ["Diamond Bow"], amt: 2 },
+            { items: ["Knight Heart"], amt: 400 },
+        ],
+        radius: 10,
+        damage: 90,
+        knockbackUp: 10,
+        delayMs: 1200,     // a beat between firing and the strike landing
+        range: 60,          // how far out getPlayerTargetInfo may aim
+    },
+    stabshot: {
+        enabled: true,
+        // An Obsidian Rod - reusable, unlike the Orbital's one-shot Master Rod.
+        item: "Obsidian Rod",
+        name: "Stabshot",
+        recipe: [
+            { items: ["Gold Bow"], amt: 1 },
+            { items: ["Knight Heart"], amt: 250 },
+            { items: ["Moonstone Remote Explosive"], amt: 230 },
+        ],
+        radius: 4,
+        damage: 55,
+        knockbackUp: 6,
+        cooldownMs: 6000,
+        range: 60,
+    },
+
+    // ---- Villagers ------------------------------------------------------------
+    // Bloxd has no "Villager" mob and no documented item-barter trade UI, so
+    // this uses the real "NPC" mob type (it ships with named human skins) and
+    // does the trade itself: right click one (caught via onPlayerClick's
+    // targetEId) and it swaps your offered item for its stock, straight
+    // through the same inventory calls crafting uses - not the native shop,
+    // whose "currency" field is undocumented and not worth guessing at.
+    npc: {
+        enabled: true,
+        mobType: "NPC",
+        variations: ["emma", "leo", "isabel", "sanjay", "imara", "enoch", "sara", "carmen"],
+        countInOverworld: 6,
+        spawnRadius: 40,        // scattered this far from world spawn [0,64,0]
+        spawnCentre: [0, 64, 0],
+        trades: [
+            { give: "Moonstone", giveAmt: 8, want: "Diamond", wantAmt: 4 },
+            { give: "Knight Heart", giveAmt: 1, want: "Moonstone", wantAmt: 40 },
+            { give: "Aura XP Potion", giveAmt: 3, want: "Gold Bar", wantAmt: 6 },
+            { give: "Lunite", giveAmt: 2, want: "Block of Emerald", wantAmt: 6 },
+        ],
+    },
+
+    // ---- Ocean ------------------------------------------------------------
+    // Bloxd has no sea-creature mob type at all, so the "sea mob" here is a
+    // custom one built the only way the API allows: an existing mob type,
+    // renamed and re-skinned to read as something else. Slime is the closest
+    // fit physically (soft, aquatic-looking silhouette, no legs to look wrong
+    // half-submerged).
+    ocean: {
+        enabled: true,
+        ringRadius: 48,          // an ocean ring this far out from world spawn
+        ringWidth: 20,
+        waterLevel: 62,
+        floorBlock: "Sand",
+        waterBlock: "Water",
+        seaMob: {
+            mobType: "Slime",
+            name: "Abyssal Crawler",
+            countPerRing: 10,
+        },
+    },
+
+    // ---- Bed spawn points -----------------------------------------------------
+    // Standing on any bed sets your respawn point there, the way sleeping in
+    // one does in Minecraft (Bloxd has no onPlayerSleep callback to hook, so
+    // standing on it is the closest real trigger available). No bed slept in
+    // yet - or the death that eliminated you outright - and you come back in
+    // the Overworld instead.
+    bedSpawn: {
+        enabled: true,
+    },
+
     // ---- Anonymous mode -----------------------------------------------------
     anonymous: {
         enabled: true,
@@ -595,8 +765,8 @@ const CONFIG = {
     },
 
     commands: {
-        publicCommands: ["hp", "hearts", "withdraw", "repair", "offhand", "shield", "smphelp",
-            "where", "anon", "orbs"],
+        publicCommands: ["hp", "hearts", "withdraw", "mend", "offhand", "shield", "reforge",
+            "smphelp", "where", "anon", "orbs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -606,10 +776,14 @@ const DB_BANS = "smpBans";
 const DB_ORBS_EATEN = "smpOrbsEaten";
 const DB_DIMENSION = "smpDimension";
 const DB_ANON = "smpAnon";
+const DB_SPAWN_POS = "smpSpawnPos";
 
 const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
 const ATTR_SPEAR = "smpSpear";
+const ATTR_DAGGER = "smpDagger";
+const ATTR_ORBITAL = "smpOrbital";
+const ATTR_STABSHOT = "smpStabshot";
 const ATTR_WINDCHARGE = "smpWindCharge";
 const ATTR_SHIELD = "smpShield";
 const ATTR_APPLE = "smpApple";
@@ -807,12 +981,54 @@ function windChargeAttributes() {
     };
 }
 
-function repairKitAttributes() {
-    const r = CONFIG.repair;
+function daggerAttributes(durabilityLeft) {
+    const d = CONFIG.dagger;
+    const max = durabilityForName(d.item);
+    const left = durabilityLeft == null ? max : durabilityLeft;
     return {
-        customDisplayName: r.name,
-        customDescription: "Hold a damaged item and type /repair. Restores "
-            + Math.round(r.restoreFraction * 100) + "% of its max durability.",
+        customDisplayName: d.name,
+        customDescription: "Poisons whatever it hits for "
+            + Math.round(d.poisonMs / 1000) + "s.\n" + durabilityBar(left, max),
+        customAttributes: { [ATTR_DAGGER]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+/** A plain weapon with nothing but a name and a durability bar - no special ability. */
+function plainDurableAttributes(itemName, durabilityLeft) {
+    const max = durabilityForName(itemName);
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDescription: durabilityBar(left, max),
+        customAttributes: { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function gliderAttributes(itemName, durabilityLeft) {
+    const max = durabilityForName(itemName);
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDescription: "Glides. Wears " + CONFIG.durability.gliderWearPerFlight
+            + " durability per flight.\n" + durabilityBar(left, max),
+        customAttributes: { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function orbitalAttributes() {
+    const o = CONFIG.orbital;
+    return {
+        customDisplayName: o.name,
+        customDescription: "Right click to call down a strike where you are looking.\n"
+            + "One-time use: the rod breaks the moment it fires.",
+        customAttributes: { [ATTR_ORBITAL]: true },
+    };
+}
+
+function stabshotAttributes() {
+    const s = CONFIG.stabshot;
+    return {
+        customDisplayName: s.name,
+        customDescription: "Right click to strike where you are looking. Reusable, on a cooldown.",
+        customAttributes: { [ATTR_STABSHOT]: true },
     };
 }
 
@@ -822,9 +1038,9 @@ function shieldAttributes(durabilityLeft) {
     const left = durabilityLeft == null ? max : durabilityLeft;
     return {
         customDisplayName: c.name,
-        customDescription: "Right click to raise it, right click again to lower it.\n"
-            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while up.\n"
-            + "Or put it in your off-hand slot to block without holding it.\n"
+        customDescription: "Blocks " + Math.round(c.blockFraction * 100)
+            + "% of incoming player damage, but only while it sits in your off-hand slot"
+            + " AND you are crouching. Holding it in your hand does nothing.\n"
             + durabilityBar(left, max),
         customAttributes: { [ATTR_SHIELD]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
     };
@@ -986,11 +1202,36 @@ function registerRecipes(playerId) {
         }]);
     }
 
-    if (CONFIG.repair.enabled) {
-        api.editItemCraftingRecipes(playerId, CONFIG.repair.item, [{
-            requires: CONFIG.repair.recipe,
-            produces: CONFIG.repair.produces,
-            attributes: repairKitAttributes(),
+    api.editItemCraftingRecipes(playerId, CONFIG.dagger.item, [{
+        requires: CONFIG.dagger.recipe,
+        produces: 1,
+        attributes: daggerAttributes(),
+    }]);
+
+    if (CONFIG.plainMaces.enabled) {
+        for (let i = 0; i < CONFIG.plainMaces.tiers.length; i++) {
+            const tier = CONFIG.plainMaces.tiers[i];
+            api.editItemCraftingRecipes(playerId, tier.item, [{
+                requires: tier.recipe,
+                produces: 1,
+                attributes: plainDurableAttributes(tier.item),
+            }]);
+        }
+    }
+
+    if (CONFIG.orbital.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.orbital.item, [{
+            requires: CONFIG.orbital.recipe,
+            produces: 1,
+            attributes: orbitalAttributes(),
+        }]);
+    }
+
+    if (CONFIG.stabshot.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.stabshot.item, [{
+            requires: CONFIG.stabshot.recipe,
+            produces: 1,
+            attributes: stabshotAttributes(),
         }]);
     }
 
@@ -1019,9 +1260,11 @@ function registerRecipes(playerId) {
     // Every glider, whatever it is skinned in, costs the same steep recipe.
     if (CONFIG.gliders.enabled) {
         for (let i = 0; i < CONFIG.gliders.items.length; i++) {
-            api.editItemCraftingRecipes(playerId, CONFIG.gliders.items[i], [{
+            const item = CONFIG.gliders.items[i];
+            api.editItemCraftingRecipes(playerId, item, [{
                 requires: CONFIG.gliders.recipe,
                 produces: 1,
+                attributes: gliderAttributes(item),
             }]);
         }
     }
@@ -1142,43 +1385,63 @@ function withDurability(item, custom, left, max) {
 }
 
 /**
- * Spends one Repair Kit to restore durability on whatever the player is
- * holding. Works on anything durabilityForName recognises - every tool,
- * weapon, bow and armour piece in the game, not only this mod's own items.
+ * Spends Aura XP Potions - the closest thing to a spendable "XP" resource
+ * Bloxd exposes to World Code at all - to restore durability on one slot.
+ * Works on anything durabilityForName recognises - every tool, weapon, bow
+ * and armour piece in the game, not only this mod's own items. Shared by
+ * /mend (mends whatever you are holding) and by landing a Splash Aura XP
+ * Potion (mends whatever sits in your off-hand instead, since the item you
+ * are holding at the moment you throw is the potion itself).
  */
-function repairHeldItem(playerId) {
-    const r = CONFIG.repair;
-    const slot = heldSlot(playerId);
+function mendSlot(playerId, slot, quiet) {
+    const m = CONFIG.mending;
     if (!slot) {
-        tell(playerId, "Hold the item you want to repair first.", "#ff4757");
-        return;
+        if (!quiet) {
+            tell(playerId, "Nothing there to mend.", "#ff4757");
+        }
+        return false;
     }
 
     const max = maxDurabilityFor(slot.item);
     if (max <= 0) {
-        tell(playerId, displayName(slot.item) + " has no durability to repair.", "#ff4757");
-        return;
+        if (!quiet) {
+            tell(playerId, displayName(slot.item) + " has no durability to mend.", "#ff4757");
+        }
+        return false;
     }
 
     const custom = customAttrs(slot.item);
     const before = typeof custom[ATTR_DUR] === "number" ? custom[ATTR_DUR] : max;
     if (before >= max) {
-        tell(playerId, displayName(slot.item) + " is already at full durability.", "#ffa502");
-        return;
+        if (!quiet) {
+            tell(playerId, displayName(slot.item) + " is already at full durability.", "#ffa502");
+        }
+        return false;
     }
 
-    if (countItem(playerId, r.item) < 1) {
-        tell(playerId, "You need a " + r.name + " to repair anything - craft one first.", "#ff4757");
-        return;
+    if (countItem(playerId, m.item) < m.costPerMend) {
+        if (!quiet) {
+            tell(playerId, "You need " + m.costPerMend + " " + m.item + "(s) to mend anything.", "#ff4757");
+        }
+        return false;
     }
-    consumeItems(playerId, r.item, 1);
+    consumeItems(playerId, m.item, m.costPerMend);
 
-    const left = Math.min(max, before + Math.round(max * r.restoreFraction));
+    const left = Math.min(max, before + Math.round(max * m.restoreFraction));
     writeSlot(playerId, slot.index, slot.item, slot.item.amount,
         withDurability(slot.item, custom, left, max));
 
-    tell(playerId, "Repaired " + displayName(slot.item) + ".", "#7bed9f");
+    tell(playerId, "Mended " + displayName(slot.item) + ".", "#7bed9f");
     api.playSound(playerId, "levelup", 0.8, 1.1);
+    return true;
+}
+
+function mendHeldItem(playerId) {
+    return mendSlot(playerId, heldSlot(playerId), false);
+}
+
+function mendOffhandItem(playerId) {
+    return mendSlot(playerId, offhandSlot(playerId), true);
 }
 
 // -----------------------------------------------------------------------------
@@ -1587,32 +1850,33 @@ function offhandSwapEffects(playerId) {
 // -----------------------------------------------------------------------------
 
 /**
+ * A shield only guards while it is BOTH sitting in the off-hand slot AND the
+ * player is crouching (api.isPlayerCrouching) - either one alone does
+ * nothing. There is no hand-raised mode: a shield held in the main hand is
+ * just an item.
+ */
+function shieldGuarding(playerId) {
+    if (!CONFIG.shield.enabled) {
+        return false;
+    }
+    return !!stateOf(playerId).offhandShieldOn && api.isPlayerCrouching(playerId);
+}
+
+/**
  * Which of three states a player's shield is in right now:
  *
- *   "blocking"  guarding - off-hand shields always are, a held one when raised
- *   "lowered"   they have a shield in hand but the guard is down
- *   "none"      no shield anywhere the script cares about
+ *   "blocking"  in the off-hand, crouching, and the shield resource has charge
+ *   "lowered"   a shield in the off-hand, but not guarding right now
+ *   "none"      no shield in the off-hand at all
  *
- * Derived from live inventory every time rather than tracked, so it cannot
- * drift out of step with what the player is actually carrying.
+ * Derived from live inventory and crouch state every time rather than
+ * tracked, so it cannot drift out of step with what the player is doing.
  */
 function shieldState(playerId) {
-    if (!CONFIG.shield.enabled) {
+    if (!CONFIG.shield.enabled || !stateOf(playerId).offhandShieldOn) {
         return "none";
     }
-    const state = stateOf(playerId);
-    const held = heldSlot(playerId);
-    const inHand = !!(held && customAttrs(held.item)[ATTR_SHIELD]);
-
-    if (!state.offhandShieldOn && !inHand) {
-        return "none";
-    }
-    // A shield in the off-hand guards the whole time it sits there; a held one
-    // only once the guard is up. Either way, a guard with no shield resource
-    // behind it is not actually stopping anything, so it reads as lowered -
-    // which is exactly what shieldBlock does with it too.
-    const guarding = state.offhandShieldOn || state.shieldRaised;
-    if (guarding && api.getShieldAmount(playerId) > 0) {
+    if (shieldGuarding(playerId) && api.getShieldAmount(playerId) > 0) {
         return "blocking";
     }
     return "lowered";
@@ -1710,35 +1974,11 @@ function refreshHudChips(playerId) {
     api.setClientOption(playerId, "headerChips", chips);
 }
 
-/** Raises the shield by hand: hold it and right click. */
-function raiseShield(playerId) {
-    stateOf(playerId).shieldRaised = true;
-    topUpShield(playerId);
-    refreshHudChips(playerId);
-    tell(playerId, "Shield raised.", "#9fb4c7");
-}
-
-/** Drops the guard. The shield stays on the arm, just lowered. */
-function lowerShield(playerId) {
-    stateOf(playerId).shieldRaised = false;
-    refreshHudChips(playerId);
-}
-
-function toggleShield(playerId) {
-    if (stateOf(playerId).shieldRaised) {
-        lowerShield(playerId);
-        tell(playerId, "Shield lowered.", "#9fb4c7");
-    } else {
-        raiseShield(playerId);
-    }
-}
-
 /**
  * Checked every tick, for every player: whatever sits in the off-hand slot
- * gets a status effect icon, and a Bulwark parked there also protects its
- * owner automatically, with no need to hold or click it - so a sword in your
- * main hand and a shield off-hand work at the same time. The shield visuals
- * only come down once neither this nor the hand-raised shield is active.
+ * gets a status effect icon, and a shield parked there guards automatically
+ * while crouched - no need to hold or click it, so a sword stays in your
+ * main hand the whole time.
  *
  * Syncing from the slot itself (rather than only on swap) means dragging an
  * item in or out in the inventory screen works just as well as /offhand does.
@@ -1787,9 +2027,6 @@ function applyShieldAbsorption(defenderId, slot, damage) {
     }
     const shieldLeft = api.getShieldAmount(defenderId);
     if (shieldLeft <= 0) {
-        if (stateOf(defenderId).shieldRaised) {
-            lowerShield(defenderId);   // the hand-raised guard breaks when empty
-        }
         return damage;
     }
 
@@ -1801,34 +2038,18 @@ function applyShieldAbsorption(defenderId, slot, damage) {
 }
 
 /**
- * Applies blocking to an incoming hit: the passive off-hand shield takes
- * priority, then the manual hand-raised one. Returns the damage that should
- * actually land.
+ * Applies blocking to an incoming hit: only the off-hand shield, only while
+ * crouching. Returns the damage that should actually land.
  */
 function shieldBlock(defenderId, damage) {
-    const c = CONFIG.shield;
-    if (!c.enabled) {
+    if (!CONFIG.shield.enabled || !shieldGuarding(defenderId)) {
         return damage;
     }
-    const state = stateOf(defenderId);
-
-    if (state.offhandShieldOn) {
-        const off = offhandSlot(defenderId);
-        if (off && customAttrs(off.item)[ATTR_SHIELD]) {
-            return applyShieldAbsorption(defenderId, off, damage);
-        }
+    const off = offhandSlot(defenderId);
+    if (!off || !customAttrs(off.item)[ATTR_SHIELD]) {
+        return damage;
     }
-
-    if (state.shieldRaised) {
-        const held = heldSlot(defenderId);
-        if (!held || !customAttrs(held.item)[ATTR_SHIELD]) {
-            lowerShield(defenderId);   // switched away without lowering it properly
-            return damage;
-        }
-        return applyShieldAbsorption(defenderId, held, damage);
-    }
-
-    return damage;
+    return applyShieldAbsorption(defenderId, off, damage);
 }
 
 // -----------------------------------------------------------------------------
@@ -1865,6 +2086,14 @@ function computeWeaponDamage(attacker, targetId, damageDealt) {
         if (isLunging(attacker)) {
             stateOf(attacker).lastLunge = 0;   // the bonus lands once per lunge
             return Math.round(damageDealt + cart + CONFIG.spear.lungeBonusDamage);
+        }
+        return cart > 0 ? Math.round(damageDealt + cart) : undefined;
+    }
+
+    if (custom[ATTR_DAGGER]) {
+        spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+        if (isAlive(targetId)) {
+            api.applyEffect(targetId, "Poisoned", CONFIG.dagger.poisonMs);
         }
         return cart > 0 ? Math.round(damageDealt + cart) : undefined;
     }
@@ -1909,15 +2138,15 @@ function dimension(key) {
     return CONFIG.dimensions.list[key];
 }
 
-/** Which Y-band a world position falls in. Anything unclaimed is the overworld. */
+/** Which X-region a world position falls in. Anything unclaimed is the overworld. */
 function dimensionAt(pos) {
-    const half = CONFIG.dimensions.verticalHalfSize;
+    const half = CONFIG.dimensions.regionHalfSize;
     for (const key in CONFIG.dimensions.list) {
         const d = dimension(key);
-        if (d.groundY == null) {
-            continue;   // the overworld has no band of its own
+        if (d.originX == null) {
+            continue;   // the overworld has no region of its own
         }
-        if (Math.abs(pos[1] - d.groundY) <= half) {
+        if (Math.abs(pos[0] - d.originX) <= half && Math.abs(pos[2] - d.originZ) <= half) {
             return key;
         }
     }
@@ -1976,9 +2205,9 @@ function ensureArrivalGround(x, y, z, blockName) {
 }
 
 /**
- * Moves a player between dimensions. They are stacked by height now, not
- * spread across x/z, so this is a vertical drop to the target's Y-band -
- * x and z carry straight across unchanged.
+ * Moves a player between dimensions - a jump to the target region's X/Z
+ * origin, at a normal, ordinary Y. This is the layout that was tested and
+ * confirmed working in-game.
  */
 function travelTo(playerId, toKey) {
     const to = dimension(toKey);
@@ -1994,15 +2223,20 @@ function travelTo(playerId, toKey) {
     const state = stateOf(playerId);
     if (fromKey === "overworld") {
         // Remembered so a later return trip lands you back near where you
-        // left, not at some arbitrary fallback height.
-        state.overworldY = pos[1];
+        // left, not at some arbitrary fallback position.
+        state.overworldPos = pos;
     }
 
-    const x = pos[0];
-    const z = pos[2];
-    const y = to.groundY == null
-        ? (state.overworldY != null ? state.overworldY : CONFIG.dimensions.overworldFallbackY)
-        : to.groundY + to.arrivalY;
+    let x, y, z;
+    if (to.originX == null) {
+        const fallback = CONFIG.dimensions.overworldFallbackPos;
+        const back = state.overworldPos || fallback;
+        x = back[0]; y = back[1]; z = back[2];
+    } else {
+        x = to.originX;
+        z = to.originZ;
+        y = to.arrivalY;
+    }
 
     ensureArrivalGround(x, y, z, to.platformBlock);
     api.setPosition(playerId, x, y, z);
@@ -2116,6 +2350,179 @@ function explodeCrystal(placerId, x, y, z) {
         pos1: [centre[0] - c.radius / 2, centre[1], centre[2] - c.radius / 2],
         pos2: [centre[0] + c.radius / 2, centre[1] + 2, centre[2] + c.radius / 2],
     });
+}
+
+// -----------------------------------------------------------------------------
+// Orbital Strike Cannon & Stabshot
+// -----------------------------------------------------------------------------
+
+/** Where a player is aiming: their block target if there is one, else a point out along their facing. */
+function aimPoint(playerId, range) {
+    const target = api.getPlayerTargetInfo(playerId);
+    if (target && target.position) {
+        return target.position;
+    }
+    const pos = api.getPosition(playerId);
+    const facing = api.getPlayerFacingInfo(playerId);
+    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
+    return [pos[0] + dir[0] * range, pos[1] + dir[1] * range, pos[2] + dir[2] * range];
+}
+
+/** The same "damage everyone in a radius, then draw it" trick Crystal PvP uses - the only real explosion this API can make. */
+function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem) {
+    const targets = api.getPlayerIds().concat(api.getMobIds());
+    for (let i = 0; i < targets.length; i++) {
+        const victim = targets[i];
+        const pos = api.getPosition(victim);
+        if (!pos) {
+            continue;
+        }
+        const dx = pos[0] - centre[0];
+        const dy = pos[1] - centre[1];
+        const dz = pos[2] - centre[2];
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > radius) {
+            continue;
+        }
+        const falloff = 1 - distance / radius;
+        api.attemptApplyDamage({
+            eId: sourceId,
+            hitEId: victim,
+            attemptedDmgAmt: Math.max(1, Math.round(damage * falloff)),
+            withItem: withItem,
+        });
+        const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
+        api.applyImpulse(victim, (dx / length) * 5 * falloff, knockbackUp * falloff, (dz / length) * 5 * falloff);
+        if (isPlayer(victim)) {
+            api.shakePlayerCamera(victim, Math.min(1, falloff), 600);
+        }
+    }
+    api.broadcastSound("ominousBellHit", 1.0, 0.55, { playerIdOrPos: centre, maxHearDist: 90 });
+    api.playParticleEffect({
+        presetId: "stomp",
+        pos1: [centre[0] - radius / 2, centre[1], centre[2] - radius / 2],
+        pos2: [centre[0] + radius / 2, centre[1] + 3, centre[2] + radius / 2],
+    });
+}
+
+// Strikes waiting on their delay - there is no timer API, so this is ticked
+// forward the same way the terrain generation queue is.
+const pendingStrikes = [];
+
+function fireOrbital(playerId, slot) {
+    const o = CONFIG.orbital;
+    const centre = aimPoint(playerId, o.range);
+    // One-time use: the rod breaks the instant it fires, whether or not
+    // anything is actually there to hit.
+    api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
+    pendingStrikes.push({
+        fireAt: api.now() + o.delayMs, centre: centre, radius: o.radius,
+        damage: o.damage, knockbackUp: o.knockbackUp, sourceId: playerId,
+    });
+    tell(playerId, "Orbital strike incoming...", "#ff6b6b");
+    api.playSound(playerId, "magicAccent4", 1.0, 0.6);
+}
+
+function fireStabshot(playerId, slot) {
+    const s = CONFIG.stabshot;
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = s.cooldownMs - (now - (state.lastStabshot || 0));
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Stabshot: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+    state.lastStabshot = now;
+    blastAt(playerId, aimPoint(playerId, s.range), s.radius, s.damage, s.knockbackUp, s.item);
+    api.playSound(playerId, "magicAccent3", 0.9, 0.7);
+}
+
+/** Fires whatever pending orbital strikes have come due. Called from tick(). */
+function processPendingStrikes() {
+    if (pendingStrikes.length === 0) {
+        return;
+    }
+    const now = api.now();
+    for (let i = pendingStrikes.length - 1; i >= 0; i--) {
+        const strike = pendingStrikes[i];
+        if (now >= strike.fireAt) {
+            blastAt(strike.sourceId, strike.centre, strike.radius, strike.damage,
+                strike.knockbackUp, CONFIG.orbital.item);
+            pendingStrikes.splice(i, 1);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Villagers & Ocean
+// -----------------------------------------------------------------------------
+
+// mobId -> the trade it offers. Assigned once at spawn, cycling through
+// CONFIG.npc.trades, so every villager has exactly one fixed trade rather
+// than the whole list (closer to how Minecraft villagers work).
+const npcTrades = {};
+
+let worldFeaturesSpawned = false;
+
+/** Scatters the villagers and the ocean's sea mobs once, near world spawn. */
+function spawnWorldFeatures() {
+    if (worldFeaturesSpawned) {
+        return;
+    }
+    worldFeaturesSpawned = true;
+
+    if (CONFIG.npc.enabled) {
+        const n = CONFIG.npc;
+        for (let i = 0; i < n.countInOverworld; i++) {
+            const angle = (i / n.countInOverworld) * Math.PI * 2;
+            const x = n.spawnCentre[0] + Math.round(Math.cos(angle) * n.spawnRadius);
+            const z = n.spawnCentre[2] + Math.round(Math.sin(angle) * n.spawnRadius);
+            const variation = n.variations[i % n.variations.length];
+            const mobId = api.attemptSpawnMob(n.mobType, x, n.spawnCentre[1], z, {
+                variation: variation, name: "Villager",
+            });
+            if (mobId) {
+                npcTrades[mobId] = n.trades[i % n.trades.length];
+            }
+        }
+    }
+
+    if (CONFIG.ocean.enabled) {
+        const o = CONFIG.ocean;
+        api.setBlockRect(
+            [-o.ringRadius - o.ringWidth, o.waterLevel - 3, -o.ringRadius - o.ringWidth],
+            [o.ringRadius + o.ringWidth, o.waterLevel - 1, o.ringRadius + o.ringWidth],
+            o.floorBlock
+        );
+        api.setBlockRect(
+            [-o.ringRadius - o.ringWidth, o.waterLevel - 3, -o.ringRadius - o.ringWidth],
+            [o.ringRadius + o.ringWidth, o.waterLevel, o.ringRadius + o.ringWidth],
+            o.waterBlock
+        );
+        for (let i = 0; i < o.seaMob.countPerRing; i++) {
+            const angle = (i / o.seaMob.countPerRing) * Math.PI * 2;
+            const x = Math.round(Math.cos(angle) * o.ringRadius);
+            const z = Math.round(Math.sin(angle) * o.ringRadius);
+            api.attemptSpawnMob(o.seaMob.mobType, x, o.waterLevel - 1, z, { name: o.seaMob.name });
+        }
+    }
+}
+
+/** Trades the player's offered items for the villager's stock, straight through inventory - no shop UI involved. */
+function tradeWithNpc(playerId, mobId) {
+    const trade = npcTrades[mobId];
+    if (!trade) {
+        return;
+    }
+    if (countItem(playerId, trade.want) < trade.wantAmt) {
+        tell(playerId, "This villager wants " + trade.wantAmt + " " + trade.want + ".", "#ffa502");
+        return;
+    }
+    consumeItems(playerId, trade.want, trade.wantAmt);
+    api.giveItem(playerId, trade.give, trade.giveAmt);
+    tell(playerId, "Traded " + trade.wantAmt + " " + trade.want + " for "
+        + trade.giveAmt + " " + trade.give + ".", "#7bed9f");
+    api.playSound(playerId, "levelup", 0.7, 1.2);
 }
 
 // -----------------------------------------------------------------------------
@@ -2300,6 +2707,11 @@ const genQueue = [];      // chunks waiting to be built, oldest first
 const genQueued = {};     // key -> in the queue right now
 const genDone = {};       // key -> known built this session
 
+// Void guardian mobs currently alive, keyed by mob id - the only source of
+// Orbs of Resurrection now. Populated by maybeBuildVoidStructure, consumed
+// by onPlayerKilledMob.
+const voidGuardians = {};
+
 function chunkKey(dimKey, cx, cz) {
     return dimKey + ":" + cx + "," + cz;
 }
@@ -2317,9 +2729,8 @@ function chunkGenerated(dimKey, cx, cz) {
     }
     const wx = cx * g.chunkSize;
     const wz = cz * g.chunkSize;
-    const markerY = g.markerY + dimension(dimKey).groundY;
-    if (api.isBlockInLoadedChunk(wx, markerY, wz)
-        && api.getBlock(wx, markerY, wz) === g.markerBlock) {
+    if (api.isBlockInLoadedChunk(wx, g.markerY, wz)
+        && api.getBlock(wx, g.markerY, wz) === g.markerBlock) {
         genDone[key] = true;
         return true;
     }
@@ -2357,33 +2768,30 @@ function fill(x, y1, y2, z, blockName) {
 
 /**
  * Sprinkles ores through the solid rock of one column, between fromY and toY
- * inclusive (both already shifted by the dimension's groundY, same as
- * everything else this writes). Deterministic like everything else in
- * generation: local height is folded into the seed, so a given block always
- * rolls the same way and a regenerated chunk comes back identical rather
- * than reshuffled.
+ * inclusive - plain, ordinary Y values, since dimensions no longer shift
+ * height at all. Deterministic like everything else in generation: height is
+ * folded into the seed, so a given block always rolls the same way and a
+ * regenerated chunk comes back identical rather than reshuffled.
  *
  * Only ever called on the rock BELOW the surface, so the top layer, the
- * bedrock floor and the ceiling are never replaced. ore.minY/maxY are local
- * heights (as if groundY were 0), so groundY is added before comparing.
+ * bedrock floor and the ceiling are never replaced.
  */
-function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY, groundY) {
+function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY) {
     if (!ores || ores.length === 0) {
         return;
     }
     for (let y = fromY; y <= toY; y++) {
-        const localY = y - groundY;
         for (let i = 0; i < ores.length; i++) {
             const ore = ores[i];
-            if (ore.minY !== undefined && localY < ore.minY) {
+            if (ore.minY !== undefined && y < ore.minY) {
                 continue;
             }
-            if (ore.maxY !== undefined && localY > ore.maxY) {
+            if (ore.maxY !== undefined && y > ore.maxY) {
                 continue;
             }
             // A different seed per ore and per height, so the rolls are
             // independent rather than every ore hitting the same blocks.
-            if (hash2(localX, localZ, seed + localY * 7919 + i * 104729) < ore.chance) {
+            if (hash2(localX, localZ, seed + y * 7919 + i * 104729) < ore.chance) {
                 api.setBlock(x, y, z, ore.block);
                 break;   // one ore per block: the first match in the list wins
             }
@@ -2393,36 +2801,33 @@ function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY, groundY) {
 
 /**
  * A closed cavern: bedrock floor, rolling ground, a lava sea and a ceiling.
- * groundY is the dimension's Y-band centre - every height in CONFIG is a
- * local offset from it, added here so the whole cavern actually lands there.
+ * localX/localZ are relative to the Nether region's own origin, so the
+ * terrain pattern looks the same regardless of where that region sits.
  */
-function buildNetherColumn(x, z, localX, localZ, groundY) {
+function buildNetherColumn(x, z, localX, localZ) {
     const c = CONFIG.dimensions.generation.nether;
     const b = c.blocks;
-    const floorY = c.floorY + groundY;
-    const ceilingY = c.ceilingY + groundY;
-    const lavaLevel = c.lavaLevel + groundY;
 
     const ground = Math.round(c.groundBase
-        + (noise2(localX, localZ, c.groundScale, c.seed) - 0.5) * 2 * c.groundAmp) + groundY;
+        + (noise2(localX, localZ, c.groundScale, c.seed) - 0.5) * 2 * c.groundAmp);
     const ceiling = Math.round(c.ceilingBase
-        - (noise2(localX, localZ, c.ceilingScale, c.seed + 7) - 0.5) * 2 * c.ceilingAmp) + groundY;
+        - (noise2(localX, localZ, c.ceilingScale, c.seed + 7) - 0.5) * 2 * c.ceilingAmp);
 
-    fill(x, floorY, floorY, z, b.floor);
-    fill(x, floorY + 1, ground - 1, z, b.base);
-    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, floorY + 1, ground - 1, groundY);
+    fill(x, c.floorY, c.floorY, z, b.floor);
+    fill(x, c.floorY + 1, ground - 1, z, b.base);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, c.floorY + 1, ground - 1);
 
     const surface = hash2(localX, localZ, c.seed + 31) < c.accentChance ? b.accent : b.top;
     fill(x, ground, ground, z, surface);
 
     // Lava pools wherever the ground dips below the sea level.
-    fill(x, ground + 1, lavaLevel, z, b.liquid);
+    fill(x, ground + 1, c.lavaLevel, z, b.liquid);
 
-    fill(x, ceiling, ceilingY, z, b.ceiling);
+    fill(x, ceiling, c.ceilingY, z, b.ceiling);
 }
 
 /** Floating islands over open void, thinning out towards their edges. */
-function buildEndColumn(x, z, localX, localZ, groundY) {
+function buildEndColumn(x, z, localX, localZ) {
     const c = CONFIG.dimensions.generation.end;
     const b = c.blocks;
 
@@ -2443,11 +2848,11 @@ function buildEndColumn(x, z, localX, localZ, groundY) {
     }
     const half = Math.max(1, Math.round(strength * c.thickness));
     const centre = Math.round(c.baseY
-        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift) + groundY;
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
 
     const top = centre + half - 1;
     fill(x, centre - half, top - 1, z, b.base);
-    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, centre - half, top - 1, groundY);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, centre - half, top - 1);
     fill(x, top, top, z, b.top);
 
     if (strength > 0.5 && hash2(localX, localZ, c.seed + 77) < c.pillarChance) {
@@ -2455,11 +2860,13 @@ function buildEndColumn(x, z, localX, localZ, groundY) {
     }
 }
 
-/** Sparse black platforms in the dark, some carrying an Orb of Resurrection. */
-function buildVoidColumn(x, z, localX, localZ, groundY) {
+/**
+ * The height of solid ground at one Void column, or null over open void.
+ * Shared by buildVoidColumn and the structure placer, so both agree on
+ * where the ground actually is.
+ */
+function voidColumnTop(localX, localZ) {
     const c = CONFIG.dimensions.generation["void"];
-    const b = c.blocks;
-
     const island = noise2(localX, localZ, c.islandScale, c.seed);
     const fromCentre = Math.sqrt(localX * localX + localZ * localZ);
     const centreStrength = fromCentre >= c.centreIslandRadius
@@ -2471,24 +2878,113 @@ function buildVoidColumn(x, z, localX, localZ, groundY) {
         strength = centreStrength;
     }
     if (strength <= 0) {
-        return;
+        return null;
     }
-
     const half = Math.max(1, Math.round(strength * c.thickness));
     const centre = Math.round(c.baseY
-        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift) + groundY;
-    const top = centre + half - 1;
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
+    return { base: centre - half, top: centre + half - 1 };
+}
 
-    fill(x, centre - half, top - 1, z, b.base);
-    fill(x, top, top, z, b.top);
-
-    // The orbs are the whole point of the place, so they sit on top in plain sight.
-    if (hash2(localX, localZ, c.seed + 99) < c.orbChance) {
-        fill(x, top + 1, top + 1, z, b.orb);
+/** Dark, cracked and abandoned-looking platforms, sparse in the dark. */
+function buildVoidColumn(x, z, localX, localZ) {
+    const c = CONFIG.dimensions.generation["void"];
+    const b = c.blocks;
+    const column = voidColumnTop(localX, localZ);
+    if (!column) {
+        return;
     }
+    fill(x, column.base, column.top - 1, z, b.base);
+    const surface = hash2(localX, localZ, c.seed + 61) < b.accentChance ? b.accent : b.top;
+    fill(x, column.top, column.top, z, surface);
 }
 
 /** Builds a slice of the queue each tick so a big reveal never stalls the server. */
+/**
+ * Rolled once per finished Void chunk, never per column - a tower or house
+ * needs several whole columns, so trying per-column would tear structures
+ * apart across chunk edges. Picks the chunk's centre, and only builds if the
+ * ground there (and a ring around it, per minPlatformRadius) is solid and
+ * roughly flat - open void or a cliff edge is skipped rather than forced.
+ */
+function maybeBuildVoidStructure(cx, cz, originX, originZ) {
+    const g = CONFIG.dimensions.generation;
+    const s = g["void"].structures;
+    if (!s || hash2(cx, cz, g["void"].seed + 4001) >= s.chance) {
+        return;
+    }
+
+    const worldX = cx * g.chunkSize + (g.chunkSize >> 1);
+    const worldZ = cz * g.chunkSize + (g.chunkSize >> 1);
+    const localX = worldX - originX;
+    const localZ = worldZ - originZ;
+    const centreCol = voidColumnTop(localX, localZ);
+    if (!centreCol) {
+        return;   // open void at the centre - nowhere to stand
+    }
+
+    const r = s.minPlatformRadius;
+    for (let dx = -r; dx <= r; dx += r) {
+        for (let dz = -r; dz <= r; dz += r) {
+            const col = voidColumnTop(localX + dx, localZ + dz);
+            if (!col || Math.abs(col.top - centreCol.top) > 1) {
+                return;   // too uneven or partly open - skip this roll
+            }
+        }
+    }
+
+    const baseY = centreCol.top + 1;
+    const wide = hash2(cx, cz, g["void"].seed + 4002) < 0.5;
+    if (wide) {
+        buildVoidHouse(worldX, baseY, worldZ, s);
+    } else {
+        buildVoidTower(worldX, baseY, worldZ, s);
+    }
+
+    if (hash2(cx, cz, g["void"].seed + 4003) < s.crystalChance) {
+        api.setBlock(worldX, baseY, worldZ - 3, CONFIG.crystal.block);
+    }
+
+    spawnVoidGuardians(worldX, baseY, worldZ, s);
+}
+
+/** A small hollow ruin: four walls, a mossy-trimmed doorway, an open roof. */
+function buildVoidHouse(x, y, z, s) {
+    const r = 3;
+    api.setBlockRect([x - r, y, z - r], [x + r, y, z + r], s.floorBlock);
+    api.setBlockRect([x - r, y + 1, z - r], [x + r, y + 4, z - r], s.wallBlock);
+    api.setBlockRect([x - r, y + 1, z + r], [x + r, y + 4, z + r], s.wallBlock);
+    api.setBlockRect([x - r, y + 1, z - r], [x - r, y + 4, z + r], s.wallBlock);
+    api.setBlockRect([x + r, y + 1, z - r], [x + r, y + 4, z + r], s.accentBlock);
+    // A doorway punched through the mossy wall.
+    api.setBlockRect([x + r, y + 1, z - 1], [x + r, y + 2, z + 1], "Air");
+}
+
+/** A crumbling watchtower, hollow inside, mossy trim around the top. */
+function buildVoidTower(x, y, z, s) {
+    const r = 2;
+    api.setBlockRect([x - r, y, z - r], [x + r, y + 8, z + r], s.wallBlock);
+    api.setBlockRect([x - r + 1, y + 1, z - r + 1], [x + r - 1, y + 7, z + r - 1], "Air");
+    api.setBlockRect([x - r, y + 8, z - r], [x + r, y + 8, z + r], s.accentBlock);
+    api.setBlockRect([x - 1, y + 1, z - r], [x + 1, y + 2, z - r], "Air");   // doorway
+}
+
+/** Places the guardians a structure needs to actually pay out an orb. */
+function spawnVoidGuardians(x, y, z, s) {
+    for (let i = 0; i < s.guardiansPerStructure; i++) {
+        const angle = (i / s.guardiansPerStructure) * Math.PI * 2;
+        const gx = x + Math.round(Math.cos(angle) * 2);
+        const gz = z + Math.round(Math.sin(angle) * 2);
+        const mobId = api.attemptSpawnMob(s.guardianMob, gx, y + 1, gz, {
+            variation: s.guardianVariation,
+            name: "Void Guardian",
+        });
+        if (mobId) {
+            voidGuardians[mobId] = true;
+        }
+    }
+}
+
 function processGeneration() {
     const g = CONFIG.dimensions.generation;
     if (!g.enabled) {
@@ -2499,22 +2995,24 @@ function processGeneration() {
 
     while (budget > 0 && genQueue.length > 0) {
         const job = genQueue[0];
-        const groundY = dimension(job.dimKey).groundY;
+        const region = dimension(job.dimKey);
+        const originX = region.originX;
+        const originZ = region.originZ;
 
         while (budget > 0 && job.column < perChunk) {
             const lx = job.column % g.chunkSize;
             const lz = (job.column / g.chunkSize) | 0;
             const x = job.cx * g.chunkSize + lx;
             const z = job.cz * g.chunkSize + lz;
+            const localX = x - originX;
+            const localZ = z - originZ;
 
-            // Dimensions all share the same x/z space now - Y is what tells
-            // them apart - so noise is sampled directly in world x/z.
             if (job.dimKey === "nether") {
-                buildNetherColumn(x, z, x, z, groundY);
+                buildNetherColumn(x, z, localX, localZ);
             } else if (job.dimKey === "end") {
-                buildEndColumn(x, z, x, z, groundY);
+                buildEndColumn(x, z, localX, localZ);
             } else if (job.dimKey === "void") {
-                buildVoidColumn(x, z, x, z, groundY);
+                buildVoidColumn(x, z, localX, localZ);
             }
 
             job.column++;
@@ -2522,7 +3020,10 @@ function processGeneration() {
         }
 
         if (job.column >= perChunk) {
-            api.setBlock(job.cx * g.chunkSize, g.markerY + groundY, job.cz * g.chunkSize, g.markerBlock);
+            api.setBlock(job.cx * g.chunkSize, g.markerY, job.cz * g.chunkSize, g.markerBlock);
+            if (job.dimKey === "void") {
+                maybeBuildVoidStructure(job.cx, job.cz, originX, originZ);
+            }
             genDone[chunkKey(job.dimKey, job.cx, job.cz)] = true;
             delete genQueued[chunkKey(job.dimKey, job.cx, job.cz)];
             genQueue.shift();
@@ -2542,6 +3043,7 @@ function onPlayerJoin(playerId) {
 
     stateOf(playerId);
     registerRecipes(playerId);
+    spawnWorldFeatures();
 
     if (CONFIG.dimensions.enabled) {
         registerPortalRecipes(playerId);
@@ -2598,20 +3100,19 @@ function tick() {
         }
         state.lastY = pos[1];
 
-        // A guard left up with nothing backing it (swapped away, died and
-        // respawned) drops automatically - independent of whether dimensions
-        // are enabled, so it always runs.
-        if (CONFIG.shield.enabled && state.shieldRaised) {
-            const slot = heldSlot(playerId);
-            if (!slot || !customAttrs(slot.item)[ATTR_SHIELD]) {
-                state.shieldRaised = false;
-            }
-        }
-
         // The off-hand slot is re-read every tick, for every player, so
         // dragging something in or out in the inventory screen counts too.
         if (CONFIG.offhand.enabled) {
             syncOffhand(playerId);
+        }
+
+        // Kept charged every tick you are actually guarding (off-hand shield
+        // + crouching), not just the moment you seat it - otherwise a shield
+        // that ran dry in one fight would silently never block again even
+        // though you are still crouched with it out, which is the bug this
+        // replaces.
+        if (shieldGuarding(playerId)) {
+            topUpShield(playerId);
         }
 
         // Then redraw the shield from whatever the inventory now says (this is
@@ -2644,12 +3145,41 @@ function tick() {
     if (CONFIG.dimensions.enabled) {
         processGeneration();
     }
+
+    processPendingStrikes();
+}
+
+/** Any colour of Bed or Strongbed, head half included - standing on either sets your spawn. */
+function isBedBlock(blockName) {
+    return /\b(Bed|Strongbed)( Head)?$/.test(blockName);
 }
 
 function onBlockStandStart(playerId, x, y, z, blockName) {
     if (CONFIG.dimensions.enabled) {
         usePortal(playerId, blockName);
     }
+    if (CONFIG.bedSpawn.enabled && isBedBlock(blockName)) {
+        api.setPlayerDbValue(playerId, DB_SPAWN_POS, JSON.stringify([x, y, z]));
+        api.queueCrosshairText(playerId, "Spawn point set", 1500);
+    }
+}
+
+/** Bed spawn if one was set, otherwise the Overworld fallback position. */
+function onRespawnRequest(playerId) {
+    if (CONFIG.bedSpawn.enabled) {
+        const raw = api.getPlayerDbValue(playerId, DB_SPAWN_POS);
+        if (typeof raw === "string" && raw !== "") {
+            try {
+                const pos = JSON.parse(raw);
+                if (Array.isArray(pos) && pos.length === 3) {
+                    return pos;
+                }
+            } catch (err) {
+                // fall through to the Overworld fallback below
+            }
+        }
+    }
+    return CONFIG.dimensions.overworldFallbackPos;
 }
 
 function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
@@ -2731,12 +3261,15 @@ function onPlayerAltAction(playerId) {
         spearLunge(playerId, slot);
     } else if (custom[ATTR_WINDCHARGE]) {
         useWindChargeItem(playerId, slot);
-    } else if (custom[ATTR_SHIELD]) {
-        // Hold the shield up to block, click again to drop the guard. Putting
-        // one in the off-hand instead is a deliberate act - dragging it there,
-        // /offhand or the touchscreen button - never a side effect of a click.
-        toggleShield(playerId);
+    } else if (custom[ATTR_ORBITAL]) {
+        fireOrbital(playerId, slot);
+    } else if (custom[ATTR_STABSHOT]) {
+        fireStabshot(playerId, slot);
     } else if (CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
+        // A shield does nothing on right click any more - putting one in the
+        // off-hand is the only way it ever guards, and that is a deliberate
+        // act (dragging it there, /offhand, or the touchscreen button), never
+        // a side effect of a click.
         swapOffhand(playerId);
     }
 }
@@ -2762,6 +3295,18 @@ function onPlayerDamagingOtherPlayer(attackingPlayer, damagedPlayer, damageDealt
 
 function onPlayerEnteredVehicle(playerId) {
     stateOf(playerId).inVehicle = true;
+
+    // The closest real proxy to "wear a glider down while flying": there is
+    // no per-tick "still gliding" event to hook, so a flat cost is spent
+    // once per mount instead, on whatever is currently held if it is a
+    // glider. Fires for boats too, but spendDurability is a no-op unless
+    // the held item is actually one of the gliders (max <= 0 otherwise).
+    if (CONFIG.durability.enabled) {
+        const slot = heldSlot(playerId);
+        if (slot && CONFIG.gliders.items.indexOf(slot.item.name) !== -1) {
+            spendDurability(playerId, slot, CONFIG.durability.gliderWearPerFlight);
+        }
+    }
 }
 
 function onPlayerExitedVehicle(playerId) {
@@ -2770,6 +3315,30 @@ function onPlayerExitedVehicle(playerId) {
 
 function onPlayerDamagingMob(playerId, mobId, damageDealt) {
     return handleWeaponHit(playerId, mobId, damageDealt);
+}
+
+/** Slaying a void guardian is the only source of Orbs of Resurrection now. */
+function onPlayerKilledMob(playerId, mobId, damageDealt, withItem) {
+    if (voidGuardians[mobId]) {
+        delete voidGuardians[mobId];
+        api.giveItem(playerId, CONFIG.resurrection.item, 1);
+        tell(playerId, "The guardian drops a " + CONFIG.resurrection.name + ".", "#b39ddb");
+        api.playSound(playerId, "magicAccent2", 0.8, 1.1);
+    }
+}
+
+/** Right click (alt click) on a villager NPC trades; left click does nothing special. */
+function onPlayerClick(playerId, wasAltClick, x, y, z, block, targetEId) {
+    if (wasAltClick && targetEId && npcTrades[targetEId]) {
+        tradeWithNpc(playerId, targetEId);
+    }
+}
+
+/** A landed Splash Aura XP Potion mends whatever is in the thrower's off-hand. */
+function onPlayerUsedThrowable(playerId, throwableName, thrownEntityId) {
+    if (CONFIG.mending.enabled && throwableName === CONFIG.mending.splashItem) {
+        mendOffhandItem(playerId);
+    }
 }
 
 function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
@@ -2836,8 +3405,8 @@ function playerCommand(playerId, command) {
         case "withdraw":
             return withdraw(playerId, args[0]);
 
-        case "repair":
-            repairHeldItem(playerId);
+        case "mend":
+            mendHeldItem(playerId);
             return true;
 
         case "offhand":
@@ -2851,14 +3420,36 @@ function playerCommand(playerId, command) {
             return true;
 
         case "shield": {
-            // Raising a shield by hand, for anyone who wants to time their
-            // blocks instead of letting the off-hand one soak automatically.
+            const s = shieldState(playerId);
+            if (s === "none") {
+                tell(playerId, "Put a " + CONFIG.shield.name + " in your off-hand slot ("
+                    + CONFIG.offhand.slotIndex + ") to carry one.", "#ffa502");
+            } else if (s === "blocking") {
+                tell(playerId, "Blocking.", "#9fb4c7");
+            } else {
+                tell(playerId, "In your off-hand - crouch to block.", "#9fb4c7");
+            }
+            return true;
+        }
+
+        case "reforge": {
+            // Attribute swapping: exchanges the custom attributes (durability,
+            // enchant-style tags, everything) of your held item and whatever
+            // sits in your off-hand slot. Base item names never change - only
+            // what each one carries.
             const held = heldSlot(playerId);
-            if (!held || !customAttrs(held.item)[ATTR_SHIELD]) {
-                tell(playerId, "Hold a " + CONFIG.shield.name + " to raise it by hand.", "#ffa502");
+            const off = offhandSlot(playerId);
+            if (!held || !off) {
+                tell(playerId, "Hold one item and carry another in your off-hand to swap their attributes.",
+                    "#ff4757");
                 return true;
             }
-            toggleShield(playerId);
+            const heldAttrs = held.item.attributes;
+            const offAttrs = off.item.attributes;
+            api.setItemSlot(playerId, held.index, held.item.name, held.item.amount, offAttrs, true);
+            api.setItemSlot(playerId, off.index, off.item.name, off.item.amount, heldAttrs, true);
+            tell(playerId, "Swapped attributes between " + displayName(held.item)
+                + " and " + displayName(off.item) + ".", "#7bed9f");
             return true;
         }
 
@@ -2868,19 +3459,25 @@ function playerCommand(playerId, command) {
                 + CONFIG.orb.name + "s | right click a " + CONFIG.orb.name
                 + " or Golden Apple to eat it | "
                 + "craft the " + CONFIG.mace.name + " (" + CONFIG.mace.item + "), "
-                + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
-                + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
-                + "craft a " + CONFIG.shield.name + " - hold it and RIGHT CLICK to raise your "
-                + "guard, right click again to drop it | "
-                + "or drag it into your off-hand slot (top-left of your backpack, not the "
-                + "hotbar) and it blocks by itself, leaving your hand free for a sword - "
-                + "/offhand or the on-screen button put it there too | "
+                + CONFIG.spear.name + ", " + CONFIG.dagger.name + " (poisons on hit) and "
+                + CONFIG.windCharge.name + " | plain Wood/Stone/Iron/Gold/Diamond Maces too | "
+                + "hold a damaged item and /mend, or throw a "
+                + CONFIG.mending.splashItem + " to mend your off-hand instead - both cost "
+                + CONFIG.mending.item + "s | "
+                + "craft a " + CONFIG.shield.name + " and put it in your off-hand slot ("
+                + CONFIG.offhand.slotIndex + ") - it only blocks while you are crouching | "
+                + "/offhand or the on-screen button put an item there too | "
+                + "/reforge swaps attributes between your held item and your off-hand | "
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
+                + "the " + CONFIG.orbital.name + " and " + CONFIG.stabshot.name
+                + " call down a strike where you are looking | "
+                + "right click a villager to trade | "
+                + "sleep in (stand on) a bed to set your spawn point | "
                 + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "
-                + "hit 0 hearts and you are exiled to the Void - mine 3 "
-                + CONFIG.resurrection.name + "s there to get out (/orbs).",
+                + "hit 0 hearts and you are exiled to the Void - kill 3 guardians in its ruins "
+                + "for " + CONFIG.resurrection.name + "s to get out (/orbs).",
                 "#70a1ff");
             return true;
 
@@ -2915,17 +3512,21 @@ function playerCommand(playerId, command) {
                 api.giveItem(playerId, CONFIG.orb.item, 1, orbAttributes(CONFIG.orb.hp));
             } else if (what === "windcharge") {
                 api.giveItem(playerId, CONFIG.windCharge.item, 1, windChargeAttributes());
-            } else if (what === "repairkit") {
-                api.giveItem(playerId, CONFIG.repair.item, 1, repairKitAttributes());
+            } else if (what === "dagger") {
+                api.giveItem(playerId, CONFIG.dagger.item, 1, daggerAttributes());
             } else if (what === "shield") {
                 api.giveItem(playerId, CONFIG.shield.item, 1, shieldAttributes(CONFIG.shield.durability));
+            } else if (what === "orbital") {
+                api.giveItem(playerId, CONFIG.orbital.item, 1, orbitalAttributes());
+            } else if (what === "stabshot") {
+                api.giveItem(playerId, CONFIG.stabshot.item, 1, stabshotAttributes());
             } else if (what === "netherportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.nether.portalBlock, 8);
             } else if (what === "endportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.end.portalBlock, 8);
             } else {
                 tell(playerId,
-                    "Usage: /give mace|spear|windcharge|repairkit|shield|gapple|egapple|heart"
+                    "Usage: /give mace|spear|dagger|windcharge|shield|orbital|stabshot|gapple|egapple|heart"
                         + "|netherportal|endportal",
                     "#ff4757");
             }
