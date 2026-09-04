@@ -1,4 +1,4 @@
-const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue, npcRoster } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -130,11 +130,19 @@ check("apple tooltip mentions both effects", (() => {
     return /Health Regen/.test(desc) && /[Ff]ire resistance/.test(desc);
 })(), ctx.appleAttributes("enchanted").customDescription);
 
-// a plain apple is not edible as a gapple
+// a plain apple is not edible as a gapple - it just goes off-hand like any
+// other ordinary item, and heals nobody
 world.health.a = 50;
+world.db.a.smpMaxHp = 110;
 world.inv.a = [{ name: "Apple", amount: 5, attributes: undefined }];
+world.sel.a = 0;
 ctx.onPlayerAltAction("a");
-check("plain apple untouched", world.inv.a[0].amount === 5 && world.health.a === 50, "");
+check("a plain apple is not eaten", world.health.a === 50 && world.db.a.smpMaxHp === 110,
+    world.health.a + "/" + world.db.a.smpMaxHp);
+check("a plain apple goes off-hand instead, whole stack intact",
+    world.inv.a[C.offhand.slotIndex] && world.inv.a[C.offhand.slotIndex].amount === 5,
+    JSON.stringify(world.inv.a[C.offhand.slotIndex]));
+world.inv.a = [];
 
 // ------------------------------------------------------------------ mace smash
 world.inv.a = [maceItem()];
@@ -282,7 +290,9 @@ check("repairing the mace still uses maceAttributes' durability",
     world.inv.a[0].attributes.customAttributes.smpDur);
 
 // ---------------------------------------------------------------------- shield
-check("shield is a real Bloxd item, not a fake one", C.shield.item === "Brown Paintball Explosive Item", C.shield.item);
+check("shield is a real Bloxd item, not a fake one", C.shield.item === "Brown Paintball", C.shield.item);
+check("the shield is not built on a native throwable",
+    C.shield.item.indexOf("Explosive") === -1, C.shield.item);
 check("shield is renamed", C.shield.name === "Bulwark", C.shield.name);
 check("shield is craftable", !!world.recipes.a[C.shield.item], Object.keys(world.recipes.a));
 check("crafted shields carry their tag",
@@ -346,24 +356,9 @@ ctx.tick();
 check("switching away from a raised shield lowers it on the next tick",
     ctx.stateOf("a").shieldRaised === false, "");
 
-// NPC attacks respect a raised shield too
-world.inv.a = [shieldItem(C.shield.durability)];
-ctx.stateOf("a").shieldRaised = true;
-world.shield.a = 50;
-const npcForShieldTest = npcRoster[0];
-npcForShieldTest.pos = [0, 64, 0];
-world.pos.a = [1, 64, 0];
-npcForShieldTest.lastAttack = 0;
-world.damages.length = 0;
-ctx.npcAttack(npcForShieldTest, "a");
-check("a raised shield reduces NPC damage too",
-    world.damages[0].attemptedDmgAmt === Math.round(C.npcs.attackDamage * (1 - C.shield.blockFraction)),
-    JSON.stringify(world.damages));
-ctx.stateOf("a").shieldRaised = false;
-
 // ------------------------------------------------------- passive off-hand shield
-// Slot 0 acts as a pseudo off-hand: parking a Bulwark there protects the
-// player automatically, every tick, with no need to hold or click it.
+// The first backpack slot acts as a pseudo off-hand: parking a Bulwark there
+// protects the player automatically, every tick, with no need to hold it.
 world.meshAttachments.a = undefined;
 world.opts.a.headerChips = [];
 world.shield.a = 0;
@@ -403,8 +398,12 @@ world.sel.a = 0;
 
 // ------------------------------------------------------------ off-hand swapping
 // Right-click swaps a plain held item into the off-hand slot; the two slots
-// trade places, so nothing is ever destroyed or stranded in a variable.
+// trade places, so nothing is ever destroyed or stranded in a variable. The
+// off-hand sits outside the hotbar, so it never costs a weapon slot.
 const OFF = C.offhand.slotIndex;
+// The hotbar is indexes 0-9, so the off-hand must live at 10 or beyond -
+// otherwise it would eat one of the player's weapon slots.
+check("the off-hand is outside the hotbar", OFF > 9, OFF);
 world.effects.length = 0;
 world.inv.a = [];
 world.sel.a = 3;
@@ -847,279 +846,6 @@ check("anon survives a rejoin",
         && world.entitySettings.a.nameTagInfo.content[0].str === C.anonymous.displayName, "");
 world.db.a.smpAnon = 0;
 ctx.onPlayerJoin("a");
-
-// -------------------------------------------------------------------------- NPCs
-const N = C.npcs;
-world.pos.a = [900, 64, 900];   // players far away so nobody is "noticed" yet
-world.pos.b = [900, 64, 900];
-world.blocks["0,63,0"] = "Stone";
-for (let i = 0; i < N.thinkEveryTicks * 2; i++) ctx.tick();
-check("a roster is built once", npcRoster.length === N.count, npcRoster.length);
-
-// send them all back to the spawn queue so the spawn path is observed fresh
-world.meshEntities.length = 0;
-npcRoster.forEach(x => { x.entityId = null; x.deadUntil = 0; });
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-
-check("NPCs are Person mesh entities, not mobs",
-    world.meshEntities.length === N.count && world.meshEntities.every(m => m.type === "Person"),
-    JSON.stringify(world.meshEntities.map(m => m.type)));
-check("NPCs wear a player skin",
-    world.meshEntities.every(m => N.skins.indexOf(m.opts.textures.head) !== -1),
-    JSON.stringify(world.meshEntities.map(m => m.opts.textures)));
-check("NPCs stand upright", world.meshEntities.every(m => m.opts.pose === "standing"), "");
-check("NPCs carry a nametag", world.meshEntities.every(m => !!m.name), "");
-check("NPCs have unique names",
-    new Set(npcRoster.map(x => x.name)).size === N.count, npcRoster.map(x => x.name).join(","));
-check("NPCs have unique skins",
-    new Set(npcRoster.map(x => x.skin)).size === N.count, npcRoster.map(x => x.skin).join(","));
-check("NPC homes are spread out",
-    new Set(npcRoster.map(x => x.home[0].toFixed(2))).size > 1, "");
-
-const npc = npcRoster[0];
-const body = npc.entityId;
-npc.pos = [0, 64, 0];
-
-// they walk toward a target rather than teleporting to it
-npc.target = [10, 0];
-npc.running = false;
-const startX = npc.pos[0];
-for (let i = 0; i < N.moveEveryTicks; i++) ctx.tick();
-const moved = npc.pos[0] - startX;
-check("an NPC walks a step at a time", moved > 0 && moved <= N.walkSpeed + 0.001, moved);
-check("walking turns them to face the way they go", world.headings[body] !== undefined, "");
-
-// they notice someone walking up, greet them once, and stop wandering
-world.log.length = 0;
-npc.pos = [0, 64, 0];
-world.pos.a = [2, 64, 0];
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("an NPC greets you", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
-check("an NPC stops to talk", npc.target === null, JSON.stringify(npc.target));
-world.log.length = 0;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("greetings are not spammed", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
-
-// hit one and it fights back
-world.log.length = 0;
-world.inv.a = [];
-npc.lastChat = 0;
-const hpBefore = npc.hp;
-ctx.onPlayerDamagingMeshEntity("a", body, 10);
-check("hitting an NPC hurts it", npc.hp === hpBefore - 10, npc.hp);
-check("hitting an NPC provokes it", npc.provokedBy === "a", npc.provokedBy);
-check("a hurt NPC says something", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), JSON.stringify(world.log));
-world.log.length = 0;
-ctx.onPlayerDamagingMeshEntity("a", body, 10);
-check("hurt lines are rate limited", !world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), "");
-
-npc.pos = [0, 64, 0];
-world.pos.a = [30, 64, 0];
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a provoked NPC comes after you",
-    npc.target && Math.abs(npc.target[0] - 30) < 0.001, JSON.stringify(npc.target));
-check("a provoked NPC runs rather than strolls", npc.running === true, "");
-
-// in range, it actually hits back
-world.damages.length = 0;
-npc.pos = [0, 64, 0];
-world.pos.a = [1, 64, 0];
-npc.lastAttack = 0;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("an NPC in range hits back", world.damages.some(d => d.hitEId === "a"), JSON.stringify(world.damages));
-check("its hits name the NPC", world.damages.some(d => d.withItem === npc.name), "");
-world.damages.length = 0;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("attacks are on a cooldown", world.damages.length === 0, JSON.stringify(world.damages));
-
-// out of range it swings at nothing
-world.damages.length = 0;
-world.pos.a = [40, 64, 0];
-npc.lastAttack = 0;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("an NPC out of range does not hit you", world.damages.length === 0, JSON.stringify(world.damages));
-
-// hurt it badly and it runs the other way
-npc.hp = N.maxHealth * 0.1;
-npc.pos = [0, 64, 0];
-world.pos.a = [5, 64, 0];
-npc.provokedBy = "a";
-npc.provokedAt = ctx.api === undefined ? 0 : Date.now();
-npc.lastChat = 0;
-world.log.length = 0;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a losing NPC flees away from you", npc.target && npc.target[0] < 0, JSON.stringify(npc.target));
-check("a fleeing NPC says so", world.log.some(l => l.indexOf("bcast " + npc.name + ":") === 0), "");
-
-// enough damage kills it
-world.log.length = 0;
-world.drops.length = 0;
-npc.hp = 5;
-ctx.onPlayerDamagingMeshEntity("a", body, 10);
-check("enough damage kills an NPC", npc.entityId === null, npc.entityId);
-check("a killed NPC is announced", world.log.some(l => /was killed by/.test(l)), JSON.stringify(world.log));
-check("a killed NPC's body is removed",
-    !world.meshEntities.some(m => m.id === body), JSON.stringify(world.meshEntities.map(m => m.id)));
-check("a killed NPC books a respawn", npc.deadUntil > 0, npc.deadUntil);
-check("NPCs drop no Life Orb by default", world.drops.length === 0, world.drops.length);
-
-// it comes back, keeping who it is
-const wasName = npc.name, wasSkin = npc.skin, wasPersonality = npc.personality;
-npc.deadUntil = 0;
-world.pos.a = [900, 64, 900];
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a dead NPC respawns", npc.entityId !== null, npc.entityId);
-check("it comes back as the same person",
-    npc.name === wasName && npc.skin === wasSkin && npc.personality === wasPersonality, "");
-check("it comes back at full health", npc.hp === N.maxHealth, npc.hp);
-
-// breaking the model outright also counts as a kill
-const npc2 = npcRoster[1];
-world.log.length = 0;
-ctx.onPlayerBreakMeshEntity("a", npc2.entityId);
-check("breaking the model kills the NPC", npc2.entityId === null, npc2.entityId);
-
-// a full entity budget only delays them
-npc2.deadUntil = 0;
-world.meshSpawnFails = true;
-for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick();
-check("a full entity budget only delays a respawn",
-    npc2.entityId === null && npc2.deadUntil > 0, npc2.deadUntil);
-world.meshSpawnFails = false;
-
-// ---- they actually work -----------------------------------------------------
-const W = N.work;
-const worker = npcRoster.find(x => x.trade === "lumberjack") || npcRoster[0];
-if (worker.entityId === null) { worker.deadUntil = 0; for (let i = 0; i < N.thinkEveryTicks; i++) ctx.tick(); }
-check("NPCs are given a trade",
-    npcRoster.every(x => !!W.trades[x.trade]), npcRoster.map(x => x.trade).join(","));
-check("trades are shared out", new Set(npcRoster.map(x => x.trade)).size > 1, "");
-
-// put a tree in their patch and let them find it
-world.pos.a = [900, 64, 900];
-world.blocks = {};
-const treeX = Math.floor(worker.home[0]) + 3, treeZ = Math.floor(worker.home[1]) + 3;
-worker.pos = [worker.home[0], 64, worker.home[1]];
-// A stand of trees, the way a real world has them - a single log in 3,700
-// columns is not something random probing is meant to find.
-for (let dx = -8; dx <= 8; dx++) for (let dz = -8; dz <= 8; dz++) {
-    for (let y = 64; y < 68; y++) {
-        world.blocks[(Math.floor(worker.home[0]) + dx) + "," + y + "," + (Math.floor(worker.home[1]) + dz)] = "Maple Log";
-    }
-}
-worker.stash = 0; worker.restUntil = 0; worker.workBlock = null; worker.plan = null; worker.provokedBy = null;
-let found = null;
-for (let i = 0; i < 40 && !found; i++) found = ctx.findWorkBlock(worker);
-check("a lumberjack finds a log in a wood",
-    found && world.blocks[found.join(",")] === "Maple Log", JSON.stringify(found));
-// Probing downward means they always take the top of a trunk first, and the
-// next pass finds the one below it - trees come down from the top, not the base.
-check("they take the top of a trunk first", found && found[1] === 67, found && found[1]);
-check("the next pass takes the one below", (() => {
-    delete world.blocks[found[0] + ",67," + found[2]];
-    for (let i = 0; i < 60; i++) {
-        const f = ctx.findWorkBlock(worker);
-        if (f && f[0] === found[0] && f[2] === found[2]) return f[1] === 66;
-    }
-    return true;   // never re-probed that column; nothing to disprove
-})(), "");
-world.blocks = {};
-world.blocks[treeX + ",64," + treeZ] = "Maple Log";
-check("a miner does not want logs",
-    W.trades.miner.gathers.indexOf("Maple Log") === -1, "");
-
-// standing next to it, they chop it down
-worker.job = "gather";
-worker.workBlock = [treeX, 64, treeZ];
-worker.pos = [treeX + 0.5, 64, treeZ + 0.5];
-world.worldChanges.length = 0;
-ctx.workNpc(worker);
-check("chopping clears the block",
-    world.worldChanges.some(c => c.x === treeX && c.name === "Air"), JSON.stringify(world.worldChanges));
-check("chopping fills the stash", worker.stash === 1, worker.stash);
-
-// they will not reach outside their own patch
-worker.job = "gather";
-const farX = Math.floor(worker.home[0]) + W.radius + 40;
-world.blocks[farX + ",64,0"] = "Maple Log";
-worker.workBlock = [farX, 64, 0];
-worker.pos = [farX + 0.5, 64, 0.5];
-world.worldChanges.length = 0;
-ctx.workNpc(worker);
-check("they never break blocks outside their patch", world.worldChanges.length === 0, JSON.stringify(world.worldChanges));
-
-// out of reach they swing at nothing
-worker.workBlock = [treeX, 64, treeZ];
-worker.pos = [treeX + 20, 64, treeZ];
-world.worldChanges.length = 0;
-ctx.workNpc(worker);
-check("they must stand next to a block to break it", world.worldChanges.length === 0, "");
-
-// with material in hand they build their hut
-world.blocks = {};
-for (let dx = -6; dx <= 6; dx++) for (let dz = -6; dz <= 6; dz++) {
-    world.blocks[(Math.floor(worker.home[0]) + dx) + ",63," + (Math.floor(worker.home[1]) + dz)] = "Stone";
-}
-worker.pos = [worker.home[0], 64, worker.home[1]];
-worker.plan = null; worker.planIndex = 0;
-const plan = ctx.buildPlanFor(worker);
-check("a hut plan is drawn up", plan && plan.length > 40, plan && plan.length);
-check("the hut has a doorway", (() => {
-    const cx = Math.floor(worker.home[0]), cz = Math.floor(worker.home[1]);
-    const edge = W.hut.half;
-    return !plan.some(pp => pp[0] === cx && pp[2] === cz - edge && pp[1] === 63 + 1);
-})(), "no gap found");
-
-worker.stash = 200;
-worker.restUntil = 0;
-worker.provokedBy = null;
-world.worldChanges.length = 0;
-const material = W.trades[worker.trade].buildsWith;
-for (let i = 0; i < 400; i++) {
-    ctx.thinkNpc(worker);
-    if (worker.buildSpot) worker.pos = [worker.buildSpot[0] + 0.5, worker.buildSpot[1], worker.buildSpot[2] + 0.5];
-    ctx.workNpc(worker);
-}
-const placed = world.worldChanges.filter(c => c.name === material).length;
-check("they build with their trade's material", placed > 20, placed);
-check("building spends the stash", worker.stash < 200, worker.stash);
-check("the hut is finished", ctx.nextBuildSpot(worker) === null, ctx.nextBuildSpot(worker));
-check("finishing earns them a rest", worker.restUntil > 0, worker.restUntil);
-
-// a protected spot is skipped rather than retried forever
-const other = npcRoster.find(x => x !== worker);
-other.plan = null; other.planIndex = 0; other.stash = 50; other.restUntil = 0; other.provokedBy = null;
-other.pos = [other.home[0], 64, other.home[1]];
-const otherPlan = ctx.buildPlanFor(other);
-if (otherPlan) {
-    world.protectedBlocks[otherPlan[0].join(",")] = true;
-    other.plan = otherPlan; other.planIndex = 0;
-    other.job = "build"; other.buildSpot = otherPlan[0];
-    other.pos = [otherPlan[0][0] + 0.5, otherPlan[0][1], otherPlan[0][2] + 0.5];
-    const idxBefore = other.planIndex;
-    ctx.workNpc(other);
-    check("a protected spot is skipped, not retried", other.planIndex === idxBefore + 1, other.planIndex);
-    check("a skipped spot costs no material", other.stash === 50, other.stash);
-    world.protectedBlocks = {};
-}
-
-// a fight interrupts work
-worker.provokedBy = "a";
-world.worldChanges.length = 0;
-worker.job = "gather"; worker.workBlock = [treeX, 64, treeZ];
-worker.pos = [treeX + 0.5, 64, treeZ + 0.5];
-world.blocks[treeX + ",64," + treeZ] = "Maple Log";
-ctx.workNpc(worker);
-check("they stop working when attacked", world.worldChanges.length === 0, JSON.stringify(world.worldChanges));
-worker.provokedBy = null;
-
-check("/npcs lists them", ctx.playerCommand("a", "/npcs") === true, "");
-check("someone else's mesh entity is not an NPC", (() => {
-    const before = world.log.length;
-    ctx.onPlayerDamagingMeshEntity("a", "not-an-npc", 5);
-    ctx.onPlayerBreakMeshEntity("a", "not-an-npc");
-    return world.log.length === before;
-})(), "");
 
 // -------------------------------------------------------------------- commands
 world.inv.a = [];

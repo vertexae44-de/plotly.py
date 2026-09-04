@@ -12,7 +12,7 @@
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
 | **Repair Kit** | Craftable. `/repair` restores half of whatever you're holding's max durability. |
 | **Bulwark shield** | Right-click it into your off-hand and fight with a sword at the same time — it blocks 60% passively. Or hold it and right-click to raise it by hand. |
-| **Off-hand slot** | Slot 0 carries a second item: right-click, the touchscreen button, or a drag swaps it in. Shown as a status icon. |
+| **Off-hand slot** | A backpack slot (outside the hotbar) carries a second item: right-click, the touchscreen button, or a drag swaps it in. Shown as a status icon. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
@@ -20,7 +20,6 @@
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your nametag and your name in chat. |
 | **Death announcements** | One clean message and a server-wide toll for every death — no double kill messages. |
-| **NPCs** | Player-model people with trades — they chop, mine, build their own huts, talk, fight back and flee. |
 
 ## Install
 
@@ -210,41 +209,6 @@ resurrection: {
 
 Set `ban.mode: "kick"` to go back to permanent bans (`/bans` and `/unban` still work in that mode).
 
-## NPCs
-
-Four named people live around spawn. They are **`Person` mesh entities — the engine's actual player
-model** — wearing one of Bloxd's twelve NPC skins, not mobs wearing a nametag. Nothing about them
-runs on mob AI: this script moves them, turns them, fights with them and kills them.
-
-- **They walk.** A step every 0.1 s toward wherever they are headed, following the ground beneath
-  them and turning to face their direction of travel. They don't teleport or slide.
-- **They think** once a second, in order of urgency: flee if losing → chase whoever hit them →
-  stop and greet a player who walked up → **go to work** → otherwise wander and mutter.
-- **They work for real.** Every NPC has a trade. A **lumberjack** hunts logs; a **miner** hunts
-  Stone, Coal, Iron and Gravel. They walk to what they found, break it — an actual block change in
-  your world — and bank it. With material in hand they build a **hut** at their own plot: floor,
-  four walls with a doorway, roof, one block every half second, lumberjacks in planks and miners in
-  stone. When it's finished they say so and take a break.
-- **They fight back.** Provoked, they run you down and hit for 8 on a 1.2 s cooldown, but only from
-  inside 2.6 blocks. They are never hostile first — they only fight people who start it, which is
-  most of what makes them read as people.
-- **They give up.** Under 30% health they turn and run directly away from you.
-- **They stay themselves.** Name, skin, personality and home survive death; `Vex the wizard` comes
-  back as `Vex the wizard` after 90 s.
-
-Each has one of four personalities — **friendly**, **cocky**, **quiet**, **trader** — which decides
-every line they say. Chat is rate-limited per NPC, and greetings are once a minute per player, so a
-scrap never floods the channel.
-
-**Three rules keep them from griefing you.** They only break blocks on their own trade's list
-(logs, or stone and ore — never your builds), never outside their own 30-block patch, and every
-change goes through `attemptWorldChangeBlock`, so spawn protection and any other plugin can refuse
-it. A refused spot is skipped rather than retried forever. Being attacked stops work immediately.
-
-`/npcs` lists who is alive, their trade, what they're doing, what they've stashed and their health. `npcs.dropsLifeOrb` is **off** by
-default — turning it on makes NPC hunting an alternative source of hearts, which weakens the PvP
-economy.
-
 ## Wind Charge
 
 A standalone item — not the mace's own mid-air ability, a separate thing anyone can carry. Bloxd has
@@ -270,8 +234,11 @@ piece in the game, not only this mod's own gear — and keeps a mace or spear's 
 
 Bloxd has **no off-hand slot**. Every inventory cell — slot 0, the top-left one, included — is
 plain numbered storage the engine treats identically; there is no equip slot anywhere in the API.
-So slot 0 is reserved *by convention*: a rule this script enforces by re-reading that one slot
-every tick. Whatever sits there is "off-handed".
+So one slot is reserved *by convention*: a rule this script enforces by re-reading it every tick.
+Whatever sits there is "off-handed".
+
+**It lives outside the hotbar.** Bloxd's hotbar is indexes 0-9, so the off-hand is index **10** —
+the first cell of your backpack, top-left of the inventory grid. It costs you no weapon slot.
 
 Three ways in, **none of which need the chat box**:
 
@@ -280,7 +247,7 @@ Three ways in, **none of which need the chat box**:
   This is how you equip a shield: hold it, right-click, done — the same gesture as Minecraft's F.
 - **The on-screen action button** (labelled `🛡 Off-hand`) does the same swap for touchscreen
   players, via Bloxd's own `touchscreenActionButton` option and `onTouchscreenActionButton`.
-- **Dragging an item into slot 0** in the inventory screen.
+- **Dragging an item into that backpack slot** in the inventory screen.
 
 `/offhand` is still there as a chat fallback, and `/shield` raises a held shield by hand for anyone
 who'd rather time their own blocks than let the off-hand one soak automatically.
@@ -301,14 +268,14 @@ off-hand above:
   - **Hold it and right-click** → it goes into your off-hand and guards you passively. No chat.
   - **`/shield`** raises a held shield manually instead — the classic weapon-style toggle, for
     timing your own blocks.
-  - Either route parks it in slot 0 (`offhand.slotIndex`, the top-left cell of the
+  - Either route parks it in the off-hand slot (`offhand.slotIndex`, top-left of the
     inventory grid) and it protects you automatically, every tick, with your main hand free for a
     weapon — no clicking needed. This is a rule this script enforces on an ordinary slot, not a
     native engine feature, so it only works because the script checks that exact slot on every
     tick; putting the Bulwark in any other slot does nothing special.
   - Either way, while active it tops up your numeric shield (Bloxd's own
     `setShieldAmount`/`getShieldAmount` resource — the same one Golden Apples feed), blocks
-    `shield.blockFraction` (60% by default) of incoming **player and NPC** damage, and drains your
+    `shield.blockFraction` (60% by default) of incoming **player** damage, and drains your
     shield instead of your health for the part it absorbed. The off-hand slot is checked first, so
     if both are somehow active the passive one takes priority.
 - **For PvP that means shield + sword at once:** right-click the Bulwark, select your sword, and you
@@ -324,17 +291,14 @@ off-hand above:
   Switching away from a hand-raised shield, or dying, also auto-lowers it — checked once a tick,
   same tick that syncs the off-hand slot.
 
-**Scope, stated plainly:** blocking covers player-vs-player hits and this mod's NPCs (both go
-through code this script controls). It does **not** reduce damage from real Bloxd mobs
-(`onMobDamagingPlayer` isn't hooked) or crystal blasts (explosions bypass it, as in most games).
+**Scope, stated plainly:** blocking covers player-vs-player hits (the path this script controls).
+It does **not** reduce damage from real Bloxd mobs (`onMobDamagingPlayer` isn't hooked) or crystal
+blasts (explosions bypass it, as in most games).
 
-**Item-choice caveat:** the Bulwark is built on `Brown Paintball Explosive Item`, which Bloxd
-lists as one of its throwable items (its own default throw/impact behaviour exists client-side,
-outside this script's control). Raising/lowering only hooks the **right-click (alt-action)**, so
-normal use isn't affected — but if a player **left-clicks/attacks** while holding it, the engine's
-own throw behaviour could fire instead of a normal punch. If that turns out to be a problem in
-testing, swap `CONFIG.shield.item` for a plain non-throwable item (e.g. `Iron Gauntlets`) — the
-recipe and everything else keeps working unchanged.
+**Why a plain `Brown Paintball`:** the first attempt used `Brown Paintball Explosive Item`, and the
+shield simply did not work — that item is one of Bloxd's **native throwables**, so the engine's own
+throw behaviour fired on click instead of this script's. The plain paintball has no built-in click
+behaviour to fight with, so right-click reaches the off-hand swap as intended.
 
 ## Deaths## Deaths — one message, one sound, every time
 
@@ -385,7 +349,6 @@ instead of eliminations.
 | `/repair` | everyone | Repair whatever you're holding using a Repair Kit |
 | `/offhand` | everyone | Swap what you're holding into the off-hand slot (works on the shield too) |
 | `/shield` | everyone | Raise or lower a held shield by hand, instead of off-handing it |
-| `/npcs` | everyone | Who is alive, their skin, personality and health |
 | `/give mace\|spear\|windcharge\|repairkit\|shield\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
@@ -435,7 +398,7 @@ cd test && node test.js
 scaling both ways, portals and their cooldown, terrain generation (determinism, the nether's floor,
 lava and ceiling, end islands and void, chunks never rebuilt, the overworld left alone), crystal
 blast falloff and kill credit, the boat bonus, exile to the Void and the resurrection price,
-Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed, NPCs being player models rather than
+Void platform and orb rarity, the durability bar, anonymity in chat, on nametags and in the killfeed
 mobs, walking a step at a time, greeting, retaliating in range and on cooldown, fleeing, dying and
 coming back as the same person, finding and chopping timber from the top of a
 trunk down, refusing to reach outside their patch, building a hut with the right material and
@@ -443,7 +406,7 @@ skipping protected spots, the Wind Charge item's own cooldown and consumption, t
 interferes with the mace's own charge, that /repair restores durability without overshooting and
 keeps a mace's bespoke tooltip in sync, the shield's block fraction and shield-drain, its off-arm
 mesh and HUD chip appearing and clearing, an empty shield auto-breaking, an untended raised shield
-auto-lowering on the next tick, that NPC attacks respect it too, and that every death sends exactly
+auto-lowering on the next tick, and that every death sends exactly
 one message and one toll however it happened, both apples (heal, shield, regen, fire
 resistance), smash damage against players and mobs, Density and Wind Burst, the spear lunge,
 durability derivation and breakage, crafting registration and costs, elimination and unban, and

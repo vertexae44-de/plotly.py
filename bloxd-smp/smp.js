@@ -11,15 +11,14 @@
 //  Repair Kit       craft from Iron Fragment + Stick, /repair to restore wear
 //  Bulwark shield   right click it into your off-hand: blocks 60% while you
 //                   fight with a sword. /shield raises one by hand instead
-//  Off-hand         slot 0 carries a second item. Right click, the touchscreen
-//                   button, or a drag puts it there. /offhand from chat
+//  Off-hand         your backpack's first slot carries a second item, outside
+//                   the hotbar. Right click, the touchscreen button, or a drag
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
 //  !anon            hides your nametag and your name in chat
-//  NPCs             player-model people who chop, mine, build huts, chat and fight
 //  Crafting         mace, spear, apples, portals and crystals have recipes
 //
 //  Everything is tunable in CONFIG. Bloxd health runs 0-100, not 0-20,
@@ -192,10 +191,10 @@ const CONFIG = {
     },
 
     // ---- Off-hand -------------------------------------------------------------
-    // Bloxd has NO off-hand slot: every inventory cell, slot 0 included, is
-    // plain numbered storage the engine treats identically. So slot 0 is
-    // reserved by convention instead - a rule this script enforces, checked
-    // every tick. Whatever sits there is "off-handed": it shows as a status
+    // Bloxd has NO off-hand slot: every inventory cell is plain numbered
+    // storage the engine treats identically. So the first backpack slot (the
+    // one just past the hotbar) is reserved by convention instead - a rule
+    // this script enforces, checked every tick. Whatever sits there is "off-handed": it shows as a status
     // effect icon, and if it happens to be a Bulwark it protects you
     // automatically, leaving your main hand free for a sword. Right click a
     // plain item to swap it in, right click with an empty hand to take it
@@ -205,7 +204,10 @@ const CONFIG = {
     // variable, so a rejoin or a server restart can never lose it.
     offhand: {
         enabled: true,
-        slotIndex: 0,        // the top-left cell of the inventory grid
+        // The hotbar is indexes 0-9, so 10 is the FIRST BACKPACK SLOT - the
+        // top-left cell of the inventory grid, outside the hotbar entirely.
+        // The off-hand costs you no hotbar space this way.
+        slotIndex: 10,
         effectIcon: true,    // show the carried item as a status effect icon
         particles: true,     // a glint puff on every swap
         swapSound: "swoosh",
@@ -228,18 +230,23 @@ const CONFIG = {
     // headerChips option), while it soaks a fraction of incoming player
     // damage using Bloxd's own numeric shield resource.
     //
-    // Scope: blocks player-vs-player hits and NPC attacks. It does not reduce
-    // real-mob damage (never hooked to onMobDamagingPlayer) or crystal blasts
-    // (explosions bypass it, same as most games).
+    // Scope: blocks player-vs-player hits. It does not reduce real-mob damage
+    // (never hooked to onMobDamagingPlayer) or crystal blasts (explosions
+    // bypass it, same as most games).
     shield: {
         enabled: true,
-        item: "Brown Paintball Explosive Item",   // a real Bloxd item, held as the visual base
+        // A plain Brown Paintball, deliberately NOT the "Brown Paintball
+        // Explosive Item": that one is a native throwable, so the engine's own
+        // throw behaviour fired on click instead of this script's, which is
+        // what stopped the shield working at all. This one has no built-in
+        // click behaviour to fight with.
+        item: "Brown Paintball",
         name: "Bulwark",
         durability: 500,
 
         raiseShieldAmount: 30,     // tops shield up to at least this when raised
         maxShieldOption: 60,       // raises the client's shield ceiling so it can show
-        blockFraction: 0.6,        // fraction of incoming player/NPC damage blocked
+        blockFraction: 0.6,        // fraction of incoming player damage blocked
         blockDurabilityCost: 2,    // per hit blocked
 
         armNode: "ArmLeftMesh",    // the "off-hand" arm - opposite the weapon hand
@@ -488,113 +495,9 @@ const CONFIG = {
         colour: "#9aa0a6",
     },
 
-    // ---- NPCs ---------------------------------------------------------------
-    // Real player models, not mobs: Bloxd's "Person" mesh entity wearing one of
-    // the game's NPC skins, moved and fought by this script rather than mob AI.
-    npcs: {
-        enabled: true,
-        count: 4,
-        home: [0, 0],            // xz they live around
-        wanderRadius: 45,
-        respawnDelayMs: 90000,
-        thinkEveryTicks: 20,     // decisions once a second
-        moveEveryTicks: 2,       // footsteps ten times a second
-
-        // Full-body NPC skins, applied through the "head" part like the engine does.
-        skins: [
-            "farmer", "trader", "monster_hunter_lorenzo", "wizard",
-            "chef", "painter_spencer", "portal_mage", "trader_blue",
-        ],
-        names: [
-            "Kade", "Milo", "Rin", "Ash", "Juno",
-            "Wren", "Otto", "Sable", "Pip", "Vex",
-        ],
-
-        maxHealth: 100,
-        walkSpeed: 0.16,         // blocks per movement step
-        runSpeedMultiplier: 1.7,
-        stepUp: 1,               // how high a ledge they can walk up
-        arriveRadius: 1.5,
-
-        attackRange: 2.6,
-        attackDamage: 8,
-        attackCooldownMs: 1200,
-
-        // ---- Work -----------------------------------------------------------
-        // They earn their keep: gather their trade's material, then spend it
-        // building a hut at their own plot, one block at a time.
-        work: {
-            enabled: true,
-            workEveryTicks: 10,      // one block action every half second
-            radius: 30,              // how far from home they will work
-            searchSamples: 12,       // random probes per hunt for something to do
-            searchDepth: 14,         // how tall a column each probe reads
-            reach: 3.2,              // how close they must stand to a block
-            hut: { half: 2, height: 3 },
-            restAfterHutMs: 60000,
-
-            trades: {
-                lumberjack: {
-                    gathers: [
-                        "Maple Log", "Pine Log", "Plum Log", "Cedar Log", "Aspen Log",
-                        "Jungle Log", "Palm Log", "Pear Log", "Cherry Log",
-                    ],
-                    buildsWith: "Maple Wood Planks",
-                    working: ["timber", "few more logs and im set", "this axe is blunt"],
-                },
-                miner: {
-                    gathers: ["Stone", "Coal Ore", "Iron Ore", "Gravel"],
-                    buildsWith: "Stone",
-                    working: ["found a vein", "digging down", "just stone again"],
-                },
-            },
-        },
-
-        noticeRadius: 12,
-        greetCooldownMs: 60000,
-        chatterMinMs: 45000,
-        chatterMaxMs: 150000,
-        fleeAtHpFraction: 0.3,
-        forgetProvokerMs: 20000,
-        chatColour: "#c9d1d9",
-        dropsLifeOrb: false,     // true makes NPC hunting an orb source
-
-        // What they say. One personality per NPC, picked when they spawn.
-        personalities: {
-            friendly: {
-                greet: ["hey", "oh hi", "yo", "hey there", "didnt see you"],
-                idle: ["nice out here", "anyone seen my pickaxe", "brb mining", "this place is huge"],
-                hurt: ["ow", "what was that for", "hey!!", "im not even armed"],
-                flee: ["nope nope nope", "im out", "not worth it"],
-                built: ["hut's done", "not bad if i say so myself", "home sweet home"],
-            },
-            cocky: {
-                greet: ["sup", "you again", "look who it is", "yeah?"],
-                idle: ["someone fight me", "bored", "20 hearts by friday", "easy game"],
-                hurt: ["thats it?", "big mistake", "keep going", "cute"],
-                flee: ["ill be back", "lucky hit", "this isnt over"],
-                built: ["built that in a day", "better than yours", "done already"],
-            },
-            quiet: {
-                greet: ["...", "hm", "hey.", "oh"],
-                idle: ["...", "hm.", "quiet today"],
-                hurt: ["stop", "why", "..."],
-                flee: ["no", "leaving"],
-                built: ["done.", "hm. finished"],
-            },
-            trader: {
-                greet: ["got any moonstone?", "trading hearts, interested?", "hey, buying obsidian"],
-                idle: ["wtb moonstone paying well", "selling gapples", "anyone got knight hearts"],
-                hurt: ["hey! im a trader!", "thats bad for business", "rude"],
-                flee: ["fine fine take it", "not paid enough for this"],
-                built: ["shop's open", "come see the new place"],
-            },
-        },
-    },
-
     commands: {
         publicCommands: ["hp", "hearts", "withdraw", "repair", "offhand", "shield", "smphelp",
-            "where", "anon", "orbs", "npcs"],
+            "where", "anon", "orbs"],
         adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
     },
 };
@@ -820,8 +723,9 @@ function shieldAttributes(durabilityLeft) {
     const left = durabilityLeft == null ? max : durabilityLeft;
     return {
         customDisplayName: c.name,
-        customDescription: "Right click to raise it.\n"
-            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while raised.\n"
+        customDescription: "Right click to wear it in your off-hand.\n"
+            + "Blocks " + Math.round(c.blockFraction * 100) + "% of incoming damage while worn,\n"
+            + "leaving your main hand free for a weapon.\n"
             + durabilityBar(left, max),
         customAttributes: { [ATTR_SHIELD]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
     };
@@ -1954,529 +1858,6 @@ function explodeCrystal(placerId, x, y, z) {
 }
 
 // -----------------------------------------------------------------------------
-// NPCs
-// -----------------------------------------------------------------------------
-
-// One roster entry per NPC. The body is destroyed and rebuilt; the person is not.
-const npcRoster = [];
-const npcByEntity = {};
-let npcTicks = 0;
-
-function randomOf(list) {
-    return list[Math.floor(Math.random() * list.length)];
-}
-
-function npcSay(npc, kind) {
-    const lines = CONFIG.npcs.personalities[npc.personality][kind];
-    if (!lines || !lines.length) {
-        return;
-    }
-    api.broadcastMessage(npc.name + ": " + randomOf(lines), { color: CONFIG.npcs.chatColour });
-    npc.lastChat = api.now();
-}
-
-function buildNpcRoster() {
-    const n = CONFIG.npcs;
-    const personalities = Object.keys(n.personalities);
-    const names = n.names.slice();
-    const skins = n.skins.slice();
-
-    for (let i = 0; i < n.count; i++) {
-        // Names and skins are drawn without replacement, so no two NPCs are twins.
-        const name = names.length
-            ? names.splice(Math.floor(Math.random() * names.length), 1)[0]
-            : "Villager " + (i + 1);
-        const skin = skins.length
-            ? skins.splice(Math.floor(Math.random() * skins.length), 1)[0]
-            : "farmer";
-        const angle = (i / n.count) * Math.PI * 2;
-
-        const trades = Object.keys(n.work.trades);
-        npcRoster.push({
-            name: name,
-            skin: skin,
-            trade: trades[i % trades.length],
-            personality: personalities[i % personalities.length],
-            // Spread their homes around the centre so they are not all in a pile.
-            home: [
-                n.home[0] + Math.cos(angle) * n.wanderRadius * 0.6,
-                n.home[1] + Math.sin(angle) * n.wanderRadius * 0.6,
-            ],
-            entityId: null,
-            hp: n.maxHealth,
-            pos: null,
-            target: null,
-            running: false,
-            deadUntil: 0,
-            lastChat: 0,
-            lastAttack: 0,
-            nextChatter: api.now() + n.chatterMinMs,
-            provokedBy: null,
-            provokedAt: 0,
-            greeted: {},
-            stash: 0,
-            workBlock: null,      // the block they are walking over to break
-            plan: null,           // their hut, as a list of positions
-            planIndex: 0,
-            restUntil: 0,
-        });
-    }
-}
-
-/** Finds the surface to stand on near a column, so nobody floats or sinks. */
-function groundYNear(x, y, z) {
-    const n = CONFIG.npcs;
-    const fx = Math.floor(x);
-    const fz = Math.floor(z);
-    const from = Math.floor(y) + n.stepUp;
-
-    for (let probe = from; probe > from - 12; probe--) {
-        if (!api.isBlockInLoadedChunk(fx, probe, fz)) {
-            continue;
-        }
-        const here = api.getBlock(fx, probe, fz);
-        const above = api.getBlock(fx, probe + 1, fz);
-        if (here && here !== "Air" && (!above || above === "Air")) {
-            return probe + 1;
-        }
-    }
-    return null;   // nothing to stand on; keep the height we had
-}
-
-function spawnNpc(npc) {
-    const n = CONFIG.npcs;
-    const entityId = api.attemptCreateMeshEntity(
-        "Person",
-        { size: 1, pose: "standing", textures: { head: npc.skin } },
-        npc.name
-    );
-    if (entityId == null) {
-        // The mesh-entity budget is full. Try again shortly rather than give up.
-        npc.deadUntil = api.now() + 10000;
-        return;
-    }
-
-    npc.entityId = entityId;
-    npc.hp = n.maxHealth;
-    npc.provokedBy = null;
-    npc.target = null;
-    npcByEntity[entityId] = npc;
-
-    const y = groundYNear(npc.home[0], 80, npc.home[1]);
-    npc.pos = [npc.home[0], y == null ? 70 : y, npc.home[1]];
-    api.setPosition(entityId, npc.pos[0], npc.pos[1], npc.pos[2]);
-}
-
-function despawnNpc(npc) {
-    if (npc.entityId != null) {
-        api.deleteMeshEntity(npc.entityId);
-        delete npcByEntity[npc.entityId];
-    }
-    npc.entityId = null;
-    npc.pos = null;
-    npc.target = null;
-    npc.provokedBy = null;
-}
-
-function nearestPlayerTo(pos, radius) {
-    const ids = api.getPlayerIds();
-    let best = null;
-    let bestDist = radius;
-    for (let i = 0; i < ids.length; i++) {
-        const other = api.getPosition(ids[i]);
-        if (!other) {
-            continue;
-        }
-        const dx = other[0] - pos[0];
-        const dy = other[1] - pos[1];
-        const dz = other[2] - pos[2];
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance < bestDist) {
-            bestDist = distance;
-            best = ids[i];
-        }
-    }
-    return best;
-}
-
-function distanceTo(npc, entityId) {
-    const other = api.getPosition(entityId);
-    if (!other || !npc.pos) {
-        return Infinity;
-    }
-    const dx = other[0] - npc.pos[0];
-    const dy = other[1] - npc.pos[1];
-    const dz = other[2] - npc.pos[2];
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-/** Walks one step toward the current target and turns to face the way it is going. */
-function stepNpc(npc) {
-    const n = CONFIG.npcs;
-    if (npc.entityId == null || !npc.target || !npc.pos) {
-        return;
-    }
-    const dx = npc.target[0] - npc.pos[0];
-    const dz = npc.target[1] - npc.pos[2];
-    const flat = Math.sqrt(dx * dx + dz * dz);
-    if (flat < n.arriveRadius) {
-        npc.target = null;
-        return;
-    }
-
-    const speed = n.walkSpeed * (npc.running ? n.runSpeedMultiplier : 1);
-    const x = npc.pos[0] + (dx / flat) * speed;
-    const z = npc.pos[2] + (dz / flat) * speed;
-    const ground = groundYNear(x, npc.pos[1], z);
-    const y = ground == null ? npc.pos[1] : ground;
-
-    npc.pos = [x, y, z];
-    api.setPosition(npc.entityId, x, y, z);
-    api.setEntityHeading(npc.entityId, Math.atan2(dx, dz));
-}
-
-function npcAttack(npc, targetId) {
-    const n = CONFIG.npcs;
-    const now = api.now();
-    if (now - npc.lastAttack < n.attackCooldownMs) {
-        return;
-    }
-    if (distanceTo(npc, targetId) > n.attackRange) {
-        return;
-    }
-    npc.lastAttack = now;
-    const damage = CONFIG.shield.enabled && isPlayer(targetId)
-        ? shieldBlock(targetId, n.attackDamage)
-        : n.attackDamage;
-    // Self-inflicted is the documented way for game code to apply damage.
-    api.attemptApplyDamage({
-        eId: targetId,
-        hitEId: targetId,
-        attemptedDmgAmt: damage,
-        withItem: npc.name,
-    });
-    api.broadcastSound("hit1", 0.7, 1.0, { playerIdOrPos: npc.pos, maxHearDist: 20 });
-}
-
-function tradeOf(npc) {
-    return CONFIG.npcs.work.trades[npc.trade];
-}
-
-function withinWorkArea(npc, x, z) {
-    const r = CONFIG.npcs.work.radius;
-    return Math.abs(x - npc.home[0]) <= r && Math.abs(z - npc.home[1]) <= r;
-}
-
-/**
- * Hunts for something of their trade to break, by probing random columns near
- * home. Bounded on purpose: a handful of probes a second, never a full scan.
- */
-function findWorkBlock(npc) {
-    const w = CONFIG.npcs.work;
-    const wanted = tradeOf(npc).gathers;
-
-    for (let i = 0; i < w.searchSamples; i++) {
-        const x = Math.floor(npc.home[0] + (Math.random() * 2 - 1) * w.radius);
-        const z = Math.floor(npc.home[1] + (Math.random() * 2 - 1) * w.radius);
-        // Start above head height so a probe landing on a tree sees its trunk.
-        const from = Math.floor(npc.pos ? npc.pos[1] : 64) + 5;
-
-        for (let y = from; y > from - w.searchDepth; y--) {
-            if (!api.isBlockInLoadedChunk(x, y, z)) {
-                continue;
-            }
-            if (wanted.indexOf(api.getBlock(x, y, z)) !== -1) {
-                return [x, y, z];
-            }
-        }
-    }
-    return null;
-}
-
-/** Lays out a small hut around the NPC's plot: floor, walls with a doorway, roof. */
-function buildPlanFor(npc) {
-    const hut = CONFIG.npcs.work.hut;
-    const cx = Math.floor(npc.home[0]);
-    const cz = Math.floor(npc.home[1]);
-    const groundY = groundYNear(cx, npc.pos ? npc.pos[1] : 70, cz);
-    if (groundY == null) {
-        return null;
-    }
-    const base = groundY - 1;
-    const plan = [];
-
-    for (let dx = -hut.half; dx <= hut.half; dx++) {
-        for (let dz = -hut.half; dz <= hut.half; dz++) {
-            plan.push([cx + dx, base, cz + dz]);                    // floor
-            plan.push([cx + dx, base + hut.height + 1, cz + dz]);   // roof
-        }
-    }
-    for (let level = 1; level <= hut.height; level++) {
-        for (let d = -hut.half; d <= hut.half; d++) {
-            const edge = hut.half;
-            // A doorway: leave the middle of one wall open at head height and below.
-            const isDoor = d === 0 && level <= 2;
-            if (!isDoor) {
-                plan.push([cx + d, base + level, cz - edge]);
-            }
-            plan.push([cx + d, base + level, cz + edge]);
-            plan.push([cx - edge, base + level, cz + d]);
-            plan.push([cx + edge, base + level, cz + d]);
-        }
-    }
-    return plan;
-}
-
-function nextBuildSpot(npc) {
-    if (!npc.plan) {
-        npc.plan = buildPlanFor(npc);
-        npc.planIndex = 0;
-    }
-    if (!npc.plan) {
-        return null;
-    }
-    const material = tradeOf(npc).buildsWith;
-
-    // Skip anything already standing, so a rebuilt NPC does not redo finished work.
-    while (npc.planIndex < npc.plan.length) {
-        const spot = npc.plan[npc.planIndex];
-        if (!api.isBlockInLoadedChunk(spot[0], spot[1], spot[2])
-            || api.getBlock(spot[0], spot[1], spot[2]) !== material) {
-            return spot;
-        }
-        npc.planIndex++;
-    }
-    return null;
-}
-
-function nearEnough(npc, spot) {
-    if (!npc.pos) {
-        return false;
-    }
-    const dx = spot[0] + 0.5 - npc.pos[0];
-    const dy = spot[1] - npc.pos[1];
-    const dz = spot[2] + 0.5 - npc.pos[2];
-    return Math.sqrt(dx * dx + dy * dy + dz * dz) <= CONFIG.npcs.work.reach;
-}
-
-/** The actual swing: one block broken or placed, only ever inside their own patch. */
-function workNpc(npc) {
-    const w = CONFIG.npcs.work;
-    if (!w.enabled || npc.entityId == null || !npc.pos || npc.provokedBy) {
-        return;
-    }
-
-    if (npc.job === "build" && npc.buildSpot && nearEnough(npc, npc.buildSpot)) {
-        const spot = npc.buildSpot;
-        const result = api.attemptWorldChangeBlock(null, spot[0], spot[1], spot[2],
-            tradeOf(npc).buildsWith, {});
-        npc.buildSpot = null;
-        if (result === "preventChange") {
-            npc.planIndex++;   // something is protecting that spot; move on
-            return;
-        }
-        npc.stash--;
-        npc.planIndex++;
-        if (nextBuildSpot(npc) == null) {
-            npcSay(npc, "built");
-            npc.restUntil = api.now() + w.restAfterHutMs;
-        }
-        return;
-    }
-
-    if (npc.job === "gather" && npc.workBlock && nearEnough(npc, npc.workBlock)) {
-        const spot = npc.workBlock;
-        npc.workBlock = null;
-        if (!withinWorkArea(npc, spot[0], spot[2])) {
-            return;   // never reach outside their own patch
-        }
-        if (tradeOf(npc).gathers.indexOf(api.getBlock(spot[0], spot[1], spot[2])) === -1) {
-            return;   // someone beat them to it
-        }
-        const result = api.attemptWorldChangeBlock(null, spot[0], spot[1], spot[2], "Air", {});
-        if (result !== "preventChange") {
-            npc.stash++;
-        }
-    }
-}
-
-/** One NPC's turn to think, ordered by urgency: survival, a fight, people, then life. */
-function thinkNpc(npc) {
-    const n = CONFIG.npcs;
-    const now = api.now();
-
-    if (npc.entityId == null) {
-        if (now >= npc.deadUntil) {
-            spawnNpc(npc);
-        }
-        return;
-    }
-    if (!npc.pos) {
-        return;
-    }
-
-    // Losing badly: turn and run, and say so.
-    if (npc.hp < n.maxHealth * n.fleeAtHpFraction && npc.provokedBy) {
-        const away = api.getPosition(npc.provokedBy);
-        if (away) {
-            npc.running = true;
-            npc.target = [
-                npc.pos[0] + (npc.pos[0] - away[0]) * 3,
-                npc.pos[2] + (npc.pos[2] - away[2]) * 3,
-            ];
-        }
-        if (now - npc.lastChat > 6000) {
-            npcSay(npc, "flee");
-        }
-        return;
-    }
-
-    // Someone hit them recently: go after them until they forget about it.
-    if (npc.provokedBy && now - npc.provokedAt < n.forgetProvokerMs) {
-        const chase = api.getPosition(npc.provokedBy);
-        if (chase) {
-            npc.running = true;
-            npc.target = [chase[0], chase[2]];
-            npcAttack(npc, npc.provokedBy);
-        }
-        return;
-    }
-    if (npc.provokedBy) {
-        npc.provokedBy = null;
-        npc.running = false;
-    }
-
-    // Someone walked up: stop, face them, and say hello - but not every time.
-    const nearby = nearestPlayerTo(npc.pos, n.noticeRadius);
-    if (nearby) {
-        const at = api.getPosition(nearby);
-        if (at && npc.entityId != null) {
-            api.setEntityHeading(npc.entityId, Math.atan2(at[0] - npc.pos[0], at[2] - npc.pos[2]));
-        }
-        npc.target = null;
-        if (now - (npc.greeted[nearby] || 0) > n.greetCooldownMs) {
-            npc.greeted[nearby] = now;
-            npcSay(npc, "greet");
-        }
-        return;
-    }
-
-    // Nobody around: get to work. Build if there is material and hut left to
-    // raise, otherwise go and gather more of the trade's material.
-    if (n.work.enabled && now >= npc.restUntil) {
-        const spot = npc.stash > 0 ? nextBuildSpot(npc) : null;
-        if (spot) {
-            npc.job = "build";
-            npc.buildSpot = spot;
-            npc.running = false;
-            npc.target = [spot[0] + 0.5, spot[2] + 0.5];
-            if (now >= npc.nextChatter) {
-                npcSay(npc, "working");
-                npc.nextChatter = now + n.chatterMinMs
-                    + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
-            }
-            return;
-        }
-
-        npc.job = "gather";
-        if (!npc.workBlock) {
-            npc.workBlock = findWorkBlock(npc);
-        }
-        if (npc.workBlock) {
-            npc.running = false;
-            npc.target = [npc.workBlock[0] + 0.5, npc.workBlock[2] + 0.5];
-            if (now >= npc.nextChatter) {
-                npcSay(npc, "working");
-                npc.nextChatter = now + n.chatterMinMs
-                    + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
-            }
-            return;
-        }
-    }
-
-    // Nothing to do: wander the patch, mutter now and then.
-    npc.job = "idle";
-    if (now >= npc.nextChatter) {
-        npcSay(npc, "idle");
-        npc.nextChatter = now + n.chatterMinMs
-            + Math.random() * (n.chatterMaxMs - n.chatterMinMs);
-    }
-    if (!npc.target) {
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * n.wanderRadius;
-        npc.running = false;
-        npc.target = [
-            npc.home[0] + Math.cos(angle) * distance,
-            npc.home[1] + Math.sin(angle) * distance,
-        ];
-    }
-}
-
-function tickNpcs() {
-    const n = CONFIG.npcs;
-    if (!n.enabled) {
-        return;
-    }
-    npcTicks++;
-    if (npcRoster.length === 0) {
-        buildNpcRoster();
-    }
-
-    if (npcTicks % n.thinkEveryTicks === 0) {
-        for (let i = 0; i < npcRoster.length; i++) {
-            thinkNpc(npcRoster[i]);
-        }
-    }
-    if (npcTicks % n.moveEveryTicks === 0) {
-        for (let i = 0; i < npcRoster.length; i++) {
-            stepNpc(npcRoster[i]);
-        }
-    }
-    if (n.work.enabled && npcTicks % n.work.workEveryTicks === 0) {
-        for (let i = 0; i < npcRoster.length; i++) {
-            workNpc(npcRoster[i]);
-        }
-    }
-}
-
-function npcHurt(entityId, byPlayer, damage) {
-    const npc = npcByEntity[entityId];
-    if (!npc) {
-        return;
-    }
-    npc.hp -= damage;
-    npc.provokedBy = byPlayer;
-    npc.provokedAt = api.now();
-
-    if (npc.hp <= 0) {
-        npcKilled(entityId, byPlayer);
-        return;
-    }
-    if (api.now() - npc.lastChat > 4000) {
-        npcSay(npc, "hurt");
-    }
-}
-
-function npcKilled(entityId, byPlayer) {
-    const npc = npcByEntity[entityId];
-    if (!npc) {
-        return;
-    }
-    const where = npc.pos;
-    despawnNpc(npc);
-    npc.deadUntil = api.now() + CONFIG.npcs.respawnDelayMs;
-
-    api.broadcastMessage(CONFIG.killFeed.icon + " " + npc.name + " was killed by "
-        + displayNameOf(byPlayer), { color: CONFIG.npcs.chatColour });
-
-    if (CONFIG.npcs.dropsLifeOrb && where) {
-        api.createItemDrop(where[0], where[1] + 1, where[2], CONFIG.orb.item, 1,
-            false, orbAttributes(CONFIG.orb.hp), CONFIG.orb.despawnMs, byPlayer,
-            { doPhysics: true });
-    }
-}
-
-// -----------------------------------------------------------------------------
 // Exile to the Void, and the way back
 // -----------------------------------------------------------------------------
 
@@ -2929,7 +2310,6 @@ function tick() {
     if (CONFIG.dimensions.enabled) {
         processGeneration();
     }
-    tickNpcs();
 }
 
 function onBlockStandStart(playerId, x, y, z, blockName) {
@@ -3060,14 +2440,6 @@ function onPlayerDamagingMob(playerId, mobId, damageDealt) {
     return handleWeaponHit(playerId, mobId, damageDealt);
 }
 
-function onPlayerDamagingMeshEntity(playerId, damagedId, damageDealt) {
-    npcHurt(damagedId, playerId, damageDealt);
-}
-
-function onPlayerBreakMeshEntity(playerId, entityId) {
-    npcKilled(entityId, playerId);
-}
-
 function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
     // Only breaking wears a tool down; placing a block does not.
     if (toBlock !== "Air" || fromBlock === "Air") {
@@ -3167,7 +2539,7 @@ function playerCommand(playerId, command) {
                 + CONFIG.spear.name + " and " + CONFIG.windCharge.name + " | "
                 + "craft a " + CONFIG.repair.name + " and hold a damaged item, then /repair | "
                 + "craft a " + CONFIG.shield.name + " and RIGHT CLICK it to wear it in your "
-                + "off-hand (slot " + (CONFIG.offhand.slotIndex + 1) + ", top-left) - then fight "
+                + "off-hand (the top-left slot of your backpack, not the hotbar) - then fight "
                 + "with a sword and stay guarded at the same time. Right click any item to swap "
                 + "it off-hand, right click with an empty hand to take it back, or use the "
                 + "on-screen button on mobile. /offhand and /shield do the same from chat | "
@@ -3250,20 +2622,6 @@ function playerCommand(playerId, command) {
             tell(playerId, inVoid(playerId)
                 ? r.name + "s: " + held + " / " + r.required + " - mine the green blocks."
                 : "You are not in the Void.", "#b39ddb");
-            return true;
-        }
-
-        case "npcs": {
-            const parts2 = [];
-            for (let i = 0; i < npcRoster.length; i++) {
-                const npc = npcRoster[i];
-                parts2.push(npc.name + " the " + npc.trade
-                    + (npc.entityId == null
-                        ? " (respawning)"
-                        : " (" + (npc.job || "idle") + ", " + npc.stash + " stashed, "
-                            + Math.max(0, Math.round(npc.hp)) + " hp)"));
-            }
-            tell(playerId, parts2.length ? parts2.join(" | ") : "No NPCs yet.", "#c9d1d9");
             return true;
         }
 

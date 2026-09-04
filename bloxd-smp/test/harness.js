@@ -121,6 +121,5 @@ const CONFIG = vm.runInContext("CONFIG", ctx);
 const durabilityCache = vm.runInContext("durabilityCache", ctx);
 const genDone = vm.runInContext("genDone", ctx);
 const genQueue = vm.runInContext("genQueue", ctx);
-const npcRoster = vm.runInContext("npcRoster", ctx);
 
-module.exports = { ctx, world, api, CONFIG, durabilityCache, genDone, genQueue, npcRoster };
+module.exports = { ctx, world, api, CONFIG, durabilityCache, genDone, genQueue };
