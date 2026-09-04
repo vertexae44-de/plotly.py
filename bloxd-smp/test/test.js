@@ -673,9 +673,21 @@ check("nether has a bedrock floor", nAt(GEN.nether.floorY) === GEN.nether.blocks
 check("nether has a ceiling", nAt(GEN.nether.ceilingY) === GEN.nether.blocks.ceiling, nAt(GEN.nether.ceilingY));
 check("nether has a lava sea", nAt(GEN.nether.lavaLevel) === GEN.nether.blocks.liquid, nAt(GEN.nether.lavaLevel));
 check("chunk is marked generated", ctx.chunkGenerated("nether", Math.floor(NDIM.origin[0] / GEN.chunkSize), Math.floor(NDIM.origin[1] / GEN.chunkSize)), "");
+// Drain the whole queue first - the 5x5 around the player is still building,
+// and ore placement writes blocks every tick, so "nothing changed" only means
+// anything once there is no work left.
+let drainTicks = 0;
+while (drainTicks < 3000 && genQueue.length > 0) {
+    ctx.tick();
+    drainTicks++;
+}
+check("the generation queue drains", genQueue.length === 0, genQueue.length + " left");
 const netherSets = world.sets;
+const netherRects = world.rects.length;
 ctx.tick();
-check("a generated chunk is never rebuilt", world.sets === netherSets, world.sets + " vs " + netherSets);
+check("a generated chunk is never rebuilt",
+    world.sets === netherSets && world.rects.length === netherRects,
+    world.sets + "/" + world.rects.length + " vs " + netherSets + "/" + netherRects);
 
 // the end builds islands over void
 world.blocks = {};
@@ -707,6 +719,101 @@ check("far end columns can still be void", (() => {
     }
     return anyVoid;
 })(), "every column was solid");
+// ------------------------------------------------------------------------- ores
+// Ores replace rock below the surface. They must be deterministic (a
+// regenerated chunk has to come back identical) and must never eat the
+// surface layer, the bedrock floor or the ceiling.
+const nOres = GEN.nether.ores.map(o => o.block);
+const eOres = GEN.end.ores.map(o => o.block);
+
+check("the nether has ores configured", nOres.length > 0, nOres.join(","));
+check("the end has ores configured", eOres.length > 0, eOres.join(","));
+
+const scanColumns = (build, seedX, seedZ, count) => {
+    world.blocks = {};
+    for (let i = 0; i < count; i++) {
+        build(i, 0, seedX + i, seedZ + i * 3);
+    }
+    return world.blocks;
+};
+
+const nBlocks = scanColumns(ctx.buildNetherColumn, 0, 0, 400);
+const nFound = nOres.filter(o => Object.keys(nBlocks).some(k => nBlocks[k] === o));
+check("nether columns actually contain ores", nFound.length > 0, nFound.join(","));
+
+const eBlocks = scanColumns(ctx.buildEndColumn, 0, 0, 400);
+const eFound = eOres.filter(o => Object.keys(eBlocks).some(k => eBlocks[k] === o));
+check("end columns actually contain ores", eFound.length > 0, eFound.join(","));
+
+// the same column, built twice, must come back byte-identical
+world.blocks = {};
+ctx.buildNetherColumn(0, 0, 41, 67);
+const firstPass = JSON.stringify(world.blocks);
+world.blocks = {};
+ctx.buildNetherColumn(0, 0, 41, 67);
+check("ore placement is deterministic", JSON.stringify(world.blocks) === firstPass, "");
+
+// nothing structural may be replaced by an ore
+check("ores never replace the bedrock floor", (() => {
+    for (let i = 0; i < 400; i++) {
+        world.blocks = {};
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
+        if (world.blocks["0," + GEN.nether.floorY + ",0"] !== GEN.nether.blocks.floor) {
+            return false;
+        }
+    }
+    return true;
+})(), "");
+
+check("ores never replace the nether ceiling", (() => {
+    for (let i = 0; i < 400; i++) {
+        world.blocks = {};
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
+        if (world.blocks["0," + GEN.nether.ceilingY + ",0"] !== GEN.nether.blocks.ceiling) {
+            return false;
+        }
+    }
+    return true;
+})(), "");
+
+check("ores never replace the end's surface layer", (() => {
+    for (let i = 0; i < 400; i++) {
+        world.blocks = {};
+        ctx.buildEndColumn(0, 0, i * 11, i * 17);
+        const keys = Object.keys(world.blocks);
+        if (keys.length === 0) {
+            continue;   // open void, nothing to check
+        }
+        // the highest non-pillar block in the column is the surface
+        const ys = keys.map(k => parseInt(k.split(",")[1], 10))
+            .filter(y => world.blocks["0," + y + ",0"] !== GEN.end.blocks.pillar);
+        const topY = Math.max.apply(Math, ys);
+        if (world.blocks["0," + topY + ",0"] !== GEN.end.blocks.top) {
+            return false;
+        }
+    }
+    return true;
+})(), "");
+
+// a deeper band means a rarer ore actually stays in its band
+check("ores with a maxY stay below it", (() => {
+    const capped = GEN.nether.ores.filter(o => o.maxY !== undefined);
+    if (capped.length === 0) {
+        return true;
+    }
+    for (let i = 0; i < 400; i++) {
+        world.blocks = {};
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
+        for (const k of Object.keys(world.blocks)) {
+            const hit = capped.find(o => o.block === world.blocks[k]);
+            if (hit && parseInt(k.split(",")[1], 10) > hit.maxY) {
+                return false;
+            }
+        }
+    }
+    return true;
+})(), "");
+
 check("overworld chunks are never queued", (() => {
     world.pos.a = [0, 64, 0];
     ctx.stateOf("a").lastGenChunk = null;

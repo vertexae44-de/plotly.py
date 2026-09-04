@@ -406,6 +406,22 @@ const CONFIG = {
                 ceilingBase: 78, ceilingAmp: 9, ceilingScale: 31,
                 lavaLevel: 32,
                 accentChance: 0.06,   // magma blotches on the surface
+
+                // Ores replace the rock below the surface, never the surface
+                // itself, the bedrock floor or the ceiling. The first entry
+                // whose roll succeeds wins, so put the common ones first.
+                // Moonstone lives down near the lava - the mace costs 40 of
+                // it, so this is the reason to come here at all.
+                ores: [
+                    { block: "Coal Ore", chance: 0.030 },
+                    { block: "Iron Ore", chance: 0.020 },
+                    { block: "Gold Ore", chance: 0.012 },
+                    // Kept deliberately thin: the mace costs 40 Moonstone, and
+                    // that is meant to be an expedition, not an afternoon.
+                    { block: "Moonstone Ore", chance: 0.0015, maxY: 34 },
+                    { block: "Lunite Ore", chance: 0.0008, maxY: 28 },
+                ],
+
                 blocks: {
                     floor: "Bedrock",
                     base: "Red Sandstone",
@@ -439,6 +455,18 @@ const CONFIG = {
                 islandScale: 44, islandThreshold: 0.5,
                 thickness: 9, driftScale: 30, drift: 7,
                 pillarChance: 0.004, pillarHeight: 14,
+
+                // Richer per block than the Nether, because there is far less
+                // rock here - most End columns are open void, so a low chance
+                // would mean finding almost nothing.
+                ores: [
+                    { block: "Iron Ore", chance: 0.045 },
+                    { block: "Emerald Ore", chance: 0.025 },
+                    { block: "Moonstone Ore", chance: 0.020 },
+                    { block: "Diamond Ore", chance: 0.016 },
+                    { block: "Lunite Ore", chance: 0.008 },
+                ],
+
                 blocks: {
                     base: "Bone Block",
                     top: "White Concrete",
@@ -2077,6 +2105,38 @@ function fill(x, y1, y2, z, blockName) {
     api.setBlockRect([x, y1, z], [x, y2, z], blockName);
 }
 
+/**
+ * Sprinkles ores through the solid rock of one column, between fromY and toY
+ * inclusive. Deterministic like everything else in generation: y is folded
+ * into the seed, so a given block always rolls the same way and a regenerated
+ * chunk comes back identical rather than reshuffled.
+ *
+ * Only ever called on the rock BELOW the surface, so the top layer, the
+ * bedrock floor and the ceiling are never replaced.
+ */
+function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY) {
+    if (!ores || ores.length === 0) {
+        return;
+    }
+    for (let y = fromY; y <= toY; y++) {
+        for (let i = 0; i < ores.length; i++) {
+            const ore = ores[i];
+            if (ore.minY !== undefined && y < ore.minY) {
+                continue;
+            }
+            if (ore.maxY !== undefined && y > ore.maxY) {
+                continue;
+            }
+            // A different seed per ore and per height, so the rolls are
+            // independent rather than every ore hitting the same blocks.
+            if (hash2(localX, localZ, seed + y * 7919 + i * 104729) < ore.chance) {
+                api.setBlock(x, y, z, ore.block);
+                break;   // one ore per block: the first match in the list wins
+            }
+        }
+    }
+}
+
 /** A closed cavern: bedrock floor, rolling ground, a lava sea and a ceiling. */
 function buildNetherColumn(x, z, localX, localZ) {
     const c = CONFIG.dimensions.generation.nether;
@@ -2089,6 +2149,7 @@ function buildNetherColumn(x, z, localX, localZ) {
 
     fill(x, c.floorY, c.floorY, z, b.floor);
     fill(x, c.floorY + 1, ground - 1, z, b.base);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, c.floorY + 1, ground - 1);
 
     const surface = hash2(localX, localZ, c.seed + 31) < c.accentChance ? b.accent : b.top;
     fill(x, ground, ground, z, surface);
@@ -2125,6 +2186,7 @@ function buildEndColumn(x, z, localX, localZ) {
 
     const top = centre + half - 1;
     fill(x, centre - half, top - 1, z, b.base);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, centre - half, top - 1);
     fill(x, top, top, z, b.top);
 
     if (strength > 0.5 && hash2(localX, localZ, c.seed + 77) < c.pillarChance) {

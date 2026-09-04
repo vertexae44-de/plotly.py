@@ -15,7 +15,7 @@
 | **Off-hand slot** | A backpack slot (outside the hotbar) carries a second item: drag it in, `/offhand`, or the touchscreen button. Shown as a status icon. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
-| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — and **real generated terrain**. |
+| **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your nametag and your name in chat. |
@@ -149,10 +149,15 @@ Both regions **generate as you explore them**. Chunks fill in around every playe
 region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the server.
 
 - **Nether** — a closed cavern: bedrock floor, rolling red-sandstone ground with magma blotches, a
-  lava sea in the dips, and a ceiling overhead.
+  lava sea in the dips, and a ceiling overhead. **Ores** run through the rock below the surface:
+  Coal, Iron and Gold in quantity, plus thin seams of **Moonstone** (below y34) and **Lunite**
+  (below y28). The mace costs 40 Moonstone and the Nether yields roughly 4 per chunk, so arming
+  yourself is a genuine expedition.
 - **The End** — floating islands over open void, tapering at their edges, with occasional obsidian
   spires. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players
-  always have ground under them.
+  always have ground under them. Its rock is **richer per block** than the Nether's — Iron,
+  Emerald, Moonstone, Diamond and Lunite — because most End columns are open void, so there is
+  far less stone to dig through.
 - **The Void** — far sparser black platforms in the dark, some carrying an Orb of Resurrection.
 
 Terrain is **deterministic value noise**, not `Math.random`: the same column always produces the same
