@@ -33,7 +33,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 
 | Item | Recipe |
 | --- | --- |
-| **Moonstone Mace** | **40 Moonstone + 4 Knight Heart + 2 Stick** |
+| **Moonstone Mace** | **400 Moonstone + 4 Knight Heart + 2 Stick** |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
 | **Repair Kit** ×2 | 4 Iron Fragment + 2 Stick |
@@ -42,6 +42,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Enchanted Golden Apple** | 1 Apple + 8 Moonstone |
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
+| **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 
 Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
 
@@ -58,7 +59,7 @@ unlimited.
 
 ## The mace
 
-The mace is the real `Moonstone Mace` item, and it is meant to be an endgame grind: 40 Moonstone,
+The mace is the real `Moonstone Mace` item, and it is meant to be an endgame grind: 400 Moonstone,
 4 Knight Hearts and 2 Sticks.
 
 - **Smash** — fall at least 1.5 blocks and hit something. Bonus damage is `2.5 × blocks fallen`
@@ -168,8 +169,8 @@ region, spread over ticks (`columnsPerTick`) so a big reveal never stalls the se
   netherrack mass: bedrock floor, rolling ground with magma blotches, a lava sea in the dips, and a
   Dark Red Brick ceiling overhead. **Ores** run through the rock below the surface:
   Coal, Iron and Gold in quantity, plus thin seams of **Moonstone** (below y34) and **Lunite**
-  (below y28). The mace costs 40 Moonstone and the Nether yields roughly 4 per chunk, so arming
-  yourself is a genuine expedition.
+  (below y28). The mace costs 400 Moonstone and the Nether yields roughly 4 per chunk, so arming
+  yourself is a genuine grind.
 - **The End** — floating islands of **Yellowstone** over open void, tapering at their edges, with
   occasional obsidian spires. Yellowstone is the closest thing Bloxd has to end stone: pale,
   moonlit, and uniform all the way through, so an island looks carved from one piece. A guaranteed island sits at the region centre (`centreIslandRadius`) so arriving players

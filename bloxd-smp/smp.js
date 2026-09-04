@@ -129,7 +129,7 @@ const CONFIG = {
 
         // Deliberately expensive - this is the endgame weapon.
         recipe: [
-            { items: ["Moonstone"], amt: 40 },
+            { items: ["Moonstone"], amt: 400 },
             { items: ["Knight Heart"], amt: 4 },
             { items: ["Stick"], amt: 2 },
         ],
@@ -301,6 +301,19 @@ const CONFIG = {
         },
     },
 
+    // ---- Hang Gliders ---------------------------------------------------------
+    // All four are real Bloxd items with their own native crafting recipes;
+    // this overrides every one of them to the same steep cost, so which
+    // material a glider is skinned in is a cosmetic choice, not a cheaper path.
+    gliders: {
+        enabled: true,
+        items: ["Wood Hang Glider", "Iron Hang Glider", "Gold Hang Glider", "Diamond Hang Glider"],
+        recipe: [
+            { items: ["Moonstone"], amt: 100 },
+            { items: ["Diamond"], amt: 30 },
+        ],
+    },
+
     durability: {
         enabled: true,
 
@@ -419,14 +432,14 @@ const CONFIG = {
                 // Ores replace the rock below the surface, never the surface
                 // itself, the bedrock floor or the ceiling. The first entry
                 // whose roll succeeds wins, so put the common ones first.
-                // Moonstone lives down near the lava - the mace costs 40 of
+                // Moonstone lives down near the lava - the mace costs 400 of
                 // it, so this is the reason to come here at all.
                 ores: [
                     { block: "Coal Ore", chance: 0.030 },
                     { block: "Iron Ore", chance: 0.020 },
                     { block: "Gold Ore", chance: 0.012 },
-                    // Kept deliberately thin: the mace costs 40 Moonstone, and
-                    // that is meant to be an expedition, not an afternoon.
+                    // Kept deliberately thin: the mace costs 400 Moonstone, and
+                    // that is meant to be a long grind, not an afternoon.
                     { block: "Moonstone Ore", chance: 0.0015, maxY: 34 },
                     { block: "Lunite Ore", chance: 0.0008, maxY: 28 },
                 ],
@@ -939,6 +952,16 @@ function registerRecipes(playerId) {
             attributes: appleAttributes("enchanted"),
         },
     ]);
+
+    // Every glider, whatever it is skinned in, costs the same steep recipe.
+    if (CONFIG.gliders.enabled) {
+        for (let i = 0; i < CONFIG.gliders.items.length; i++) {
+            api.editItemCraftingRecipes(playerId, CONFIG.gliders.items[i], [{
+                requires: CONFIG.gliders.recipe,
+                produces: 1,
+            }]);
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------

@@ -14,8 +14,8 @@ check("mace recipe registered", !!world.recipes.a[C.mace.item], Object.keys(worl
 check("spear recipe registered", !!world.recipes.a[C.spear.item], "");
 check("two apple recipes registered", world.recipes.a["Apple"].length === 2, "");
 check("mace is the real Moonstone Mace item", C.mace.item === "Moonstone Mace", C.mace.item);
-check("mace recipe costs 40 moonstone",
-    C.mace.recipe.some(r => r.items[0] === "Moonstone" && r.amt === 40), JSON.stringify(C.mace.recipe));
+check("mace recipe costs 400 moonstone",
+    C.mace.recipe.some(r => r.items[0] === "Moonstone" && r.amt === 400), JSON.stringify(C.mace.recipe));
 check("mace recipe costs 4 knight hearts",
     C.mace.recipe.some(r => r.items[0] === "Knight Heart" && r.amt === 4), "");
 check("mace recipe costs 2 sticks",
@@ -27,6 +27,18 @@ check("mace recipe carries mace tag",
     world.recipes.a[C.mace.item][0].attributes.customAttributes.smpMace === true, "");
 check("golden apple recipe carries tier",
     world.recipes.a["Apple"][0].attributes.customAttributes.smpApple === "golden", "");
+
+// ---------------------------------------------------------------- hang gliders
+// All four gliders are real items with their own native recipes; this world
+// overrides every one of them to the same steep cost.
+check("all four gliders got a recipe registered",
+    C.gliders.items.every(item => !!world.recipes.a[item]), Object.keys(world.recipes.a));
+check("glider recipe costs 100 moonstone",
+    C.gliders.recipe.some(r => r.items[0] === "Moonstone" && r.amt === 100), JSON.stringify(C.gliders.recipe));
+check("glider recipe costs 30 diamond",
+    C.gliders.recipe.some(r => r.items[0] === "Diamond" && r.amt === 30), JSON.stringify(C.gliders.recipe));
+check("the same recipe object is reused for every glider tier",
+    world.recipes.a["Wood Hang Glider"][0].requires === world.recipes.a["Diamond Hang Glider"][0].requires, "");
 check("enchanted apple recipe carries tier",
     world.recipes.a["Apple"][1].attributes.customAttributes.smpApple === "enchanted", "");
 
