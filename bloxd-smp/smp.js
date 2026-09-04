@@ -196,10 +196,9 @@ const CONFIG = {
     // one just past the hotbar) is reserved by convention instead - a rule
     // this script enforces, checked every tick. Whatever sits there is
     // "off-handed": it shows as a status effect icon, and if it happens to be
-    // a Bulwark it protects you
-    // automatically, leaving your main hand free for a sword. You put it
-    // there yourself: drag it into the slot, or use /offhand or the
-    // touchscreen button.
+    // a Bulwark it protects you automatically, leaving your main hand free
+    // for a sword. You put it there yourself: drag it into the slot, or use
+    // /offhand or the touchscreen button.
     //
     // The item genuinely stays in the inventory rather than being held in a
     // variable, so a rejoin or a server restart can never lose it.
