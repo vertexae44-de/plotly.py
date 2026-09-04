@@ -126,23 +126,29 @@ API does not expose the armour slots, so there is nothing to hook.
 allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
 light, sky light and gravity through per-player client options.
 
-| | Region centre | Scale | Portal | Feel |
-| --- | --- | --- | --- | --- |
-| Overworld | `0, 0` | 1× | — | normal |
-| The Nether | `0, -10000` | 8× | Purple Portal | red fog (`#6b1105`), 5-chunk view |
-| The End | `0, -30000` | 1× | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `0, 50000` | 1× | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
+| | Y (height) | Portal | Feel |
+| --- | --- | --- | --- |
+| Overworld | wherever you normally build | — | normal |
+| The Nether | `y = -10000` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `y = -30000` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `y = -50000` | none | near-black fog (`#050508`), 3-chunk view, 0.5× gravity |
 
-They run in a line out along negative z, 20000 apart. Each claims ±`regionHalfSize` (**5000**)
-around its centre — that has to stay at or under half the spacing, or neighbouring claims overlap
-and the one listed first swallows the other. A test asserts every pair stays clear.
+**This is a Y-based layout, not the more usual X/Z one.** Each dimension is stacked directly below
+the Overworld at a wildly different height rather than spread out sideways — a portal is a vertical
+drop, and your x/z position carries straight across unchanged. `dimensions.verticalHalfSize`
+(**500**) is how far above/below that Y still counts as "inside" the dimension; with 20000+ blocks
+between each one, that only has to clear whatever generation actually builds, not fight a
+neighbour. **This depends on Bloxd's vertical build range reaching that far down** — confirmed to
+y=-100000 by testing, so all three sit safely inside it, but if a future world's limit is smaller,
+lower every `groundY` (and `verticalHalfSize` if needed) to fit.
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
-brings you home. Nether coordinates are divided by 8 exactly like Minecraft, so a long walk there is
-a short one back. `/where` tells you which dimension you are in; admins get `/dim <name>`.
+brings you home — the game remembers the Overworld height you left from (`state.overworldY`) so a
+round trip lands you back roughly where you started, not at a fixed fallback. `/where` tells you
+which dimension you are in; admins get `/dim <name>`.
 
-Crossing a region border on foot also re-dresses the world, so respawns and teleports are handled
-without a portal.
+Crossing a dimension's Y-band by falling, flying, or being moved also re-dresses the world, so
+respawns and teleports are handled without a portal.
 
 ### Fog
 
@@ -183,9 +189,10 @@ Terrain is **deterministic value noise**, not `Math.random`: the same column alw
 blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one
 block at `markerY` and **never rebuilt**, so anything players construct there is safe.
 
-**Before you use this, check your world is big enough for a 30000-block offset** — lower
-`dimensions.list.*.origin` if it is not, keeping the regions at least `2 × regionHalfSize` apart.
-Set `dimensions.enabled: false` to turn the whole system off.
+**Before you use this, confirm in-game that terrain actually generates this far down** — if it
+does not, Bloxd's real vertical range is smaller than assumed here; bring every `groundY` closer to
+0 until it works, keeping them well over `2 × verticalHalfSize` apart from each other. Set
+`dimensions.enabled: false` to turn the whole system off.
 
 ## Crystal PvP
 

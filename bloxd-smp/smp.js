@@ -15,7 +15,7 @@
 //                   the hotbar. Drag it in, /offhand, or the on-screen button
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
-//  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
+//  Nether & End     portals, own fog/light/gravity, stacked far below by height
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
 //  !anon            hides your body, your nametag and your name in chat
@@ -348,11 +348,24 @@ const CONFIG = {
     // offsets below and lower them if it is not.
     dimensions: {
         enabled: true,
-        // How far each region's "claim" reaches from its centre. The regions
-        // below sit 20000 apart, so this must stay at or under 10000 or
-        // neighbouring claims would overlap and the nearer one would swallow
-        // the other. 5000 leaves a clear gap between each.
-        regionHalfSize: 5000,
+        // Dimensions used to sit in far-apart X/Z locations - that version
+        // was tested and confirmed working in-game. This instead stacks
+        // them at different Y (height) values - Nether at y=-10000, End at
+        // y=-30000, Void at y=-50000 - all sharing the same x/z, so a
+        // portal is a vertical drop rather than a horizontal walk. Bloxd's
+        // vertical build range reaches at least y=-100000, so all three
+        // sit safely inside it.
+        //
+        // How far above/below its groundY still counts as "inside" a
+        // dimension. The three below sit at least 20000 apart, so this only
+        // has to clear the tallest thing generation ever builds (well under
+        // 500 blocks) - it is not fighting neighbouring claims the way the
+        // old X/Z half-size was.
+        verticalHalfSize: 500,
+        // Where a player lands back in the Overworld if this session never
+        // recorded the height they left from (e.g. they joined already
+        // inside a dimension).
+        overworldFallbackY: 100,
         buildArrivalPlatform: true,
         platformRadius: 3,
         travelCooldownMs: 1500,    // stops portals ping-ponging you
@@ -360,15 +373,14 @@ const CONFIG = {
         list: {
             overworld: {
                 name: "Overworld",
-                origin: [0, 0],        // x, z centre of the region
-                scale: 1,
+                groundY: null,      // no Y-band of its own - it's whatever no other claims
                 platformBlock: "Stone",
-                clientOptions: {},     // empty = the normal look
+                clientOptions: {},  // empty = the normal look
             },
             nether: {
                 name: "The Nether",
-                origin: [0, -10000],
-                scale: 8,              // 1 block here covers 8 in the overworld
+                groundY: -10000,
+                arrivalY: 56,        // local height within the band you land at
                 portalBlock: "Purple Portal",
                 platformBlock: "Magma",
                 clientOptions: {
@@ -381,8 +393,8 @@ const CONFIG = {
             },
             "void": {
                 name: "The Void",
-                origin: [0, 50000],
-                scale: 1,
+                groundY: -50000,
+                arrivalY: 65,
                 platformBlock: "Obsidian",
                 // No portalBlock: the only way out is the resurrection orbs.
                 clientOptions: {
@@ -395,8 +407,8 @@ const CONFIG = {
             },
             end: {
                 name: "The End",
-                origin: [0, -30000],
-                scale: 1,
+                groundY: -30000,
+                arrivalY: 60,
                 portalBlock: "Black Portal",
                 platformBlock: "Obsidian",
                 clientOptions: {
@@ -1812,12 +1824,15 @@ function dimension(key) {
     return CONFIG.dimensions.list[key];
 }
 
-/** Which region a world position falls in. Anything unclaimed is the overworld. */
+/** Which Y-band a world position falls in. Anything unclaimed is the overworld. */
 function dimensionAt(pos) {
-    const half = CONFIG.dimensions.regionHalfSize;
+    const half = CONFIG.dimensions.verticalHalfSize;
     for (const key in CONFIG.dimensions.list) {
         const d = dimension(key);
-        if (Math.abs(pos[0] - d.origin[0]) <= half && Math.abs(pos[2] - d.origin[1]) <= half) {
+        if (d.groundY == null) {
+            continue;   // the overworld has no band of its own
+        }
+        if (Math.abs(pos[1] - d.groundY) <= half) {
             return key;
         }
     }
@@ -1875,7 +1890,11 @@ function ensureArrivalGround(x, y, z, blockName) {
     api.setBlockRect([fx - r, fy - 1, fz - r], [fx + r, fy - 1, fz + r], blockName);
 }
 
-/** Moves a player between regions, scaling coordinates the way Nether travel does. */
+/**
+ * Moves a player between dimensions. They are stacked by height now, not
+ * spread across x/z, so this is a vertical drop to the target's Y-band -
+ * x and z carry straight across unchanged.
+ */
 function travelTo(playerId, toKey) {
     const to = dimension(toKey);
     if (!to) {
@@ -1886,21 +1905,27 @@ function travelTo(playerId, toKey) {
     if (fromKey === toKey) {
         return false;
     }
-    const from = dimension(fromKey);
 
-    // Go via overworld-equivalent coordinates so any pair of regions lines up.
-    const overworldX = (pos[0] - from.origin[0]) * from.scale;
-    const overworldZ = (pos[2] - from.origin[1]) * from.scale;
-    const x = to.origin[0] + overworldX / to.scale;
-    const z = to.origin[1] + overworldZ / to.scale;
+    const state = stateOf(playerId);
+    if (fromKey === "overworld") {
+        // Remembered so a later return trip lands you back near where you
+        // left, not at some arbitrary fallback height.
+        state.overworldY = pos[1];
+    }
 
-    ensureArrivalGround(x, pos[1], z, to.platformBlock);
-    api.setPosition(playerId, x, pos[1], z);
+    const x = pos[0];
+    const z = pos[2];
+    const y = to.groundY == null
+        ? (state.overworldY != null ? state.overworldY : CONFIG.dimensions.overworldFallbackY)
+        : to.groundY + to.arrivalY;
+
+    ensureArrivalGround(x, y, z, to.platformBlock);
+    api.setPosition(playerId, x, y, z);
     enterDimension(playerId, toKey, true);
     // Start filling the world in around them straight away rather than waiting
     // for the next tick's movement check.
-    stateOf(playerId).lastGenChunk = null;
-    queueChunksAround(toKey, [x, pos[1], z]);
+    state.lastGenChunk = null;
+    queueChunksAround(toKey, [x, y, z]);
 
     api.playSound(playerId, "magicAccent2", 0.9, 0.8);
     return true;
@@ -2207,8 +2232,9 @@ function chunkGenerated(dimKey, cx, cz) {
     }
     const wx = cx * g.chunkSize;
     const wz = cz * g.chunkSize;
-    if (api.isBlockInLoadedChunk(wx, g.markerY, wz)
-        && api.getBlock(wx, g.markerY, wz) === g.markerBlock) {
+    const markerY = g.markerY + dimension(dimKey).groundY;
+    if (api.isBlockInLoadedChunk(wx, markerY, wz)
+        && api.getBlock(wx, markerY, wz) === g.markerBlock) {
         genDone[key] = true;
         return true;
     }
@@ -2246,29 +2272,33 @@ function fill(x, y1, y2, z, blockName) {
 
 /**
  * Sprinkles ores through the solid rock of one column, between fromY and toY
- * inclusive. Deterministic like everything else in generation: y is folded
- * into the seed, so a given block always rolls the same way and a regenerated
- * chunk comes back identical rather than reshuffled.
+ * inclusive (both already shifted by the dimension's groundY, same as
+ * everything else this writes). Deterministic like everything else in
+ * generation: local height is folded into the seed, so a given block always
+ * rolls the same way and a regenerated chunk comes back identical rather
+ * than reshuffled.
  *
  * Only ever called on the rock BELOW the surface, so the top layer, the
- * bedrock floor and the ceiling are never replaced.
+ * bedrock floor and the ceiling are never replaced. ore.minY/maxY are local
+ * heights (as if groundY were 0), so groundY is added before comparing.
  */
-function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY) {
+function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY, groundY) {
     if (!ores || ores.length === 0) {
         return;
     }
     for (let y = fromY; y <= toY; y++) {
+        const localY = y - groundY;
         for (let i = 0; i < ores.length; i++) {
             const ore = ores[i];
-            if (ore.minY !== undefined && y < ore.minY) {
+            if (ore.minY !== undefined && localY < ore.minY) {
                 continue;
             }
-            if (ore.maxY !== undefined && y > ore.maxY) {
+            if (ore.maxY !== undefined && localY > ore.maxY) {
                 continue;
             }
             // A different seed per ore and per height, so the rolls are
             // independent rather than every ore hitting the same blocks.
-            if (hash2(localX, localZ, seed + y * 7919 + i * 104729) < ore.chance) {
+            if (hash2(localX, localZ, seed + localY * 7919 + i * 104729) < ore.chance) {
                 api.setBlock(x, y, z, ore.block);
                 break;   // one ore per block: the first match in the list wins
             }
@@ -2276,31 +2306,38 @@ function scatterOres(x, z, localX, localZ, ores, seed, fromY, toY) {
     }
 }
 
-/** A closed cavern: bedrock floor, rolling ground, a lava sea and a ceiling. */
-function buildNetherColumn(x, z, localX, localZ) {
+/**
+ * A closed cavern: bedrock floor, rolling ground, a lava sea and a ceiling.
+ * groundY is the dimension's Y-band centre - every height in CONFIG is a
+ * local offset from it, added here so the whole cavern actually lands there.
+ */
+function buildNetherColumn(x, z, localX, localZ, groundY) {
     const c = CONFIG.dimensions.generation.nether;
     const b = c.blocks;
+    const floorY = c.floorY + groundY;
+    const ceilingY = c.ceilingY + groundY;
+    const lavaLevel = c.lavaLevel + groundY;
 
     const ground = Math.round(c.groundBase
-        + (noise2(localX, localZ, c.groundScale, c.seed) - 0.5) * 2 * c.groundAmp);
+        + (noise2(localX, localZ, c.groundScale, c.seed) - 0.5) * 2 * c.groundAmp) + groundY;
     const ceiling = Math.round(c.ceilingBase
-        - (noise2(localX, localZ, c.ceilingScale, c.seed + 7) - 0.5) * 2 * c.ceilingAmp);
+        - (noise2(localX, localZ, c.ceilingScale, c.seed + 7) - 0.5) * 2 * c.ceilingAmp) + groundY;
 
-    fill(x, c.floorY, c.floorY, z, b.floor);
-    fill(x, c.floorY + 1, ground - 1, z, b.base);
-    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, c.floorY + 1, ground - 1);
+    fill(x, floorY, floorY, z, b.floor);
+    fill(x, floorY + 1, ground - 1, z, b.base);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, floorY + 1, ground - 1, groundY);
 
     const surface = hash2(localX, localZ, c.seed + 31) < c.accentChance ? b.accent : b.top;
     fill(x, ground, ground, z, surface);
 
     // Lava pools wherever the ground dips below the sea level.
-    fill(x, ground + 1, c.lavaLevel, z, b.liquid);
+    fill(x, ground + 1, lavaLevel, z, b.liquid);
 
-    fill(x, ceiling, c.ceilingY, z, b.ceiling);
+    fill(x, ceiling, ceilingY, z, b.ceiling);
 }
 
 /** Floating islands over open void, thinning out towards their edges. */
-function buildEndColumn(x, z, localX, localZ) {
+function buildEndColumn(x, z, localX, localZ, groundY) {
     const c = CONFIG.dimensions.generation.end;
     const b = c.blocks;
 
@@ -2321,11 +2358,11 @@ function buildEndColumn(x, z, localX, localZ) {
     }
     const half = Math.max(1, Math.round(strength * c.thickness));
     const centre = Math.round(c.baseY
-        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift) + groundY;
 
     const top = centre + half - 1;
     fill(x, centre - half, top - 1, z, b.base);
-    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, centre - half, top - 1);
+    scatterOres(x, z, localX, localZ, c.ores, c.seed + 5000, centre - half, top - 1, groundY);
     fill(x, top, top, z, b.top);
 
     if (strength > 0.5 && hash2(localX, localZ, c.seed + 77) < c.pillarChance) {
@@ -2334,7 +2371,7 @@ function buildEndColumn(x, z, localX, localZ) {
 }
 
 /** Sparse black platforms in the dark, some carrying an Orb of Resurrection. */
-function buildVoidColumn(x, z, localX, localZ) {
+function buildVoidColumn(x, z, localX, localZ, groundY) {
     const c = CONFIG.dimensions.generation["void"];
     const b = c.blocks;
 
@@ -2354,7 +2391,7 @@ function buildVoidColumn(x, z, localX, localZ) {
 
     const half = Math.max(1, Math.round(strength * c.thickness));
     const centre = Math.round(c.baseY
-        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift);
+        + (noise2(localX, localZ, c.driftScale, c.seed + 13) - 0.5) * 2 * c.drift) + groundY;
     const top = centre + half - 1;
 
     fill(x, centre - half, top - 1, z, b.base);
@@ -2377,8 +2414,7 @@ function processGeneration() {
 
     while (budget > 0 && genQueue.length > 0) {
         const job = genQueue[0];
-        const originX = dimension(job.dimKey).origin[0];
-        const originZ = dimension(job.dimKey).origin[1];
+        const groundY = dimension(job.dimKey).groundY;
 
         while (budget > 0 && job.column < perChunk) {
             const lx = job.column % g.chunkSize;
@@ -2386,14 +2422,14 @@ function processGeneration() {
             const x = job.cx * g.chunkSize + lx;
             const z = job.cz * g.chunkSize + lz;
 
-            // Noise is sampled in dimension-local space so the huge region
-            // offsets do not shift the terrain between dimensions.
+            // Dimensions all share the same x/z space now - Y is what tells
+            // them apart - so noise is sampled directly in world x/z.
             if (job.dimKey === "nether") {
-                buildNetherColumn(x, z, x - originX, z - originZ);
+                buildNetherColumn(x, z, x, z, groundY);
             } else if (job.dimKey === "end") {
-                buildEndColumn(x, z, x - originX, z - originZ);
+                buildEndColumn(x, z, x, z, groundY);
             } else if (job.dimKey === "void") {
-                buildVoidColumn(x, z, x - originX, z - originZ);
+                buildVoidColumn(x, z, x, z, groundY);
             }
 
             job.column++;
@@ -2401,7 +2437,7 @@ function processGeneration() {
         }
 
         if (job.column >= perChunk) {
-            api.setBlock(job.cx * g.chunkSize, g.markerY, job.cz * g.chunkSize, g.markerBlock);
+            api.setBlock(job.cx * g.chunkSize, g.markerY + groundY, job.cz * g.chunkSize, g.markerBlock);
             genDone[chunkKey(job.dimKey, job.cx, job.cz)] = true;
             delete genQueued[chunkKey(job.dimKey, job.cx, job.cz)];
             genQueue.shift();
