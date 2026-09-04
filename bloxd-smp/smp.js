@@ -9,10 +9,10 @@
 //  Moonstone Spear  right click to lunge, hit hard while lunging
 //  Wind Charge      craft from Mango + Iron Fragment, right click to launch
 //  Repair Kit       craft from Iron Fragment + Stick, /repair to restore wear
-//  Bulwark shield   right click it into your off-hand: blocks 60% while you
-//                   fight with a sword. /shield raises one by hand instead
+//  Bulwark shield   hold it, right click to raise your guard. Or put it in
+//                   your off-hand and it blocks 60% while you swing a sword
 //  Off-hand         your backpack's first slot carries a second item, outside
-//                   the hotbar. Right click, the touchscreen button, or a drag
+//                   the hotbar. Drag it in, /offhand, or the on-screen button
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
 //  Durability       Bloxd has none, so this adds it to every tool and weapon
 //  Nether & End     portals, own fog/light/gravity, 8:1 nether coordinates
@@ -194,8 +194,9 @@ const CONFIG = {
     // Bloxd has NO off-hand slot: every inventory cell is plain numbered
     // storage the engine treats identically. So the first backpack slot (the
     // one just past the hotbar) is reserved by convention instead - a rule
-    // this script enforces, checked every tick. Whatever sits there is "off-handed": it shows as a status
-    // effect icon, and if it happens to be a Bulwark it protects you
+    // this script enforces, checked every tick. Whatever sits there is
+    // "off-handed": it shows as a status effect icon, and if it happens to be
+    // a Bulwark it protects you
     // automatically, leaving your main hand free for a sword. You put it
     // there yourself: drag it into the slot, or use /offhand or the
     // touchscreen button.
