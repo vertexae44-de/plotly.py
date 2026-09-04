@@ -1480,8 +1480,8 @@ check("stabshot is on a cooldown", world.damages.length === 0, world.damages.len
 // -------------------------------------------------------------------- vanity flex
 check("the vanity item is the real Diorite block, not a fake item",
     C.vanityFlex.item === "Diorite", C.vanityFlex.item);
-check("the vanity recipe costs 100000 Block of Moonstone",
-    C.vanityFlex.recipe.some(r => r.items[0] === "Block of Moonstone" && r.amt === 100000),
+check("the vanity recipe costs 39000 Block of Moonstone",
+    C.vanityFlex.recipe.some(r => r.items[0] === "Block of Moonstone" && r.amt === 39000),
     JSON.stringify(C.vanityFlex.recipe));
 check("the vanity item is craftable", !!world.recipes.a[C.vanityFlex.item], Object.keys(world.recipes.a));
 check("the vanity item carries its joke display name",

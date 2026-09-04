@@ -236,7 +236,7 @@ const CONFIG = {
         item: "Diorite",
         name: "what the skibidi bop un dada really bought this ok",
         recipe: [
-            { items: ["Block of Moonstone"], amt: 100000 },
+            { items: ["Block of Moonstone"], amt: 39000 },
         ],
     },
 

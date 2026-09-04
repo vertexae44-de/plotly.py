@@ -58,7 +58,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
 | **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
 | **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
-| **"what the skibidi bop un dada really bought this ok"** (Diorite) | 100000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
+| **"what the skibidi bop un dada really bought this ok"** (Diorite) | 39000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
