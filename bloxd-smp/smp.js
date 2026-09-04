@@ -98,6 +98,15 @@ const CONFIG = {
         // How many a player may ever absorb. 0 = no limit, so kills genuinely
         // pay out - this is the whole point of a lifesteal SMP.
         usesPerPlayer: 0,
+
+        // A deliberate second way in, on top of kills and /withdraw - steep
+        // enough that killing another player stays the cheap route to a heart.
+        craftable: true,
+        recipe: [
+            { items: ["Block of Diamond"], amt: 4 },
+            { items: ["Knight Heart"], amt: 2 },
+            { items: ["Lunite"], amt: 4 },
+        ],
     },
 
     // ---- Windburst Mace -----------------------------------------------------
@@ -1015,6 +1024,14 @@ function registerRecipes(playerId) {
                 produces: 1,
             }]);
         }
+    }
+
+    if (CONFIG.orb.craftable) {
+        api.editItemCraftingRecipes(playerId, CONFIG.orb.item, [{
+            requires: CONFIG.orb.recipe,
+            produces: 1,
+            attributes: orbAttributes(CONFIG.orb.hp),
+        }]);
     }
 }
 

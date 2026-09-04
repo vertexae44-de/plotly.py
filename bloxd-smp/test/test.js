@@ -28,6 +28,21 @@ check("mace recipe carries mace tag",
 check("golden apple recipe carries tier",
     world.recipes.a["Apple"][0].attributes.customAttributes.smpApple === "golden", "");
 
+// -------------------------------------------------------------------- Hearts
+// Craftable on top of kills and /withdraw - deliberately steep so a kill stays
+// the cheap way to a heart.
+check("Heart recipe registered", !!world.recipes.a[C.orb.item], Object.keys(world.recipes.a));
+check("Heart recipe costs 4 blocks of diamond",
+    C.orb.recipe.some(r => r.items[0] === "Block of Diamond" && r.amt === 4), JSON.stringify(C.orb.recipe));
+check("Heart recipe costs 2 knight hearts",
+    C.orb.recipe.some(r => r.items[0] === "Knight Heart" && r.amt === 2), JSON.stringify(C.orb.recipe));
+check("Heart recipe costs 4 lunite",
+    C.orb.recipe.some(r => r.items[0] === "Lunite" && r.amt === 4), JSON.stringify(C.orb.recipe));
+check("a crafted Heart carries the orb tag and is worth one heart",
+    world.recipes.a[C.orb.item][0].attributes.customAttributes.smpOrb === true
+        && world.recipes.a[C.orb.item][0].attributes.customAttributes.hp === C.orb.hp,
+    JSON.stringify(world.recipes.a[C.orb.item][0].attributes));
+
 // ---------------------------------------------------------------- hang gliders
 // All four gliders are real items with their own native recipes; this world
 // overrides every one of them to the same steep cost.

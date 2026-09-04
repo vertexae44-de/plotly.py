@@ -43,8 +43,10 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Purple Portal** ×2 (Nether) | 8 Obsidian + 1 Magma |
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
+| **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
 
-Life Orbs are not craftable on purpose — they only come from deaths and `/withdraw`.
+Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
+steep third option, not a replacement for either.
 
 ## Hearts
 
