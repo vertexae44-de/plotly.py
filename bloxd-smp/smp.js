@@ -8,6 +8,7 @@
 //                   kill 3 guardians there for orbs to escape
 //  Moonstone Mace   smash players AND mobs from the air. Wind Burst + Density
 //  Plain maces      Wood/Stone/Iron/Gold/Diamond - no smash, just steep cost
+//  Plain daggers    Wood/Stone/Iron/Gold/Diamond - no poison, just steep cost
 //  Moonstone Spear  right click to lunge, hit hard while lunging
 //  Moonstone Dagger poisons whatever it hits
 //  Wind Charge      craft from Mango + Iron Fragment, right click to launch
@@ -204,6 +205,23 @@ const CONFIG = {
             { item: "Iron Mace", recipe: [{ items: ["Iron Bar"], amt: 150 }, { items: ["Stick"], amt: 20 }] },
             { item: "Gold Mace", recipe: [{ items: ["Gold Bar"], amt: 180 }, { items: ["Stick"], amt: 20 }] },
             { item: "Diamond Mace", recipe: [{ items: ["Diamond"], amt: 200 }, { items: ["Stick"], amt: 20 }] },
+        ],
+    },
+
+    // ---- Plain daggers --------------------------------------------------------
+    // Five ordinary tiers - real Bloxd items ("Wood/Stone/Iron/Gold/Diamond
+    // Dagger") - with none of the Moonstone Dagger's poison. Just a lighter,
+    // faster weapon with durability, priced steeply per tier (half the plain
+    // mace costs, since a dagger is the lighter weapon) so owning one is
+    // still a real investment even without the poison.
+    plainDaggers: {
+        enabled: true,
+        tiers: [
+            { item: "Wood Dagger", recipe: [{ items: ["Maple Wood Planks"], amt: 40 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Stone Dagger", recipe: [{ items: ["Stone"], amt: 60 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Iron Dagger", recipe: [{ items: ["Iron Bar"], amt: 75 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Gold Dagger", recipe: [{ items: ["Gold Bar"], amt: 90 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Diamond Dagger", recipe: [{ items: ["Diamond"], amt: 100 }, { items: ["Stick"], amt: 10 }] },
         ],
     },
 
@@ -1211,6 +1229,17 @@ function registerRecipes(playerId) {
     if (CONFIG.plainMaces.enabled) {
         for (let i = 0; i < CONFIG.plainMaces.tiers.length; i++) {
             const tier = CONFIG.plainMaces.tiers[i];
+            api.editItemCraftingRecipes(playerId, tier.item, [{
+                requires: tier.recipe,
+                produces: 1,
+                attributes: plainDurableAttributes(tier.item),
+            }]);
+        }
+    }
+
+    if (CONFIG.plainDaggers.enabled) {
+        for (let i = 0; i < CONFIG.plainDaggers.tiers.length; i++) {
+            const tier = CONFIG.plainDaggers.tiers[i];
             api.editItemCraftingRecipes(playerId, tier.item, [{
                 requires: tier.recipe,
                 produces: 1,

@@ -1272,6 +1272,33 @@ check("a plain mace still wears down",
     world.inv.b[0].attributes.customAttributes.smpDur === durOf("Iron Mace") - C.durability.costPerHit,
     world.inv.b[0].attributes.customAttributes.smpDur);
 
+// ------------------------------------------------------------- plain daggers
+check("all five plain dagger tiers are configured",
+    C.plainDaggers.tiers.map(t => t.item).join(",")
+        === "Wood Dagger,Stone Dagger,Iron Dagger,Gold Dagger,Diamond Dagger",
+    C.plainDaggers.tiers.map(t => t.item).join(","));
+C.plainDaggers.tiers.forEach(tier => {
+    check(tier.item + " is craftable", !!world.recipes.a[tier.item], Object.keys(world.recipes.a));
+    check(tier.item + " carries no poison tag (it is plain)",
+        !world.recipes.a[tier.item][0].attributes.customAttributes
+            || world.recipes.a[tier.item][0].attributes.customAttributes.smpDagger === undefined, "");
+});
+check("plain daggers cost half of the matching plain mace tier", (() => {
+    return C.plainDaggers.tiers.every((tier, i) => {
+        const mace = C.plainMaces.tiers[i];
+        return tier.recipe[0].amt === mace.recipe[0].amt / 2 && tier.recipe[1].amt === mace.recipe[1].amt / 2;
+    });
+})(), JSON.stringify(C.plainDaggers.tiers));
+
+world.inv.b = [{ name: "Iron Dagger", amount: null, attributes: ctx.plainDurableAttributes("Iron Dagger") }];
+world.sel.b = 0;
+world.effects.length = 0;
+const plainDaggerDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 10);
+check("a plain dagger does not poison", !world.effects.some(e => e.name === "Poisoned"), JSON.stringify(world.effects));
+check("a plain dagger still wears down",
+    world.inv.b[0].attributes.customAttributes.smpDur === durOf("Iron Dagger") - C.durability.costPerHit,
+    world.inv.b[0].attributes.customAttributes.smpDur);
+
 // -------------------------------------------------------------- reforge (attribute swap)
 world.inv.a = [{ name: "Iron Sword", amount: null, attributes: { customAttributes: { smpDur: 10, smpDurMax: 250 } } }];
 world.inv.a[C.offhand.slotIndex] = { name: "Gold Sword", amount: null, attributes: { customAttributes: { smpDur: 200, smpDurMax: 250 } } };

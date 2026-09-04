@@ -10,6 +10,7 @@
 | **Plain maces** | Wood/Stone/Iron/Gold/Diamond — no smash, no Wind Burst, just an ordinary weapon at a steep price. |
 | **Moonstone Spear** | Right-click to lunge forward; hits during the lunge deal bonus damage. |
 | **Moonstone Dagger** | Poisons whatever it hits. |
+| **Plain daggers** | Wood/Stone/Iron/Gold/Diamond — no poison, just an ordinary weapon at a steep price. |
 | **Golden Apples** | Two tiers. Heal, shield, Health Regen and fire resistance; the enchanted one permanently adds a heart. |
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
 | **Hang Gliders** | This world's elytra — a real Bloxd item, steep recipe. Nothing stops you swinging the mace while gliding. |
@@ -46,6 +47,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Wood / Stone / Iron / Gold / Diamond Mace** | 80 Maple Wood Planks + 20 Stick / 120 Stone + 20 Stick / 150 Iron Bar + 20 Stick / 180 Gold Bar + 20 Stick / 200 Diamond + 20 Stick |
 | **Moonstone Spear** | 4 Moonstone + 2 Stick |
 | **Moonstone Dagger** | 5 Rotten Flesh + 90 Moonstone + 4 Stick |
+| **Wood / Stone / Iron / Gold / Diamond Dagger** | 40 Maple Wood Planks + 10 Stick / 60 Stone + 10 Stick / 75 Iron Bar + 10 Stick / 90 Gold Bar + 10 Stick / 100 Diamond + 10 Stick |
 | **Wind Charge** ×4 | 1 Mango + 1 Iron Fragment |
 | **Bulwark shield** | 6 Maple Wood Planks + 1 Iron Bar |
 | **Golden Apple** | 1 Apple + 8 Gold Bar |
