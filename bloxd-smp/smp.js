@@ -14,7 +14,8 @@
 //  Off-hand         your backpack's first slot carries a second item, outside
 //                   the hotbar. Drag it in, /offhand, or the on-screen button
 //  Golden Apples    two tiers. Heal, shield, regen and fire resistance
-//  Durability       Bloxd has none, so this adds it to every tool and weapon
+//  Durability       Bloxd has none, so this adds it to every tool and weapon,
+//                   with a live HUD chip for whatever you're holding
 //  Nether & End     portals, own fog/light/gravity, stacked far below by height
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
@@ -340,6 +341,18 @@ const CONFIG = {
         warnAtFraction: 0.1,
         costPerHit: 1,
         costPerBlockBroken: 1,
+
+        // A second, always-visible durability readout in the top-left HUD strip,
+        // alongside the existing one in the item's own tooltip - so you can watch
+        // it wear down without opening your inventory. Only ever the item you are
+        // HOLDING: Bloxd's API does not expose the armour slots, so an equipped
+        // helmet/chestplate/leggings/boots/gauntlets durability bar is not
+        // something this script can read or draw - there is nothing to hook.
+        hudBar: {
+            enabled: true,
+            segments: 8,
+            icon: "🔧",   // wrench
+        },
     },
 
     // ---- Dimensions ---------------------------------------------------------
@@ -852,16 +865,45 @@ function writeSlot(playerId, index, item, amount, attributes) {
     api.setItemSlot(playerId, index, item.name, amount, attributes, true);
 }
 
-/** A 12-segment wear bar, e.g. "durability 280/400  [!!!!!!!!....]". */
-function durabilityBar(left, max) {
-    const segments = 12;
+/** A row of filled/empty parallelogram blocks, e.g. "\u25B0\u25B0\u25B0\u25B0\u25B0\u25B0\u25B0\u25B0\u25B1\u25B1\u25B1\u25B1". */
+function blockBar(left, max, segments) {
     const filled = Math.max(0, Math.min(segments, Math.round((left / max) * segments)));
     let bar = "";
     for (let i = 0; i < segments; i++) {
         bar += i < filled ? "\u25B0" : "\u25B1";   // filled / empty parallelogram
     }
+    return bar;
+}
+
+/** A 12-segment wear bar, e.g. "durability 280/400  [!!!!!!!!....]". */
+function durabilityBar(left, max) {
     const percent = Math.round((left / max) * 100);
-    return bar + "  " + left + " / " + max + "  (" + percent + "%)";
+    return blockBar(left, max, 12) + "  " + left + " / " + max + "  (" + percent + "%)";
+}
+
+/**
+ * A compact durability readout for the top-left HUD strip, shown alongside
+ * whatever else is up there (the shield chip, if any) - separate from the
+ * bar already in the item's own tooltip, so it stays visible without opening
+ * the inventory. Only the currently HELD item: Bloxd's API exposes no way to
+ * read the armour slots, so worn gear cannot be shown here at all.
+ */
+function durabilityHudChip(playerId) {
+    if (!CONFIG.durability.hudBar.enabled) {
+        return null;
+    }
+    const held = heldSlot(playerId);
+    if (!held) {
+        return null;
+    }
+    const max = maxDurabilityFor(held.item);
+    if (max <= 0) {
+        return null;   // not a durable item
+    }
+    const custom = customAttrs(held.item);
+    const left = typeof custom[ATTR_DUR] === "number" ? custom[ATTR_DUR] : max;
+    const c = CONFIG.durability.hudBar;
+    return c.icon + " " + displayName(held.item) + " " + blockBar(left, max, c.segments);
 }
 
 function displayName(item) {
@@ -1581,12 +1623,16 @@ function topUpShield(playerId) {
 }
 
 /**
- * Puts the shield on the player's off arm and names the state in the HUD.
- * The shield is visible the whole time they have one - off-hand or in hand,
- * guarding or not - it just sits lower and duller when the guard is down.
+ * Puts the shield on the player's off arm and returns the HUD chip text for
+ * it, or null if there is nothing to show. The shield is visible the whole
+ * time they have one - off-hand or in hand, guarding or not - it just sits
+ * lower and duller when the guard is down.
  *
- * Only touches the client when the state actually changes, so this is cheap
- * enough to call every tick.
+ * Only the mesh attachment is written here; the returned text is combined
+ * with everything else the HUD strip shows (the durability bar included)
+ * into one headerChips write, done by refreshHudChips. That combining is
+ * why this can no longer write headerChips itself - two features writing
+ * the same array independently would each erase the other's chip.
  */
 function applyShieldVisuals(playerId) {
     const c = CONFIG.shield;
@@ -1597,46 +1643,68 @@ function applyShieldVisuals(playerId) {
     // is drawn on their own screen only, so they can still read their own state.
     const hidden = anonHidden(playerId);
     const key = now + (hidden ? "|hidden" : "");
-    if (state.shieldVisual === key) {
-        return;
+    if (state.shieldVisual !== key) {
+        state.shieldVisual = key;
+        if (now === "none" || hidden) {
+            api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
+        } else {
+            const blocking = now === "blocking";
+            api.updateEntityNodeMeshAttachment(
+                playerId, c.armNode, "Box",
+                {
+                    width: 0.5, height: 0.7, depth: 0.12,
+                    diffuseColor: blocking ? c.meshColour : c.meshColourLowered,
+                },
+                blocking ? c.meshOffset : c.meshOffsetLowered
+            );
+        }
     }
-    state.shieldVisual = key;
 
     if (now === "none") {
-        api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
-        api.setClientOption(playerId, "headerChips", []);
-        return;
+        return null;
+    }
+    return now === "blocking" ? c.hudChipBlocking : c.hudChipLowered;
+}
+
+/**
+ * Rebuilds the whole top-left HUD chip strip from every feature that wants a
+ * chip there - the shield state and the held item's durability bar - and
+ * writes it in one call, only when the combined result actually changed.
+ */
+function refreshHudChips(playerId) {
+    const chips = [];
+    if (CONFIG.shield.enabled) {
+        const shieldChip = applyShieldVisuals(playerId);
+        if (shieldChip) {
+            chips.push(shieldChip);
+        }
+    }
+    const durChip = durabilityHudChip(playerId);
+    if (durChip) {
+        chips.push(durChip);
     }
 
-    const blocking = now === "blocking";
-    if (hidden) {
-        api.updateEntityNodeMeshAttachment(playerId, c.armNode, null);
-    } else {
-        api.updateEntityNodeMeshAttachment(
-            playerId, c.armNode, "Box",
-            {
-                width: 0.5, height: 0.7, depth: 0.12,
-                diffuseColor: blocking ? c.meshColour : c.meshColourLowered,
-            },
-            blocking ? c.meshOffset : c.meshOffsetLowered
-        );
+    const state = stateOf(playerId);
+    const key = chips.join("");
+    if (state.hudChipsKey === key) {
+        return;
     }
-    api.setClientOption(playerId, "headerChips",
-        [blocking ? c.hudChipBlocking : c.hudChipLowered]);
+    state.hudChipsKey = key;
+    api.setClientOption(playerId, "headerChips", chips);
 }
 
 /** Raises the shield by hand: hold it and right click. */
 function raiseShield(playerId) {
     stateOf(playerId).shieldRaised = true;
     topUpShield(playerId);
-    applyShieldVisuals(playerId);
+    refreshHudChips(playerId);
     tell(playerId, "Shield raised.", "#9fb4c7");
 }
 
 /** Drops the guard. The shield stays on the arm, just lowered. */
 function lowerShield(playerId) {
     stateOf(playerId).shieldRaised = false;
-    applyShieldVisuals(playerId);
+    refreshHudChips(playerId);
 }
 
 function toggleShield(playerId) {
@@ -2529,11 +2597,10 @@ function tick() {
             syncOffhand(playerId);
         }
 
-        // Then redraw the shield from whatever the inventory now says. This is
-        // what makes simply HOLDING one show it on your arm, with no click.
-        if (CONFIG.shield.enabled) {
-            applyShieldVisuals(playerId);
-        }
+        // Then redraw the shield from whatever the inventory now says (this is
+        // what makes simply HOLDING one show it on your arm, with no click) and
+        // the held item's durability bar, in one combined HUD write.
+        refreshHudChips(playerId);
 
         // Catches respawns, admin teleports and simply walking over a border.
         if (CONFIG.dimensions.enabled) {

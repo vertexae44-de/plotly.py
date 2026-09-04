@@ -354,9 +354,11 @@ check("lowering the shield says LOWERED in the HUD",
 
 // putting the shield away entirely is what actually clears the arm
 world.inv.a = [{ name: "Iron Sword", amount: null, attributes: undefined }];
-ctx.applyShieldVisuals("a");
+ctx.refreshHudChips("a");
 check("dropping the shield takes it off your arm", world.meshAttachments.a === null, "");
-check("dropping the shield clears the HUD", world.opts.a.headerChips.length === 0,
+check("dropping the shield clears the shield HUD chip",
+    world.opts.a.headerChips.indexOf(C.shield.hudChipBlocking) === -1
+        && world.opts.a.headerChips.indexOf(C.shield.hudChipLowered) === -1,
     JSON.stringify(world.opts.a.headerChips));
 world.inv.a = [shieldItem(C.shield.durability)];
 
@@ -418,8 +420,10 @@ ctx.tick();
 check("removing the off-hand shield clears the flag",
     ctx.stateOf("a").offhandShieldOn === false, "");
 check("removing the off-hand shield detaches the mesh", world.meshAttachments.a === null, "");
-check("removing the off-hand shield clears the HUD chip",
-    world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
+check("removing the off-hand shield clears the shield HUD chip",
+    world.opts.a.headerChips.indexOf(C.shield.hudChipBlocking) === -1
+        && world.opts.a.headerChips.indexOf(C.shield.hudChipLowered) === -1,
+    JSON.stringify(world.opts.a.headerChips));
 world.sel.a = 0;
 
 // ---------------------------------------------------- shield writes on a dead player
@@ -696,6 +700,41 @@ check("durability bar is 12 segments",
 check("a full bar is all filled", (ctx.durabilityBar(400, 400).match(/\u25B0/g) || []).length === 12, "");
 check("a near-empty bar is nearly empty", (ctx.durabilityBar(1, 400).match(/\u25B0/g) || []).length === 0, "");
 check("the mace tooltip uses the bar", /\u25B0/.test(ctx.maceAttributes(200).customDescription), "");
+
+// ------------------------------------------------------------ durability HUD chip
+// A second, always-visible readout in the top-left HUD strip - separate from
+// the bar already in the tooltip - for whatever is currently HELD. Bloxd's API
+// exposes no way to read the armour slots, so worn gear can never show here.
+world.inv.a = [{ name: "Iron Sword", amount: null, attributes: ctx.withDurability(
+    { name: "Iron Sword" }, {}, 125, 250) }];
+world.sel.a = 0;
+world.opts.a.headerChips = [];
+ctx.refreshHudChips("a");
+check("holding a durable item shows a HUD durability chip",
+    world.opts.a.headerChips.some(c => c.indexOf("Iron Sword") !== -1 && c.indexOf(C.durability.hudBar.icon) === 0),
+    JSON.stringify(world.opts.a.headerChips));
+check("the HUD durability chip reflects the item's actual wear",
+    (world.opts.a.headerChips[0].match(/\u25B0/g) || []).length === Math.round(0.5 * C.durability.hudBar.segments),
+    world.opts.a.headerChips[0]);
+
+world.inv.a = [{ name: "Aura XP Orb", amount: null, attributes: undefined }];
+ctx.refreshHudChips("a");
+check("a non-durable held item shows no durability chip",
+    world.opts.a.headerChips.length === 0, JSON.stringify(world.opts.a.headerChips));
+
+world.inv.a = [shieldItem(C.shield.durability)];
+ctx.stateOf("a").shieldRaised = true;
+world.shield.a = C.shield.raiseShieldAmount;
+world.opts.a.headerChips = [];
+ctx.refreshHudChips("a");
+check("the shield chip and its own durability chip can both show at once",
+    world.opts.a.headerChips.length === 2
+        && world.opts.a.headerChips[0] === C.shield.hudChipBlocking
+        && world.opts.a.headerChips[1].indexOf("Shield") !== -1,
+    JSON.stringify(world.opts.a.headerChips));
+ctx.stateOf("a").shieldRaised = false;
+world.inv.a = [];
+world.opts.a.headerChips = [];
 
 // ------------------------------------------------------------- terrain generation
 const NDIM = C.dimensions.list.nether, EDIM = C.dimensions.list.end, GEN = C.dimensions.generation;

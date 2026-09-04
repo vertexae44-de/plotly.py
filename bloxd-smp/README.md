@@ -13,7 +13,7 @@
 | **Repair Kit** | Craftable. `/repair` restores half of whatever you're holding's max durability. |
 | **Bulwark shield** | Hold it and right-click to raise your guard. Or park it in the off-hand slot and it blocks 60% by itself, hand free for a sword. |
 | **Off-hand slot** | A backpack slot (outside the hotbar) carries a second item: drag it in, `/offhand`, or the touchscreen button. Shown as a status icon. |
-| **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip. |
+| **Durability** | Bloxd has none natively. Every tool, weapon, bow and armour piece gets one, shown as a wear bar in the tooltip and a second live chip in the HUD for whatever you're holding. |
 | **Crafting** | The mace, the spear, both apples and both portals all have real recipes. |
 | **Nether & End** | Two extra dimensions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -119,6 +119,25 @@ Density 3 - the further you fall, the harder it hits.
 Wear is spent on **hits and blocks broken**, so it applies to what you are holding. Armour gets a
 durability value and shows it in the tooltip, but does not tick down when you take a hit — Bloxd's
 API does not expose the armour slots, so there is nothing to hook.
+
+### HUD durability chip
+
+A second, always-visible readout — separate from the tooltip bar — shows up in the top-left HUD
+strip (`headerChips`) for whatever you are currently **holding**:
+
+```
+🔧 Iron Sword ▰▰▰▰▰▰▱▱
+```
+
+It updates every tick as the item wears, shares the HUD strip with the shield chip when both apply
+(a shield in hand shows its own guard state *and* its own durability, as two separate chips), and
+disappears the moment you switch to something non-durable. Turn it off with
+`durability.hudBar.enabled: false`, or change its segment count/icon.
+
+**This cannot show worn armour** (helmet, chestplate, leggings, boots, gauntlets) — Bloxd's API has
+no way to read what is in the armour slots at all, the same limit that keeps armour durability from
+ticking down on a hit. Only the held item is visible to the script, so only the held item can be
+shown here.
 
 ## Nether and the End
 
