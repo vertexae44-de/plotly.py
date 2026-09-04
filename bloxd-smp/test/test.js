@@ -1448,34 +1448,54 @@ check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (()
         && r.some(x => x.items[0] === "Moonstone Explosive" && x.amt === 230);
 })(), JSON.stringify(C.stabshot.recipe));
 
+// The orbital rings the ground with charges 50 blocks out from the aim
+// point, each one a real falling Moonstone Explosive item drop.
 world.inv.a = [{ name: C.orbital.item, amount: null, attributes: ctx.orbitalAttributes() }];
 world.sel.a = 0;
 world.pos.a = [0, 64, 0];
-world.targetInfo.a = { position: [10, 64, 10] };
+world.targetInfo.a = { position: [0, 64, 0] };
+// Ring point 0 (angle 0) lands at [centre.x + ringRadius, centre.y, centre.z]
+// when the world is empty (findGroundY finds no floor and falls back to the
+// aim point's own height) - put "b" exactly there.
+world.pos.b = [C.orbital.ringRadius, 64, 0];
 pendingStrikes.length = 0;
+world.drops.length = 0;
 ctx.onPlayerAltAction("a");
 check("firing the orbital cannon breaks it immediately", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
-check("firing the orbital cannon queues a delayed strike", pendingStrikes.length === 1, pendingStrikes.length);
-world.damages.length = 0;
-world.pos.b = [10, 64, 10];
-ctx.processPendingStrikes();
-check("the orbital strike does not land before its delay", world.damages.length === 0, world.damages.length);
-pendingStrikes[0].fireAt = -1;   // force it due, since api.now() is real wall-clock time in tests
-ctx.processPendingStrikes();
-check("the orbital strike lands once due", world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
-check("a landed strike is removed from the queue", pendingStrikes.length === 0, pendingStrikes.length);
+check("firing the orbital cannon queues one charge per ring point",
+    pendingStrikes.length === C.orbital.ringCount, pendingStrikes.length);
+check("firing the orbital cannon drops a real Moonstone Explosive per ring charge",
+    world.drops.filter(d => d.name === "Moonstone Explosive").length === C.orbital.ringCount,
+    world.drops.length);
 
+world.damages.length = 0;
+ctx.processPendingStrikes();
+check("no orbital charge lands before its fall delay", world.damages.length === 0, world.damages.length);
+pendingStrikes.forEach(s => { s.fireAt = -1; });   // force them all due, since api.now() is real wall-clock time in tests
+ctx.processPendingStrikes();
+check("an orbital charge lands on the ring and hits whoever is there",
+    world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+check("every orbital charge is cleared from the queue once due", pendingStrikes.length === 0, pendingStrikes.length);
+
+// The stabshot drills one shaft of charges straight down to bedrock and is
+// one-time use too now, same as the orbital.
 world.inv.a = [{ name: C.stabshot.item, amount: null, attributes: ctx.stabshotAttributes() }];
 world.sel.a = 0;
 world.damages.length = 0;
-ctx.stateOf("a").lastStabshot = 0;
-world.targetInfo.a = { position: [10, 64, 10] };
+pendingStrikes.length = 0;
+world.targetInfo.a = { position: [0, 6, 0] };
+world.pos.b = [0, 6, 0];
 ctx.onPlayerAltAction("a");
-check("stabshot does not consume the rod", world.inv.a[0] !== null, JSON.stringify(world.inv.a[0]));
-check("stabshot hits immediately, no delay", world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
-world.damages.length = 0;
-ctx.onPlayerAltAction("a");
-check("stabshot is on a cooldown", world.damages.length === 0, world.damages.length);
+check("firing the stabshot breaks it immediately (one-time use)",
+    world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
+const stabshotSteps = Math.floor((6 - C.stabshot.bedrockY) / C.stabshot.columnStepY) + 1;
+check("stabshot queues one charge per step down to bedrock",
+    pendingStrikes.length === stabshotSteps, pendingStrikes.length);
+check("stabshot places an explosive block at the top of the shaft",
+    world.blocks["0,6,0"] === "Moonstone Explosive", world.blocks["0,6,0"]);
+ctx.processPendingStrikes();
+check("the first stabshot charge detonates immediately",
+    world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
 
 // -------------------------------------------------------------------- vanity flex
 check("the vanity item is the real Diorite block, not a fake item",

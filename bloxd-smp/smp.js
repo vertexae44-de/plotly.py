@@ -27,8 +27,10 @@
 //  & Void
 //  Villagers        real NPC mobs scattered near spawn, right click to trade
 //  Ocean            a ring of water near spawn with a custom sea mob
-//  Orbital Strike   one-time Master Rod, calls down a delayed blast
-//  Stabshot         reusable Obsidian Rod, instant blast on a cooldown
+//  Orbital Strike   one-time Master Rod, rings the ground 50 blocks out with
+//                   falling Moonstone Explosive charges
+//  Stabshot         one-time Obsidian Rod, drills a shaft of Moonstone
+//                   Explosive charges straight down to bedrock
 //  Bed spawn        stand on any bed to set your respawn point
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
@@ -698,13 +700,15 @@ const CONFIG = {
     // Bloxd has neither a TNT item nor an API call that detonates one - the
     // only "explosion" this whole script can make is the same trick Crystal
     // PvP already uses: damage everyone in a radius and draw particles/sound
-    // over it. So both of these are built the same way, and "TNT" in both
-    // recipes is substituted with a real Bloxd block that is actually
-    // explosive - Moonstone Explosive - rather than an item that does
-    // not exist.
+    // over it. "TNT" in both recipes is substituted with a real Bloxd block
+    // that is actually explosive - Moonstone Explosive - and both weapons
+    // really do spawn that block at every impact point rather than just
+    // computing damage invisibly: the orbital's charges are dropped as real
+    // physics item entities that fall before detonating, and the stabshot's
+    // are placed directly down the drill shaft. Both are one-time use now -
+    // the rod breaks the instant it fires, whichever one it is.
     orbital: {
         enabled: true,
-        // A Master Rod, one real use per craft: firing it breaks it.
         item: "Master Rod",
         name: "Orbital Strike Cannon",
         recipe: [
@@ -713,15 +717,21 @@ const CONFIG = {
             { items: ["Diamond Bow"], amt: 2 },
             { items: ["Knight Heart"], amt: 400 },
         ],
-        radius: 10,
-        damage: 90,
-        knockbackUp: 10,
-        delayMs: 1200,     // a beat between firing and the strike landing
-        range: 60,          // how far out getPlayerTargetInfo may aim
+        // A ring of charges around where you're looking, each one a real
+        // Moonstone Explosive dropped from height, falling with physics
+        // before it detonates where it lands.
+        ringRadius: 50,
+        ringCount: 10,
+        fallHeight: 24,        // spawn this far above the ground before it drops
+        fallDelayMs: 1500,     // roughly how long that fall takes
+        radius: 7,             // blast radius per charge, not the whole ring
+        damage: 60,
+        knockbackUp: 9,
+        breakBlocks: true,
+        range: 60,             // how far out getPlayerTargetInfo may aim
     },
     stabshot: {
         enabled: true,
-        // An Obsidian Rod - reusable, unlike the Orbital's one-shot Master Rod.
         item: "Obsidian Rod",
         name: "Stabshot",
         recipe: [
@@ -729,10 +739,15 @@ const CONFIG = {
             { items: ["Knight Heart"], amt: 250 },
             { items: ["Moonstone Explosive"], amt: 230 },
         ],
-        radius: 4,
-        damage: 55,
-        knockbackUp: 6,
-        cooldownMs: 6000,
+        // One vertical shaft of charges, straight down from where you're
+        // aiming to bedrock - a drill, not a single point blast.
+        columnStepY: 6,
+        bedrockY: 0,
+        stepDelayMs: 150,      // stagger between each charge, so it reads as drilling down
+        radius: 5,
+        damage: 50,
+        knockbackUp: 5,
+        breakBlocks: true,
         range: 60,
     },
 
@@ -1066,7 +1081,8 @@ function orbitalAttributes() {
     const o = CONFIG.orbital;
     return {
         customDisplayName: o.name,
-        customDescription: "Right click to call down a strike where you are looking.\n"
+        customDescription: "Right click to drop a ring of " + o.ringCount + " Moonstone Explosive charges,"
+            + " " + o.ringRadius + " blocks out from where you are looking.\n"
             + "One-time use: the rod breaks the moment it fires.",
         customAttributes: { [ATTR_ORBITAL]: true },
     };
@@ -1076,7 +1092,9 @@ function stabshotAttributes() {
     const s = CONFIG.stabshot;
     return {
         customDisplayName: s.name,
-        customDescription: "Right click to strike where you are looking. Reusable, on a cooldown.",
+        customDescription: "Right click to drill a shaft of Moonstone Explosive charges straight down"
+            + " to bedrock where you are looking.\n"
+            + "One-time use: the rod breaks the moment it fires.",
         customAttributes: { [ATTR_STABSHOT]: true },
     };
 }
@@ -2473,8 +2491,14 @@ function aimPoint(playerId, range) {
     return [pos[0] + dir[0] * range, pos[1] + dir[1] * range, pos[2] + dir[2] * range];
 }
 
-/** The same "damage everyone in a radius, then draw it" trick Crystal PvP uses - the only real explosion this API can make. */
-function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem) {
+/**
+ * The same "damage everyone in a radius, then draw it" trick Crystal PvP
+ * uses - the only real explosion this API can make. breakRadius, if given,
+ * also clears a cube of terrain around centre - this is what makes the
+ * spawned Moonstone Explosive block disappear when it goes off, along with
+ * whatever else is nearby.
+ */
+function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem, breakRadius) {
     const targets = api.getPlayerIds().concat(api.getMobIds());
     for (let i = 0; i < targets.length; i++) {
         const victim = targets[i];
@@ -2502,6 +2526,13 @@ function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem) {
             api.shakePlayerCamera(victim, Math.min(1, falloff), 600);
         }
     }
+
+    if (breakRadius) {
+        const x = Math.floor(centre[0]), y = Math.floor(centre[1]), z = Math.floor(centre[2]);
+        api.setBlockRect([x - breakRadius, y - breakRadius, z - breakRadius],
+            [x + breakRadius, y + breakRadius, z + breakRadius], "Air");
+    }
+
     api.broadcastSound("ominousBellHit", 1.0, 0.55, { playerIdOrPos: centre, maxHearDist: 90 });
     api.playParticleEffect({
         presetId: "stomp",
@@ -2510,39 +2541,94 @@ function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem) {
     });
 }
 
-// Strikes waiting on their delay - there is no timer API, so this is ticked
-// forward the same way the terrain generation queue is.
+/**
+ * Scans straight down from (x, fromY, z) for the first solid block, and
+ * returns the empty space just above it - or null if the chunk isn't
+ * loaded or nothing solid turns up within maxDepth. Shared by the orbital's
+ * ring (where each charge should land) and nothing else needs it, but kept
+ * general rather than folded into fireOrbital.
+ */
+function findGroundY(x, z, fromY, maxDepth) {
+    const fx = Math.floor(x), fz = Math.floor(z), fy = Math.floor(fromY);
+    if (!api.isBlockInLoadedChunk(fx, fy, fz)) {
+        return null;
+    }
+    for (let dy = 0; dy <= maxDepth; dy++) {
+        const y = fy - dy;
+        const block = api.getBlock(fx, y, fz);
+        if (block && block !== "Air") {
+            return y + 1;
+        }
+    }
+    return null;
+}
+
+// Charges waiting on their fall or their drill delay - there is no timer
+// API, so this is ticked forward the same way the terrain generation queue
+// is.
 const pendingStrikes = [];
 
+/**
+ * A ring of Moonstone Explosive charges around where the player is aiming,
+ * each one a real physics item drop that falls before it detonates roughly
+ * where it lands. One-time use: the rod breaks the instant it fires.
+ */
 function fireOrbital(playerId, slot) {
     const o = CONFIG.orbital;
     const centre = aimPoint(playerId, o.range);
-    // One-time use: the rod breaks the instant it fires, whether or not
-    // anything is actually there to hit.
     api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
-    pendingStrikes.push({
-        fireAt: api.now() + o.delayMs, centre: centre, radius: o.radius,
-        damage: o.damage, knockbackUp: o.knockbackUp, sourceId: playerId,
-    });
+
+    for (let i = 0; i < o.ringCount; i++) {
+        const angle = (i / o.ringCount) * Math.PI * 2;
+        const x = centre[0] + Math.cos(angle) * o.ringRadius;
+        const z = centre[2] + Math.sin(angle) * o.ringRadius;
+        const groundY = findGroundY(x, z, centre[1] + o.fallHeight, 80);
+        const landY = groundY == null ? centre[1] : groundY;
+        const dropY = landY + o.fallHeight;
+
+        api.createItemDrop(x, dropY, z, "Moonstone Explosive", 1, false, undefined, o.fallDelayMs + 2000,
+            playerId, { doPhysics: true });
+        pendingStrikes.push({
+            fireAt: api.now() + o.fallDelayMs, centre: [x, landY, z], radius: o.radius,
+            damage: o.damage, knockbackUp: o.knockbackUp, sourceId: playerId,
+            withItem: o.item, breakRadius: o.breakBlocks ? Math.max(1, Math.round(o.radius / 2)) : 0,
+        });
+    }
+
     tell(playerId, "Orbital strike incoming...", "#ff6b6b");
     api.playSound(playerId, "magicAccent4", 1.0, 0.6);
 }
 
+/**
+ * A single shaft of Moonstone Explosive charges, placed straight down from
+ * where the player is aiming to bedrock, drilling downward as they go off
+ * in sequence. One-time use: the rod breaks the instant it fires.
+ */
 function fireStabshot(playerId, slot) {
     const s = CONFIG.stabshot;
-    const state = stateOf(playerId);
-    const now = api.now();
-    const remaining = s.cooldownMs - (now - (state.lastStabshot || 0));
-    if (remaining > 0) {
-        api.queueCrosshairText(playerId, "Stabshot: " + Math.ceil(remaining / 1000) + "s", 800);
-        return;
+    const centre = aimPoint(playerId, s.range);
+    api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
+
+    const x = Math.floor(centre[0]);
+    const z = Math.floor(centre[2]);
+    const startY = Math.floor(centre[1]);
+    const breakRadius = s.breakBlocks ? Math.max(1, Math.round(s.radius / 2)) : 0;
+
+    let step = 0;
+    for (let y = startY; y >= s.bedrockY && step < 60; y -= s.columnStepY, step++) {
+        api.setBlock(x, y, z, "Moonstone Explosive");
+        pendingStrikes.push({
+            fireAt: api.now() + step * s.stepDelayMs, centre: [x + 0.5, y + 0.5, z + 0.5], radius: s.radius,
+            damage: s.damage, knockbackUp: s.knockbackUp, sourceId: playerId,
+            withItem: s.item, breakRadius: breakRadius,
+        });
     }
-    state.lastStabshot = now;
-    blastAt(playerId, aimPoint(playerId, s.range), s.radius, s.damage, s.knockbackUp, s.item);
+
+    tell(playerId, "Stabshot drilling to bedrock...", "#ff6b6b");
     api.playSound(playerId, "magicAccent3", 0.9, 0.7);
 }
 
-/** Fires whatever pending orbital strikes have come due. Called from tick(). */
+/** Fires whatever pending charges have come due. Called from tick(). */
 function processPendingStrikes() {
     if (pendingStrikes.length === 0) {
         return;
@@ -2552,7 +2638,7 @@ function processPendingStrikes() {
         const strike = pendingStrikes[i];
         if (now >= strike.fireAt) {
             blastAt(strike.sourceId, strike.centre, strike.radius, strike.damage,
-                strike.knockbackUp, CONFIG.orbital.item);
+                strike.knockbackUp, strike.withItem, strike.breakRadius);
             pendingStrikes.splice(i, 1);
         }
     }
@@ -3576,8 +3662,8 @@ function playerCommand(playerId, command) {
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
-                + "the " + CONFIG.orbital.name + " and " + CONFIG.stabshot.name
-                + " call down a strike where you are looking | "
+                + "the " + CONFIG.orbital.name + " rings the ground with charges and the "
+                + CONFIG.stabshot.name + " drills straight to bedrock, both one-time use | "
                 + "right click a villager to trade | "
                 + "sleep in (stand on) a bed to set your spawn point | "
                 + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "

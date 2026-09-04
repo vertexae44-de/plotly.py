@@ -22,8 +22,8 @@
 | **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Villagers** | Real `NPC` mobs scattered near spawn — right-click one to trade. |
 | **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
-| **Orbital Strike Cannon** | One-time-use Master Rod — right-click to call down a delayed blast where you're looking. |
-| **Stabshot** | Reusable Obsidian Rod — an instant blast on a cooldown. |
+| **Orbital Strike Cannon** | One-time-use Master Rod — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
+| **Stabshot** | One-time-use Obsidian Rod — drills a shaft of Moonstone Explosive charges straight down to bedrock. |
 | **Bed spawn** | Stand on any bed to set your respawn point there. |
 | **Crafting** | Almost everything above has a real recipe. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -448,17 +448,28 @@ of them.
 
 Bloxd has **no TNT item and no explosion-trigger API** — the only "explosion" this whole script can
 make is the same trick Crystal PvP already uses: damage everyone in a radius and draw particles and
-sound over it. Both of these are built that way, aimed with `getPlayerTargetInfo` (falling back to
-your facing direction if you're not looking at a block).
+sound over it. Both weapons really do spawn real **Moonstone Explosive** blocks at every impact
+point rather than computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to
+your facing direction if you're not looking at a block). **Both are one-time use**: the rod breaks
+the instant it fires, whichever one it is.
 
-- **Orbital Strike Cannon** (a `Master Rod`) — right click calls down a strike at where you're
-  aiming, landing `orbital.delayMs` (1.2s) later. **One-time use**: the rod breaks the instant you
-  fire it, whether or not the strike lands on anything. There is no timer API in World Code, so the
-  delay is tracked the same way terrain generation is — a small queue drained every `tick()`.
-- **Stabshot** (an `Obsidian Rod`) — right click strikes immediately, no delay, but **reusable** on
-  a cooldown (`stabshot.cooldownMs`).
+- **Orbital Strike Cannon** (a `Master Rod`) — right click drops a **ring** of `orbital.ringCount`
+  (10) Moonstone Explosive charges, `orbital.ringRadius` (50) blocks out from where you're aiming.
+  Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that falls from
+  `orbital.fallHeight` above the ground and detonates roughly where it lands, after
+  `orbital.fallDelayMs`. The landing height under each ring point is found by scanning straight down
+  for the first solid block; if that column isn't loaded or nothing solid turns up, that one charge
+  falls back to detonating at your own height instead of guessing.
+- **Stabshot** (an `Obsidian Rod`) — right click places a single **vertical shaft** of Moonstone
+  Explosive charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
+  `stabshot.columnStepY` (6) blocks apart, each block placed immediately and set off in sequence
+  (`stabshot.stepDelayMs` apart) so it reads as drilling downward rather than one instant blast.
 
-Both radii, damages and knockback are tunable in `CONFIG.orbital` / `CONFIG.stabshot`.
+There is no timer API in World Code, so both weapons' delays are tracked the same way terrain
+generation is queued — a small array of pending charges drained every `tick()`. Every explosion also
+clears a small cube of terrain around itself (`breakBlocks`), which is what makes the explosive block
+disappear when it goes off. Ring size, shaft depth/spacing, radii, damage and knockback are all
+tunable in `CONFIG.orbital` / `CONFIG.stabshot`.
 
 ## Bed spawn points
 
