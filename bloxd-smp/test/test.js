@@ -409,6 +409,49 @@ const rechargedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
 check("after recharging, the shield blocks again",
     rechargedDmg === Math.round(20 * (1 - C.shield.blockFraction)), rechargedDmg);
 
+// -------------------------------------------------- axe/mace disables the shield
+// Same trade Minecraft gives an axe against a shield: a blocked hit from an
+// axe or a mace knocks the guard down entirely for a few seconds, rather
+// than just being absorbed like any other weapon.
+world.crouching.a = true;
+ctx.tick();
+world.shield.a = C.shield.raiseShieldAmount;
+world.inv.b = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.sel.b = 0;
+const swordBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a sword hit still just gets absorbed", swordBlockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), swordBlockedDmg);
+check("a sword hit never disables the shield", ctx.shieldGuarding("a") === true, "");
+
+world.shield.a = C.shield.raiseShieldAmount;
+world.inv.b = [{ name: "Iron Axe", amount: null, attributes: undefined }];
+world.sel.b = 0;
+ctx.stateOf("a").shieldDisabledUntil = 0;
+const axeBlockedDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("an axe hit still lands reduced, the first time", axeBlockedDmg === Math.round(20 * (1 - C.shield.blockFraction)), axeBlockedDmg);
+check("an axe hit disables the shield", ctx.shieldGuarding("a") === false, "");
+check("a disabled shield's resource is zeroed", world.shield.a === 0, world.shield.a);
+
+const axeFollowUpDmg = ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a disabled shield blocks nothing while still crouched with it out",
+    axeFollowUpDmg === undefined, axeFollowUpDmg);
+
+ctx.stateOf("a").shieldDisabledUntil = 0;   // simulate the disable window passing
+ctx.tick();
+check("the shield guards again once the disable window passes", ctx.shieldGuarding("a") === true, "");
+
+world.shield.a = C.shield.raiseShieldAmount;
+world.inv.b = [{ name: "Moonstone Mace", amount: null, attributes: ctx.maceAttributes(C.mace.durability) }];
+world.sel.b = 0;
+ctx.stateOf("b").fallDistance = 0;
+ctx.stateOf("a").shieldDisabledUntil = 0;
+ctx.onPlayerDamagingOtherPlayer("b", "a", 20);
+check("a mace hit also disables the shield, plain or Moonstone", ctx.shieldGuarding("a") === false, "");
+
+ctx.stateOf("a").shieldDisabledUntil = 0;
+world.crouching.a = false;
+world.inv.b = [{ name: "Iron Sword", amount: null, attributes: undefined }];
+world.sel.b = 0;
+
 // putting the shield away entirely is what actually clears the arm
 world.inv.a[C.offhand.slotIndex] = null;
 ctx.tick();
@@ -1433,6 +1476,16 @@ check("stabshot hits immediately, no delay", world.damages.some(d => d.hitEId ==
 world.damages.length = 0;
 ctx.onPlayerAltAction("a");
 check("stabshot is on a cooldown", world.damages.length === 0, world.damages.length);
+
+// -------------------------------------------------------------------- vanity flex
+check("the vanity item is the real Diorite block, not a fake item",
+    C.vanityFlex.item === "Diorite", C.vanityFlex.item);
+check("the vanity recipe costs 100000 Block of Moonstone",
+    C.vanityFlex.recipe.some(r => r.items[0] === "Block of Moonstone" && r.amt === 100000),
+    JSON.stringify(C.vanityFlex.recipe));
+check("the vanity item is craftable", !!world.recipes.a[C.vanityFlex.item], Object.keys(world.recipes.a));
+check("the vanity item carries its joke display name",
+    world.recipes.a[C.vanityFlex.item][0].attributes.customDisplayName === C.vanityFlex.name, "");
 
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILURES`);
 process.exit(fails === 0 ? 0 : 1);

@@ -225,6 +225,21 @@ const CONFIG = {
         ],
     },
 
+    // ---- Vanity: the absurd endgame flex --------------------------------------
+    // There is no "Knight Diorite" item in Bloxd - the real block closest to
+    // that name is plain Diorite, so that's what this tags and renames. Purely
+    // a joke/vanity craft with no gameplay effect: the price is deliberately
+    // a joke too, so owning one just proves you (or your whole SMP) grinded
+    // an absurd amount of Moonstone.
+    vanityFlex: {
+        enabled: true,
+        item: "Diorite",
+        name: "what the skibidi bop un dada really bought this ok",
+        recipe: [
+            { items: ["Block of Moonstone"], amt: 100000 },
+        ],
+    },
+
     // ---- Wind Charge ----------------------------------------------------------
     // A standalone throwable-style launch, separate from the mace's own wind
     // charge - anyone can carry a stack of these, not just whoever is holding
@@ -318,6 +333,13 @@ const CONFIG = {
         maxShieldOption: 60,       // raises the client's shield ceiling so it can show
         blockFraction: 0.6,        // fraction of incoming player damage blocked
         blockDurabilityCost: 2,    // per hit blocked
+
+        // An axe or mace hit that lands on a raised guard disables it
+        // outright for this long, the same trade Minecraft gives an axe
+        // against a shield - matched by the weapon's kind (its last word),
+        // so this covers every material of axe and every mace, plain or not.
+        disableDurationMs: 4000,
+        disableKinds: ["Axe", "Mace"],
 
         armNode: "ArmLeftMesh",    // the "off-hand" arm - opposite the weapon hand
 
@@ -1011,6 +1033,15 @@ function daggerAttributes(durabilityLeft) {
     };
 }
 
+function vanityFlexAttributes() {
+    const v = CONFIG.vanityFlex;
+    return {
+        customDisplayName: v.name,
+        customDescription: "Proof you (or your whole SMP) mined an absurd amount of Moonstone. Does nothing.",
+        customAttributes: {},
+    };
+}
+
 /** A plain weapon with nothing but a name and a durability bar - no special ability. */
 function plainDurableAttributes(itemName, durabilityLeft) {
     const max = durabilityForName(itemName);
@@ -1246,6 +1277,14 @@ function registerRecipes(playerId) {
                 attributes: plainDurableAttributes(tier.item),
             }]);
         }
+    }
+
+    if (CONFIG.vanityFlex.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.vanityFlex.item, [{
+            requires: CONFIG.vanityFlex.recipe,
+            produces: 1,
+            attributes: vanityFlexAttributes(),
+        }]);
     }
 
     if (CONFIG.orbital.enabled) {
@@ -1882,13 +1921,46 @@ function offhandSwapEffects(playerId) {
  * A shield only guards while it is BOTH sitting in the off-hand slot AND the
  * player is crouching (api.isPlayerCrouching) - either one alone does
  * nothing. There is no hand-raised mode: a shield held in the main hand is
- * just an item.
+ * just an item. A shield that was just disabled (see shieldDisableCheck)
+ * cannot guard again until the disable window passes, even if the player is
+ * still crouching with it out the whole time.
  */
 function shieldGuarding(playerId) {
     if (!CONFIG.shield.enabled) {
         return false;
     }
-    return !!stateOf(playerId).offhandShieldOn && api.isPlayerCrouching(playerId);
+    const state = stateOf(playerId);
+    if (api.now() < (state.shieldDisabledUntil || 0)) {
+        return false;
+    }
+    return !!state.offhandShieldOn && api.isPlayerCrouching(playerId);
+}
+
+/** Whether an item's kind (its last word) is one that disables a shield on a blocked hit - axes and every mace, same as Minecraft's axe-vs-shield. */
+function isShieldDisablingWeapon(itemName) {
+    const words = String(itemName).split(" ");
+    return CONFIG.shield.disableKinds.indexOf(words[words.length - 1]) !== -1;
+}
+
+/**
+ * A blocked hit from an axe or a mace knocks the guard down entirely for
+ * shield.disableDurationMs - not just absorbed, disabled - the same
+ * axe-beats-shield trade Minecraft has. Zeroes the numeric shield too, so
+ * there is nothing left to soak with even if the player lets go of crouch
+ * and grabs it again immediately.
+ */
+function shieldDisableCheck(attackerId, defenderId) {
+    const attackerSlot = heldSlot(attackerId);
+    if (!attackerSlot || !isShieldDisablingWeapon(attackerSlot.item.name)) {
+        return;
+    }
+    const state = stateOf(defenderId);
+    state.shieldDisabledUntil = api.now() + CONFIG.shield.disableDurationMs;
+    if (isAlive(defenderId)) {
+        api.setShieldAmount(defenderId, 0);
+    }
+    api.queueCrosshairText(defenderId, "Shield disabled!", 1500);
+    api.playSound(defenderId, "hit3", 0.9, 0.6);
 }
 
 /**
@@ -2068,9 +2140,11 @@ function applyShieldAbsorption(defenderId, slot, damage) {
 
 /**
  * Applies blocking to an incoming hit: only the off-hand shield, only while
- * crouching. Returns the damage that should actually land.
+ * crouching. An axe or mace hit that connects with a raised guard disables
+ * it instead of just being absorbed - the same trade Minecraft's axe has
+ * against a shield. Returns the damage that should actually land.
  */
-function shieldBlock(defenderId, damage) {
+function shieldBlock(attackerId, defenderId, damage) {
     if (!CONFIG.shield.enabled || !shieldGuarding(defenderId)) {
         return damage;
     }
@@ -2078,7 +2152,9 @@ function shieldBlock(defenderId, damage) {
     if (!off || !customAttrs(off.item)[ATTR_SHIELD]) {
         return damage;
     }
-    return applyShieldAbsorption(defenderId, off, damage);
+    const blocked = applyShieldAbsorption(defenderId, off, damage);
+    shieldDisableCheck(attackerId, defenderId);
+    return blocked;
 }
 
 // -----------------------------------------------------------------------------
@@ -2138,7 +2214,7 @@ function handleWeaponHit(attacker, targetId, damageDealt) {
         return computed;
     }
     const base = computed === undefined ? damageDealt : computed;
-    const blocked = shieldBlock(targetId, base);
+    const blocked = shieldBlock(attacker, targetId, base);
     // Only truly a no-op (undefined) when neither the weapon nor the shield
     // changed anything - a mace/spear hit still reports its number even when
     // that number happens to equal the input, matching their existing contract.

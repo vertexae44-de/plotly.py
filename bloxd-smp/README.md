@@ -15,7 +15,7 @@
 | **Wind Charge** | A standalone launch item, craftable from Mango + Iron Fragment. Anyone can carry a stack, not just the mace. |
 | **Hang Gliders** | This world's elytra — a real Bloxd item, steep recipe. Nothing stops you swinging the mace while gliding. |
 | **Mending** | `/mend`, or throw a Splash Aura XP Potion at your off-hand — both spend Aura XP Potions, since Bloxd has no XP/level stat to spend instead. |
-| **Bulwark shield** | Park it in the off-hand slot **and crouch** — that is the only way it ever blocks, 60% of incoming player damage. |
+| **Bulwark shield** | Park it in the off-hand slot **and crouch** — that is the only way it ever blocks, 60% of incoming player damage. Axes and maces disable it on a blocked hit, like Minecraft. |
 | **Off-hand slot** | Slot 44 carries a second item, outside the hotbar: drag it in, `/offhand`, or the touchscreen button. Shown as a status icon. |
 | **Reforge** | `/reforge` swaps the custom attributes between your held item and your off-hand item. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow, armour piece and glider gets one, shown as a wear bar in the tooltip and a second live chip in the HUD for whatever you're holding. |
@@ -58,6 +58,7 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
 | **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
 | **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
+| **"what the skibidi bop un dada really bought this ok"** (Diorite) | 100000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
@@ -396,6 +397,18 @@ off-hand above — deliberately narrow now:
 **Scope, stated plainly:** blocking covers player-vs-player hits (the path this script controls).
 It does **not** reduce damage from real Bloxd mobs (`onMobDamagingPlayer` isn't hooked) or crystal
 blasts (explosions bypass it, as in most games).
+
+### Axes and maces disable the shield
+
+The same trade Minecraft's axe has against a shield: land a hit with an **axe** (any material) or
+**any mace** (the Moonstone one or a plain tier) on a guard that's actively blocking, and it
+doesn't just get absorbed — the guard is **disabled outright** for `shield.disableDurationMs`
+(4s by default). The numeric shield resource is zeroed too, so there's nothing left even if the
+defender lets go of crouch and grabs the shield again immediately; they get a "Shield disabled!"
+crosshair message. It comes back on its own once the window passes — no need to re-seat it.
+Every other weapon (swords, spears, daggers, bows) just gets absorbed as normal. Tune which
+weapon kinds trigger it in `shield.disableKinds` (matched the same way durability kinds are, by
+the item's last word — `"Axe"` or `"Mace"` by default).
 
 **Why a plain `Brown Paintball`:** the first attempt used `Brown Paintball Explosive Item`, and the
 shield simply did not work — that item is one of Bloxd's **native throwables**, so the engine's own
