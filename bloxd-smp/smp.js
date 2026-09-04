@@ -83,8 +83,8 @@ const CONFIG = {
         sound: "ominousBellHit",
         volume: 1,
         rate: 0.6,
-        // Bigger than any distance in the world, including the 30000-block
-        // dimension offsets, so it reaches every player no matter where they are.
+        // Bigger than any distance in the world, dimension offsets included,
+        // so it reaches every player no matter where they are.
         maxHearDist: 1000000,
     },
 
@@ -324,7 +324,11 @@ const CONFIG = {
     // offsets below and lower them if it is not.
     dimensions: {
         enabled: true,
-        regionHalfSize: 10000,     // how wide each region's "claim" is
+        // How far each region's "claim" reaches from its centre. The regions
+        // below sit 20000 apart, so this must stay at or under 10000 or
+        // neighbouring claims would overlap and the nearer one would swallow
+        // the other. 5000 leaves a clear gap between each.
+        regionHalfSize: 5000,
         buildArrivalPlatform: true,
         platformRadius: 3,
         travelCooldownMs: 1500,    // stops portals ping-ponging you
@@ -339,7 +343,7 @@ const CONFIG = {
             },
             nether: {
                 name: "The Nether",
-                origin: [30000, 0],
+                origin: [0, -10000],
                 scale: 8,              // 1 block here covers 8 in the overworld
                 portalBlock: "Purple Portal",
                 platformBlock: "Magma",
@@ -353,7 +357,7 @@ const CONFIG = {
             },
             "void": {
                 name: "The Void",
-                origin: [30000, 30000],
+                origin: [0, -50000],
                 scale: 1,
                 platformBlock: "Obsidian",
                 // No portalBlock: the only way out is the resurrection orbs.

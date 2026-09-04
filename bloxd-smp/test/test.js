@@ -703,6 +703,51 @@ check("overworld chunks are never queued", (() => {
     return !Object.keys(genDone).some(k => k.indexOf("overworld:") === 0);
 })(), Object.keys(genDone).join(" "));
 
+// ------------------------------------------------------------ region geometry
+// Regions claim a box of +/- regionHalfSize around their centre. If two claims
+// ever overlap, dimensionAt returns whichever is listed first and the other
+// dimension silently stops existing - so check every pair stays clear.
+(() => {
+    const half = C.dimensions.regionHalfSize;
+    const names = Object.keys(C.dimensions.list);
+    let clash = null;
+    for (let i = 0; i < names.length; i++) {
+        for (let j = i + 1; j < names.length; j++) {
+            const a = C.dimensions.list[names[i]].origin;
+            const b = C.dimensions.list[names[j]].origin;
+            const apart = Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
+            if (apart < half * 2) {
+                clash = names[i] + " and " + names[j] + " are only " + apart + " apart";
+            }
+        }
+    }
+    check("no two regions overlap", clash === null, clash || "");
+})();
+
+// every dimension also has to land back on itself: put a player at its centre
+// and dimensionAt must name that same dimension
+Object.keys(C.dimensions.list).forEach(key => {
+    const o = C.dimensions.list[key].origin;
+    check("a player at the centre of " + key + " is in " + key,
+        ctx.dimensionAt([o[0], 64, o[1]]) === key, ctx.dimensionAt([o[0], 64, o[1]]));
+});
+
+// a round trip has to land you back where you started, from the far corner of
+// the overworld's claim, for every dimension that has a portal
+Object.keys(C.dimensions.list).filter(k => k !== "overworld").forEach(key => {
+    const edge = C.dimensions.regionHalfSize - 1;
+    world.pos.b = [edge, 64, edge];
+    ctx.stateOf("b").dimension = "overworld";
+    ctx.travelTo("b", key);
+    const arrived = ctx.dimensionAt(world.pos.b);
+    check("travelling to " + key + " from the overworld edge lands inside it",
+        arrived === key, arrived + " at " + world.pos.b);
+    ctx.travelTo("b", "overworld");
+    check("coming back from " + key + " returns you to where you started",
+        Math.abs(world.pos.b[0] - edge) < 1 && Math.abs(world.pos.b[2] - edge) < 1,
+        world.pos.b);
+});
+
 // ------------------------------------------------------------------ dimension look
 check("nether fog is red", /^#[6-9a-f]/.test(NDIM.clientOptions.fogColourOverride), NDIM.clientOptions.fogColourOverride);
 check("end fog is purple", EDIM.clientOptions.fogColourOverride === "#2e0f52", EDIM.clientOptions.fogColourOverride);
