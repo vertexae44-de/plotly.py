@@ -147,11 +147,8 @@ const genDone = vm.runInContext("genDone", ctx);
 const genQueue = vm.runInContext("genQueue", ctx);
 const voidGuardians = vm.runInContext("voidGuardians", ctx);
 const npcTrades = vm.runInContext("npcTrades", ctx);
-const fallingExplosives = vm.runInContext("fallingExplosives", ctx);
-const scheduledExplosions = vm.runInContext("scheduledExplosions", ctx);
-const despawnQueue = vm.runInContext("despawnQueue", ctx);
 
 module.exports = {
     ctx, world, api, CONFIG, durabilityCache, genDone, genQueue,
-    voidGuardians, npcTrades, fallingExplosives, scheduledExplosions, despawnQueue,
+    voidGuardians, npcTrades,
 };

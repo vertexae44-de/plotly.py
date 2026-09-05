@@ -22,8 +22,6 @@
 | **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Village & Villagers** | A ring of real houses around spawn, one real `NPC` mob per house — right-click one to trade. |
 | **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
-| **Orbital Strike Cannon** | One-time-use — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
-| **Stabshot** | One-time-use — drills a shaft of Super RPG charges straight down to bedrock. |
 | **Bed spawn** | Stand on any bed to set your respawn point there. |
 | **Crafting** | Almost everything above has a real recipe. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -56,16 +54,10 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
-| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
-| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
 | **"what the skibidi bop un dada really bought this ok"** (Diorite) | 39000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
 steep third option, not a replacement for either.
-
-Bloxd has no TNT item and no explosion-trigger API, so **Moonstone Explosive** (a real block)
-stands in for "TNT" in both recipes, the same way Wind Charge and the shield already reuse
-real items for concepts Bloxd doesn't have.
 
 ## Hearts
 
@@ -448,9 +440,9 @@ cluster of buildings around `npc.spawnCentre` the first time a player joins:
 
 Bloxd's World Code doesn't generate the Overworld (unlike the Nether/End/Void, which this script
 *does* build — see below), so there's no way to know the real terrain height at spawn ahead of
-time. Every footprint's ground is found the same way the Orbital Strike Cannon finds where its
-charges should land: scanning straight down for the first solid block (`findGroundY`), falling back
-to `spawnCentre`'s own Y if the chunk isn't loaded yet or nothing solid turns up. Set
+time. Every footprint's ground is found by scanning straight down for the first solid block
+(`findGroundY`), falling back to `spawnCentre`'s own Y if the chunk isn't loaded yet or nothing
+solid turns up. Set
 `village.enabled: false` to fall back to the old behaviour — `npc.countInOverworld` villagers
 scattered loosely around `npc.spawnRadius` with no buildings at all.
 
@@ -465,43 +457,6 @@ and Wind Charge: an existing mob (`Slime` by default), renamed and re-skinned to
 else — an "Abyssal Crawler". A ring of sand and water generates once near world spawn
 (`ocean.ringRadius`/`ocean.ringWidth`/`ocean.waterLevel`), stocked with `ocean.seaMob.countPerRing`
 of them.
-
-## Orbital Strike Cannon & Stabshot
-
-Both are craftable **arrows**, not right-click launcher items — every launcher item tried before
-this hit its own native-behaviour wall (a fishing rod's cast swallowing the click, a common crafting
-material's stack merging away its tag), so firing was moved onto something that has no click of its
-own to fight over: shoot the arrow from a bow and it explodes wherever it lands.
-
-- **Orbital Strike Cannon** (`Arrow of Aura XP`) — explodes on impact into several **falling rings**
-  of real explosions at once (`orbital.rings`, default `[0, 7, 12, 16]` blocks out, `orbital.pointsPerRing`
-  per ring). Each point is a real **Moonstone Explosive** block that visually falls from
-  `orbital.fallHeight` before detonating, after `orbital.fallTimeSeconds`.
-- **Stabshot** (`Arrow of Shield`) — explodes on impact into one straight **column** of real
-  explosions running `stabshot.depth` (51) blocks straight down, all going off together on the very
-  next tick rather than falling or staggering — a single vertical strike, not a drill.
-
-**How the explosion itself works — real, not simulated:** every previous version of these two faked
-an explosion the same way Crystal PvP does (damage everyone in a radius, draw particles over it).
-This one is real: `createExplosion` spawns two invisible mobs at the impact point — one (`attacker`)
-carrying a genuine launcher item (`RPG` for strength 1, `Super RPG` otherwise) as its
-`attackItemName`, and one (`target`) parked just below it with enormous health so the hit can never
-actually kill it — then forces a single `applyMeleeHit` between them. That one forced hit is enough
-to trigger the launcher's own native explosion for real: actual terrain damage, actual knockback,
-nothing this script computes by hand. Both mobs are removed afterward with `despawnMob`, never an
-actual kill — `despawnMob` explicitly skips "on death" flows, so neither one leaves a death
-animation, a loot drop, or a killfeed entry. A ring or column strike spawns dozens of these in one
-go, and real death drops piling up under every blast is exactly the kind of lag this avoids.
-`breakRadius` on top of that clears a small cube of terrain at each explosion, independent of
-whatever the native blast does or doesn't touch on its own.
-
-There is no timer API in World Code, so both the falling ring and the delayed detonations are
-tracked the same way terrain generation is queued — small arrays (`fallingExplosives`,
-`scheduledExplosions`, `despawnQueue`) drained every `tick()` via `processExplosionQueues`. Neither
-arrow needs a custom tag to work: `onPlayerThrowableHitTerrain` tells them apart by their own real
-item name, so there's nothing for a native behaviour or an inventory stack merge to collide with.
-Ring/column shape, fall time, strength, and `breakRadius` are all tunable in `CONFIG.orbital` /
-`CONFIG.stabshot`.
 
 ## Bed spawn points
 
@@ -560,7 +515,7 @@ instead of eliminations.
 | `/offhand` | everyone | Swap what you're holding into the off-hand slot (works on the shield too) |
 | `/shield` | everyone | Shows your current shield state (off-hand + crouch is the only way it ever blocks) |
 | `/reforge` | everyone | Swap attributes between your held item and your off-hand item |
-| `/give mace\|spear\|dagger\|windcharge\|shield\|orbital\|stabshot\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
+| `/give mace\|spear\|dagger\|windcharge\|shield\|gapple\|egapple\|heart\|netherportal\|endportal` | admins | Spawn any custom item |
 | `/dim overworld\|nether\|end\|void` | admins | Travel between dimensions |
 | `/bans`, `/unban <name>` | admins | List and lift bans |
 | `/sethp <player> <hp>` | admins | Set someone's max HP |
@@ -577,16 +532,11 @@ Things the Bloxd API genuinely does not expose, worked around rather than faked:
   traded through plain inventory calls rather than the native shop.
 - **No sea-creature mob type.** The ocean's sea mob is an existing mob (`Slime` by default),
   renamed and re-skinned.
-- **No TNT item, no explosion-trigger API.** The Orbital Strike Cannon and Stabshot substitute
-  Moonstone Explosive for "TNT" and fake their blast the same way Crystal PvP does:
-  damage-in-a-radius plus particles, not a real detonation.
 - **No way to read the armour slots.** Armour gets a durability number from the same
   materials/kinds formula as everything else, and can be mended if you pull it into your hand, but
   it never wears down automatically from a hit while worn — there's nothing to hook.
 - **No armour-enchant API.** Native armour enchants (Health, Health Regen, etc., if a player finds
   or buys them outside this script) are outside anything World Code can see or strip.
-- **No timer/`setTimeout`.** The Orbital Strike Cannon's fire delay is tracked the same way terrain
-  generation is queued — a small array drained every `tick()`.
 
 ## Tuning
 
@@ -640,6 +590,5 @@ message and one toll however it happened, both apples (heal, shield, regen, fire
 smash damage against players and mobs, Density and Wind Burst, the spear lunge, the dagger's poison
 and wear, the five plain mace tiers craftable with no smash tag, reforge swapping attributes both
 ways, glider durability and its per-flight wear, villager spawning and trading, ocean sea mob
-spawning, bed spawn points and the respawn fallback, the Orbital Strike Cannon's delayed one-time
-blast and the Stabshot's instant reusable one, durability derivation and breakage, crafting
+spawning, bed spawn points and the respawn fallback, durability derivation and breakage, crafting
 registration and costs, elimination and unban, and every command.
