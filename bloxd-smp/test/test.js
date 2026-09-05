@@ -1391,8 +1391,54 @@ check("villager skins are all real NPC variations",
     C.npc.variations.every(v => ["default", "emma", "leo", "isabel", "sanjay", "imara", "enoch", "sara", "carmen"].indexOf(v) !== -1),
     JSON.stringify(C.npc.variations));
 check("world init spawned the configured number of villagers",
-    world.spawnedMobs.filter(m => m.mobType === "NPC").length === C.npc.countInOverworld,
+    world.spawnedMobs.filter(m => m.mobType === "NPC").length
+        === (C.npc.village.enabled ? C.npc.village.houseCount : C.npc.countInOverworld),
     world.spawnedMobs.filter(m => m.mobType === "NPC").length);
+
+// -------------------------------------------------------------------- village
+// Villagers stand in a real cluster of buildings, not open terrain - a house
+// per villager around a paved plaza, linked to it by a path. Exercised
+// directly against buildVillage rather than through the one-time
+// spawnWorldFeatures, which already ran (at the top of this file) against
+// the real CONFIG.
+world.blocks = {}; world.rects.length = 0; world.sets = 0;
+const villageCfg = Object.assign({}, C.npc.village, { houseCount: 3, ringRadius: 12, footprint: 4, plazaRadius: 3 });
+const villagePositions = ctx.buildVillage([0, 70, 0], villageCfg);
+check("buildVillage returns one stand position per house",
+    villagePositions.length === villageCfg.houseCount, villagePositions.length);
+check("buildVillage places a paved plaza at the centre",
+    world.rects.some(r => r.name === villageCfg.plazaBlock
+        && r.p1[0] === -villageCfg.plazaRadius && r.p1[2] === -villageCfg.plazaRadius),
+    JSON.stringify(world.rects.filter(r => r.name === villageCfg.plazaBlock)));
+const houseFloorRects = world.rects.filter(r => r.name === villageCfg.floorBlock
+    && r.p2[0] - r.p1[0] === villageCfg.footprint * 2);
+check("buildVillage places one floor per house",
+    houseFloorRects.length === villageCfg.houseCount, houseFloorRects.length);
+check("buildVillage places one set of walls per house",
+    world.rects.filter(r => r.name === villageCfg.wallBlock).length === villageCfg.houseCount,
+    world.rects.filter(r => r.name === villageCfg.wallBlock).length);
+check("buildVillage places one roof per house",
+    world.rects.filter(r => r.name === villageCfg.roofBlock).length === villageCfg.houseCount,
+    world.rects.filter(r => r.name === villageCfg.roofBlock).length);
+check("buildVillage places 4 windows per house",
+    world.sets >= villageCfg.houseCount * 4, world.sets);
+check("buildVillage carves a doorway (Air) into every house (plus its hollow interior)",
+    world.rects.filter(r => r.name === "Air").length === villageCfg.houseCount * 2,
+    world.rects.filter(r => r.name === "Air").length);
+// The whole test world is empty ("Air" everywhere), so every groundYNear
+// call in this pass falls back to the centre's own Y (70) - the path from
+// the plaza to each house is a flat line, and its far end lands exactly on
+// the house position, one block below floor level (69).
+check("buildVillage lays a path reaching every house's doorstep",
+    Array.from({ length: villageCfg.houseCount }, (_, i) => {
+        const angle = (i / villageCfg.houseCount) * Math.PI * 2;
+        const hx = Math.round(Math.cos(angle) * villageCfg.ringRadius);
+        const hz = Math.round(Math.sin(angle) * villageCfg.ringRadius);
+        return world.blocks[hx + ",69," + hz] === villageCfg.pathBlock;
+    }).every(Boolean), JSON.stringify(world.blocks));
+check("village houses ring further out than the plaza itself",
+    villagePositions.every(([x, , z]) => Math.sqrt(x * x + z * z) > villageCfg.plazaRadius),
+    JSON.stringify(villagePositions));
 
 const someNpcId = Object.keys(npcTrades)[0];
 check("every spawned villager was assigned a trade", !!someNpcId, "");

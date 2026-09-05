@@ -25,7 +25,8 @@
 //                   piece of armour and glider, with a live HUD chip
 //  Nether, End      portals, own fog/light/gravity, far-apart regions
 //  & Void
-//  Villagers        real NPC mobs scattered near spawn, right click to trade
+//  Village          a ring of real houses around spawn, one villager (real
+//                   NPC mob) per house, right click to trade
 //  Ocean            a ring of water near spawn with a custom sea mob
 //  Orbital Strike   one-time use, rings the ground 50 blocks out with
 //                   falling Moonstone Explosive charges
@@ -780,8 +781,8 @@ const CONFIG = {
         enabled: true,
         mobType: "NPC",
         variations: ["emma", "leo", "isabel", "sanjay", "imara", "enoch", "sara", "carmen"],
-        countInOverworld: 6,
-        spawnRadius: 40,        // scattered this far from world spawn [0,64,0]
+        countInOverworld: 6,   // only used as a fallback when village.enabled is false
+        spawnRadius: 40,       // fallback scatter radius from world spawn [0,64,0]
         spawnCentre: [0, 64, 0],
         trades: [
             { give: "Moonstone", giveAmt: 8, want: "Diamond", wantAmt: 4 },
@@ -789,6 +790,31 @@ const CONFIG = {
             { give: "Aura XP Potion", giveAmt: 3, want: "Gold Bar", wantAmt: 6 },
             { give: "Lunite", giveAmt: 2, want: "Block of Emerald", wantAmt: 6 },
         ],
+
+        // ---- Village ---------------------------------------------------------
+        // A real cluster of buildings around spawnCentre - one house per
+        // villager, in a ring around a small paved plaza, each linked to it by
+        // a dirt path - rather than villagers just standing around in open
+        // terrain. This script has no way to know the Overworld's real terrain
+        // height at spawn (it doesn't generate that dimension, unlike the
+        // Nether/End/Void), so every footprint's ground is found the same way
+        // the orbital finds where its charges land: scanning straight down
+        // with findGroundY, falling back to spawnCentre's own Y if the chunk
+        // isn't loaded or nothing solid turns up.
+        village: {
+            enabled: true,
+            houseCount: 6,        // one villager per house
+            ringRadius: 18,       // houses this far out from spawnCentre
+            footprint: 5,         // a house is (2*footprint+1) blocks square
+            wallHeight: 4,
+            floorBlock: "Stone Bricks",
+            wallBlock: "Maple Wood Planks",
+            roofBlock: "Bricks",
+            windowBlock: "Glass",
+            pathBlock: "Dirt",
+            plazaRadius: 4,
+            plazaBlock: "Stone Bricks",
+        },
     },
 
     // ---- Ocean ------------------------------------------------------------
@@ -2703,7 +2729,88 @@ const npcTrades = {};
 
 let worldFeaturesSpawned = false;
 
-/** Scatters the villagers and the ocean's sea mobs once, near world spawn. */
+/** The ground height at one x/z, scanning down from a generous search height, or fallbackY if nothing solid turns up. */
+function groundYNear(x, z, fallbackY) {
+    const found = findGroundY(x, z, fallbackY + 40, 100);
+    return found == null ? fallbackY : found;
+}
+
+/**
+ * One simple house: a stone brick floor and hollow wood-plank box with a
+ * flat brick roof, a window centred on each wall, and a doorway punched
+ * through whichever wall faces (doorDx, doorDz) - the direction back toward
+ * the village plaza, so every house opens inward.
+ */
+function buildVillageHouse(x, y, z, v, doorDx, doorDz) {
+    const r = v.footprint;
+    api.setBlockRect([x - r, y - 1, z - r], [x + r, y - 1, z + r], v.floorBlock);
+    api.setBlockRect([x - r, y, z - r], [x + r, y + v.wallHeight - 1, z + r], v.wallBlock);
+    api.setBlockRect([x - r + 1, y, z - r + 1], [x + r - 1, y + v.wallHeight - 1, z + r - 1], "Air");
+    api.setBlockRect([x - r, y + v.wallHeight, z - r], [x + r, y + v.wallHeight, z + r], v.roofBlock);
+
+    const wy = y + 1;
+    api.setBlock(x - r, wy, z, v.windowBlock);
+    api.setBlock(x + r, wy, z, v.windowBlock);
+    api.setBlock(x, wy, z - r, v.windowBlock);
+    api.setBlock(x, wy, z + r, v.windowBlock);
+
+    if (Math.abs(doorDx) >= Math.abs(doorDz)) {
+        const wallX = doorDx > 0 ? x + r : x - r;
+        api.setBlockRect([wallX, y, z - 1], [wallX, y + 1, z + 1], "Air");
+    } else {
+        const wallZ = doorDz > 0 ? z + r : z - r;
+        api.setBlockRect([x - 1, y, wallZ], [x + 1, y + 1, wallZ], "Air");
+    }
+}
+
+/** A one-block-wide path of ground-hugging surface blocks between two points, stepped along whichever axis is longer. */
+function buildPath(x1, y1, z1, x2, y2, z2, block) {
+    const steps = Math.max(Math.abs(x2 - x1), Math.abs(z2 - z1));
+    if (steps === 0) {
+        return;
+    }
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = Math.round(x1 + (x2 - x1) * t);
+        const z = Math.round(z1 + (z2 - z1) * t);
+        const y = groundYNear(x, z, Math.round(y1 + (y2 - y1) * t));
+        api.setBlock(x, y - 1, z, block);
+    }
+}
+
+/**
+ * A ring of houses around a small paved plaza at centre, one per villager,
+ * each linked to the plaza by a dirt path. Returns where each villager
+ * should stand - just outside their own doorway, on the plaza side.
+ */
+function buildVillage(centre, v) {
+    const cx = centre[0], cz = centre[2];
+    const cy = groundYNear(cx, cz, centre[1]);
+    const pr = v.plazaRadius;
+    api.setBlockRect([cx - pr, cy - 1, cz - pr], [cx + pr, cy - 1, cz + pr], v.plazaBlock);
+
+    const positions = [];
+    for (let i = 0; i < v.houseCount; i++) {
+        const angle = (i / v.houseCount) * Math.PI * 2;
+        const hx = cx + Math.round(Math.cos(angle) * v.ringRadius);
+        const hz = cz + Math.round(Math.sin(angle) * v.ringRadius);
+        const hy = groundYNear(hx, hz, centre[1]);
+
+        // The doorway faces back toward the plaza centre.
+        buildVillageHouse(hx, hy, hz, v, cx - hx, cz - hz);
+        buildPath(cx, cy, cz, hx, hy, hz, v.pathBlock);
+
+        const standDist = v.footprint + 1;
+        positions.push([
+            hx - Math.round(Math.cos(angle) * standDist),
+            hy,
+            hz - Math.round(Math.sin(angle) * standDist),
+        ]);
+    }
+    return positions;
+}
+
+/** Scatters the villagers (and their village, if enabled) and the ocean's sea mobs once, near world spawn. */
 function spawnWorldFeatures() {
     if (worldFeaturesSpawned) {
         return;
@@ -2712,12 +2819,25 @@ function spawnWorldFeatures() {
 
     if (CONFIG.npc.enabled) {
         const n = CONFIG.npc;
-        for (let i = 0; i < n.countInOverworld; i++) {
-            const angle = (i / n.countInOverworld) * Math.PI * 2;
-            const x = n.spawnCentre[0] + Math.round(Math.cos(angle) * n.spawnRadius);
-            const z = n.spawnCentre[2] + Math.round(Math.sin(angle) * n.spawnRadius);
+        let positions;
+        if (n.village.enabled) {
+            positions = buildVillage(n.spawnCentre, n.village);
+        } else {
+            positions = [];
+            for (let i = 0; i < n.countInOverworld; i++) {
+                const angle = (i / n.countInOverworld) * Math.PI * 2;
+                positions.push([
+                    n.spawnCentre[0] + Math.round(Math.cos(angle) * n.spawnRadius),
+                    n.spawnCentre[1],
+                    n.spawnCentre[2] + Math.round(Math.sin(angle) * n.spawnRadius),
+                ]);
+            }
+        }
+
+        for (let i = 0; i < positions.length; i++) {
+            const [x, y, z] = positions[i];
             const variation = n.variations[i % n.variations.length];
-            const mobId = api.attemptSpawnMob(n.mobType, x, n.spawnCentre[1], z, {
+            const mobId = api.attemptSpawnMob(n.mobType, x, y, z, {
                 variation: variation, name: "Villager",
             });
             if (mobId) {

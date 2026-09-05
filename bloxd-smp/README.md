@@ -20,7 +20,7 @@
 | **Reforge** | `/reforge` swaps the custom attributes between your held item and your off-hand item. |
 | **Durability** | Bloxd has none natively. Every tool, weapon, bow, armour piece and glider gets one, shown as a wear bar in the tooltip and a second live chip in the HUD for whatever you're holding. |
 | **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
-| **Villagers** | Real `NPC` mobs scattered near spawn — right-click one to trade. |
+| **Village & Villagers** | A ring of real houses around spawn, one real `NPC` mob per house — right-click one to trade. |
 | **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
 | **Orbital Strike Cannon** | One-time-use — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
 | **Stabshot** | One-time-use — drills a shaft of Super RPG charges straight down to bedrock. |
@@ -428,18 +428,35 @@ between them. Base item names never change, only what each one carries — so yo
 example, move a mace's Wind Burst/Density tag onto a fresh copy while leaving the old one a plain
 weapon. There is no crafting cost; it's a straight swap.
 
-## Villagers
+## Village & Villagers
 
 Bloxd has **no Villager mob** and no documented item-barter trade UI, so this uses the real `NPC`
 mob type (it ships with named human skins: `emma`, `leo`, `isabel`, `sanjay`, `imara`, `enoch`,
 `sara`, `carmen`) and does the trade itself through the same inventory calls crafting uses — not
 the native shop system, whose `currency` field is undocumented and not worth guessing at.
 
-`npc.countInOverworld` villagers spawn once, scattered around `npc.spawnCentre` at
-`npc.spawnRadius`, the first time a player joins. Each one is assigned exactly one fixed trade from
-`npc.trades` (cycling through the list), the way a Minecraft villager offers one trade rather than
-your whole wishlist. **Right click** a villager to trade — it fails cleanly with a chat message if
-you don't have enough of what it wants.
+Villagers no longer just stand around in open terrain — `npc.village` (on by default) builds a real
+cluster of buildings around `npc.spawnCentre` the first time a player joins:
+
+- A small **paved plaza** (`village.plazaBlock`, `village.plazaRadius`) at the very centre.
+- `village.houseCount` (6) **houses** in a ring `village.ringRadius` (18) blocks out — each a hollow
+  stone-brick-floored, wood-plank-walled box (`village.footprint`/`village.wallHeight`) with a flat
+  brick roof, a glass window centred on every side, and a doorway punched through whichever wall
+  faces the plaza, so every house opens inward.
+- A **dirt path** (`village.pathBlock`) straight from the plaza to each house's doorstep.
+- One villager stands just outside each house's own doorway, on the plaza side.
+
+Bloxd's World Code doesn't generate the Overworld (unlike the Nether/End/Void, which this script
+*does* build — see below), so there's no way to know the real terrain height at spawn ahead of
+time. Every footprint's ground is found the same way the Orbital Strike Cannon finds where its
+charges should land: scanning straight down for the first solid block (`findGroundY`), falling back
+to `spawnCentre`'s own Y if the chunk isn't loaded yet or nothing solid turns up. Set
+`village.enabled: false` to fall back to the old behaviour — `npc.countInOverworld` villagers
+scattered loosely around `npc.spawnRadius` with no buildings at all.
+
+Each villager is assigned exactly one fixed trade from `npc.trades` (cycling through the list), the
+way a Minecraft villager offers one trade rather than your whole wishlist. **Right click** a
+villager to trade — it fails cleanly with a chat message if you don't have enough of what it wants.
 
 ## Ocean
 
