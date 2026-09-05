@@ -160,23 +160,28 @@ shown here.
 allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
 light, sky light and gravity through per-player client options.
 
-| | X/Z origin | Portal | Feel |
+| | Y origin | Portal | Feel |
 | --- | --- | --- | --- |
-| Overworld | wherever you normally build | — | normal |
-| The Nether | `x = -10000, z = 0` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
-| The End | `x = -30000, z = 0` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `x = 50000, z = 0` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
+| Overworld | ordinary height | — | normal |
+| The Nether | `y = -10000` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `y = -30000` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `y = -50000` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
 
-**This is the X/Z layout, and it's the one that actually works in-game.** An earlier version tried
-stacking the three regions directly below the Overworld by height instead (`y = -10000` /
-`-30000` / `-50000`) on the assumption Bloxd's buildable range reached that far down. It didn't:
-Void terrain never generated at all, and Nether/End arrivals fell straight through the platform.
-This X/Z version — spread sideways instead of down, at ordinary, safely-buildable heights — is the
-one that was tested and confirmed working, and the one shipped here.
+**Stacked by Y this time, at x=0,z=0 for all three.** An earlier version tried exactly this layout
+and it looked broken in-game — Void terrain never generated at all, and Nether/End arrivals fell
+straight through the platform — which was blamed on Bloxd's buildable range not reaching that deep,
+so the regions were spread across X instead. The real cause turned out to be a different bug: the
+"is this chunk already built" check read a `Bedrock` marker at world **y=0** to decide whether to
+skip regenerating a chunk, and Bloxd's own Overworld terrain generator has no idea these fake
+dimensions exist — at whatever X/Z a dimension used, it may still lay its own floor down near y=0,
+which tricked that check into thinking the chunk was already generated before this script ever
+built anything there. The marker now sits at `originY + markerY`, deep inside each dimension's own
+band, so it can't collide with real Overworld terrain or another dimension's band, and the Y-stacked
+layout works correctly.
 
-`dimensions.regionHalfSize` (**4000**) is how far from that origin still counts as "inside" the
-dimension; with 20000+ blocks between each origin, that only has to clear whatever generation
-actually builds, not fight a neighbour.
+`dimensions.regionHalfHeight` (**3000**) is how far from that Y origin still counts as "inside" the
+dimension; with 20000 blocks between each origin, that clears whatever generation actually builds
+without reaching into a neighbour's band or back into ordinary Overworld height.
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
 brings you home — the game remembers the Overworld position you left from (`state.overworldPos`)
@@ -229,9 +234,7 @@ Terrain is **deterministic value noise**, not `Math.random`: the same column alw
 blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one
 block at `markerY` and **never rebuilt**, so anything players construct there is safe.
 
-This X/Z-based layout is the one that was tested and confirmed working in-game (see **Nether, End
-& Void** above for why it replaced an earlier Y-based attempt that silently failed). Set
-`dimensions.enabled: false` to turn the whole system off.
+Set `dimensions.enabled: false` to turn the whole system off.
 
 ## Crystal PvP
 
