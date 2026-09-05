@@ -28,6 +28,7 @@
 | **Cart PvP** | Catch someone while they are in a boat and they take extra damage and get ejected. |
 | **`!anon`** | Hides your body, your nametag and your name in chat. |
 | **Death announcements** | One clean message and a server-wide toll for every death — no double kill messages. |
+| **Whisper** | `/whisper <player> <message>` (or `/w`) sends a private line only the two of you see. |
 
 ## Install
 
@@ -160,23 +161,23 @@ shown here.
 allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
 light, sky light and gravity through per-player client options.
 
-| | X/Z origin | Portal | Feel |
+| | Y origin | Portal | Feel |
 | --- | --- | --- | --- |
-| Overworld | wherever you normally build | — | normal |
-| The Nether | `x = -10000, z = 0` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
-| The End | `x = -30000, z = 0` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `x = 50000, z = 0` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
+| Overworld | ordinary height | — | normal |
+| The Nether | `y = -10000` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `y = -30000` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `y = -50000` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
 
-**This is the X/Z layout, and it's the one that actually works in-game.** Y-stacking the three
-regions directly below the Overworld (`y = -10000` / `-30000` / `-50000`) has now been tried twice,
-on the assumption Bloxd's buildable range reached that far down. Both times it failed for real
-players on all three dimensions: arrivals landed back in the Overworld instead of the target
-dimension, and no terrain ever generated. That's Bloxd's own buildable range rejecting positions
-that deep — not a bug in this script's chunk-marker logic.
+**Stacked by Y, at x=0,z=0 for all three.** This exact layout (`y = -10000` / `-30000` / `-50000`)
+has failed twice before in real in-game testing — arrivals landing back in the Overworld instead of
+the target dimension, and no terrain generating — most likely Bloxd's own buildable range rejecting
+positions this deep. It's being run at the same depth again anyway. **If it fails the same way a
+third time, the fix is a shallower Y (a few hundred to a few thousand, not tens of thousands), not
+retrying these exact numbers again.**
 
-`dimensions.regionHalfSize` (**4000**) is how far from that origin still counts as "inside" the
-dimension; with 20000+ blocks between each origin, that only has to clear whatever generation
-actually builds, not fight a neighbour.
+`dimensions.regionHalfHeight` (**3000**) is how far from that Y origin still counts as "inside" the
+dimension; with 20000 blocks between each origin, that clears whatever generation actually builds
+without reaching into a neighbour's band or back into ordinary Overworld height.
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
 brings you home — the game remembers the Overworld position you left from (`state.overworldPos`)
@@ -245,6 +246,19 @@ the kill is credited to whoever set it off. Crystals do **not** crater the terra
 **Bloxd has no minecarts or rails**, so this rides on the vehicle it does have: boats. Hit a player
 while they are in one and the blow does `cart.bonusDamage` extra and ejects them out of it. The bonus
 stacks with the mace smash and the spear lunge.
+
+## Whisper
+
+`/whisper <player> <message>` (or the shorter `/w`) sends a private line straight to one other
+player — both of you see it, nobody else does. It goes through the same `tell()`/`sendMessage` call
+every other private notice in this script uses (durability warnings, trade results, and so on),
+never `broadcastMessage`, so there is no path for it to leak into public chat. The target gets a
+quiet confirmation sound so a whisper doesn't go unnoticed among everything else on screen.
+
+Anonymity applies here too, the same as it does to chat and the killfeed: whisper while `!anon` is
+on and the other player sees "Anonymous", not your real name. Whispering to yourself, to nobody
+(an unrecognised name), or with no message attached all fail with a plain usage message rather than
+silently doing nothing. Set `whisper.enabled: false` to turn the command off entirely.
 
 ## Anonymous mode
 
@@ -510,6 +524,7 @@ instead of eliminations.
 | `/where` | everyone | Which dimension you are in |
 | `!anon` / `/anon` | everyone | Toggle anonymous mode |
 | `/orbs` | everyone | Orbs of Resurrection collected, while in the Void |
+| `/whisper <player> <message>` / `/w` | everyone | Send a private message only that player sees |
 | `/mend` | everyone | Mend whatever you're holding, spending Aura XP Potions |
 | `/offhand` | everyone | Swap what you're holding into the off-hand slot (works on the shield too) |
 | `/shield` | everyone | Shows your current shield state (off-hand + crouch is the only way it ever blocks) |
