@@ -1444,9 +1444,22 @@ check("orbital cannon substitutes a real explosive item for the nonexistent TNT"
     C.orbital.recipe.some(r => r.items[0] === "Moonstone Explosive" && r.amt === 500),
     JSON.stringify(C.orbital.recipe));
 check("orbital cannon is not built on a fishing rod (native casting swallows the click)",
-    C.orbital.item === "Iron Bar", C.orbital.item);
+    C.orbital.item === "Ammo", C.orbital.item);
 check("stabshot is not built on a fishing rod either",
-    C.stabshot.item === "Gold Bar", C.stabshot.item);
+    C.stabshot.item === "Bone", C.stabshot.item);
+check("orbital cannon is not built on a common crafting material either (a plain stack of it "
+    + "could merge with the tagged one and swallow its custom attributes)",
+    ["Iron Bar", "Gold Bar", "Moonstone", "Stick", "Stone", "Diamond"].indexOf(C.orbital.item) === -1,
+    C.orbital.item);
+check("stabshot is not built on a common crafting material either",
+    ["Iron Bar", "Gold Bar", "Moonstone", "Stick", "Stone", "Diamond"].indexOf(C.stabshot.item) === -1,
+    C.stabshot.item);
+check("the orbital and stabshot launchers are not the same item as each other",
+    C.orbital.item !== C.stabshot.item, C.orbital.item);
+check("orbital charges are the real Moonstone Explosive block",
+    C.orbital.explosiveItem === "Moonstone Explosive", C.orbital.explosiveItem);
+check("stabshot charges are the real Super RPG item",
+    C.stabshot.explosiveItem === "Super RPG", C.stabshot.explosiveItem);
 check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (() => {
     const r = C.stabshot.recipe;
     return r.some(x => x.items[0] === "Gold Bow" && x.amt === 1)
@@ -1471,7 +1484,7 @@ check("firing the orbital cannon breaks it immediately", world.inv.a[0] === null
 check("firing the orbital cannon queues one charge per ring point",
     pendingStrikes.length === C.orbital.ringCount, pendingStrikes.length);
 check("firing the orbital cannon drops a real Moonstone Explosive per ring charge",
-    world.drops.filter(d => d.name === "Moonstone Explosive").length === C.orbital.ringCount,
+    world.drops.filter(d => d.name === C.orbital.explosiveItem).length === C.orbital.ringCount,
     world.drops.length);
 
 world.damages.length = 0;
@@ -1489,6 +1502,7 @@ world.inv.a = [{ name: C.stabshot.item, amount: null, attributes: ctx.stabshotAt
 world.sel.a = 0;
 world.damages.length = 0;
 pendingStrikes.length = 0;
+world.drops.length = 0;
 world.targetInfo.a = { position: [0, 6, 0] };
 world.pos.b = [0, 6, 0];
 ctx.onPlayerAltAction("a");
@@ -1497,8 +1511,10 @@ check("firing the stabshot breaks it immediately (one-time use)",
 const stabshotSteps = Math.floor((6 - C.stabshot.bedrockY) / C.stabshot.columnStepY) + 1;
 check("stabshot queues one charge per step down to bedrock",
     pendingStrikes.length === stabshotSteps, pendingStrikes.length);
-check("stabshot places an explosive block at the top of the shaft",
-    world.blocks["0,6,0"] === "Moonstone Explosive", world.blocks["0,6,0"]);
+check("stabshot drops a real Super RPG item per step, not a placed block "
+    + "(Super RPG has no block form)",
+    world.drops.filter(d => d.name === C.stabshot.explosiveItem).length === stabshotSteps,
+    world.drops.length);
 ctx.processPendingStrikes();
 check("the first stabshot charge detonates immediately",
     world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));

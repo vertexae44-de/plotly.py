@@ -22,8 +22,8 @@
 | **Nether, End & Void** | Three extra regions with their own fog, light, gravity and portals — **real generated terrain**, and **ores** worth going for. |
 | **Villagers** | Real `NPC` mobs scattered near spawn — right-click one to trade. |
 | **Ocean** | A ring of water near spawn, stocked with a custom sea mob (Bloxd ships none). |
-| **Orbital Strike Cannon** | One-time-use Iron Bar — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
-| **Stabshot** | One-time-use Gold Bar — drills a shaft of Moonstone Explosive charges straight down to bedrock. |
+| **Orbital Strike Cannon** | One-time-use — rings the ground 50 blocks out with falling Moonstone Explosive charges. |
+| **Stabshot** | One-time-use — drills a shaft of Super RPG charges straight down to bedrock. |
 | **Bed spawn** | Stand on any bed to set your respawn point there. |
 | **Crafting** | Almost everything above has a real recipe. |
 | **Crystal PvP** | Place a Crystal, hit it, everything nearby is damaged and launched. |
@@ -56,8 +56,8 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
-| **Orbital Strike Cannon** (Iron Bar) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
-| **Stabshot** (Gold Bar) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
+| **Orbital Strike Cannon** (Ammo) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
+| **Stabshot** (Bone) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
 | **"what the skibidi bop un dada really bought this ok"** (Diorite) | 39000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
@@ -453,35 +453,45 @@ of them.
 
 Bloxd has **no TNT item and no explosion-trigger API** — the only "explosion" this whole script can
 make is the same trick Crystal PvP already uses: damage everyone in a radius and draw particles and
-sound over it. Both weapons really do spawn real **Moonstone Explosive** blocks at every impact
-point rather than computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to
-your facing direction if you're not looking at a block). **Both are one-time use**: the item breaks
-the instant it fires, whichever one it is.
+sound over it. Both weapons really do spawn a real explosive item at every impact point rather than
+computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to your facing direction
+if you're not looking at a block). **Both are one-time use**: the launcher item breaks the instant
+it fires, whichever one it is.
 
-- **Orbital Strike Cannon** (an `Iron Bar`) — right click drops a **ring** of `orbital.ringCount`
-  (10) Moonstone Explosive charges, `orbital.ringRadius` (50) blocks out from where you're aiming.
-  Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that falls from
-  `orbital.fallHeight` above the ground and detonates roughly where it lands, after
+- **Orbital Strike Cannon** (an `Ammo` item) — right click drops a **ring** of `orbital.ringCount`
+  (10) **Moonstone Explosive** charges, `orbital.ringRadius` (50) blocks out from where you're
+  aiming. Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that
+  falls from `orbital.fallHeight` above the ground and detonates roughly where it lands, after
   `orbital.fallDelayMs`. The landing height under each ring point is found by scanning straight down
   for the first solid block; if that column isn't loaded or nothing solid turns up, that one charge
   falls back to detonating at your own height instead of guessing.
-- **Stabshot** (a `Gold Bar`) — right click places a single **vertical shaft** of Moonstone
-  Explosive charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
-  `stabshot.columnStepY` (6) blocks apart, each block placed immediately and set off in sequence
-  (`stabshot.stepDelayMs` apart) so it reads as drilling downward rather than one instant blast.
+- **Stabshot** (a `Bone` item) — right click places a single **vertical shaft** of **Super RPG**
+  charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
+  `stabshot.columnStepY` (6) blocks apart, each set off in sequence (`stabshot.stepDelayMs` apart)
+  so it reads as drilling downward rather than one instant blast. Super RPG has no block form, so
+  unlike the orbital's charges these are real item drops held in place (`doPhysics: false`) at each
+  shaft depth rather than a placed block — most of the shaft runs through solid ground, where a
+  falling item would just get stuck or clip.
 
-**Why plain material items, not `Master Rod`/`Obsidian Rod`:** the first version used those two -
-real Bloxd items that happen to be **fishing rods** - and firing silently did nothing. A fishing
-rod has its own native right-click behaviour (casting a line) that swallows the click before
-`onPlayerAltAction` ever runs, exactly the same class of bug that broke the shield when it was
-first built on `Brown Paintball Explosive Item`, a native throwable. The fix is the same one:
-a plain material item (`Iron Bar` / `Gold Bar`) has no click behaviour of its own to fight with.
+**Why plain, otherwise-unused items for the launchers, not `Master Rod`/`Obsidian Rod` or `Iron
+Bar`/`Gold Bar`:** the first version used the rods — real Bloxd items that happen to be **fishing
+rods** — and firing silently did nothing. A fishing rod has its own native right-click behaviour
+(casting a line) that swallows the click before `onPlayerAltAction` ever runs, exactly the same
+class of bug that broke the shield when it was first built on `Brown Paintball Explosive Item`, a
+native throwable. Swapping to `Iron Bar`/`Gold Bar` fixed that, but broke firing all over again a
+different way: those are common crafting materials used as ingredients all over this script (Iron
+Mace, Iron Dagger, the Bulwark, Gold Mace, Gold Dagger, Golden Apples), so a player who already had
+a plain stack of one risked the freshly crafted, tagged launcher merging into that ordinary stack
+and losing the custom attribute that makes it fire at all. The fix is a plain, otherwise-unused item
+(`Ammo` / `Bone`) that this script never touches anywhere else — no native click behaviour to fight,
+and nothing for the tag to collide or merge with.
 
 There is no timer API in World Code, so both weapons' delays are tracked the same way terrain
 generation is queued — a small array of pending charges drained every `tick()`. Every explosion also
-clears a small cube of terrain around itself (`breakBlocks`), which is what makes the explosive block
-disappear when it goes off. Ring size, shaft depth/spacing, radii, damage and knockback are all
-tunable in `CONFIG.orbital` / `CONFIG.stabshot`.
+clears a small cube of terrain around itself (`breakBlocks`), which is what makes the orbital's
+explosive block disappear when it goes off. Ring size, shaft depth/spacing, radii, damage and
+knockback — and which real item each weapon spawns (`explosiveItem`) — are all tunable in
+`CONFIG.orbital` / `CONFIG.stabshot`.
 
 ## Bed spawn points
 

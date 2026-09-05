@@ -700,24 +700,29 @@ const CONFIG = {
     // Bloxd has neither a TNT item nor an API call that detonates one - the
     // only "explosion" this whole script can make is the same trick Crystal
     // PvP already uses: damage everyone in a radius and draw particles/sound
-    // over it. "TNT" in both recipes is substituted with a real Bloxd block
-    // that is actually explosive - Moonstone Explosive - and both weapons
-    // really do spawn that block at every impact point rather than just
-    // computing damage invisibly: the orbital's charges are dropped as real
-    // physics item entities that fall before detonating, and the stabshot's
-    // are placed directly down the drill shaft. Both are one-time use now -
-    // the item breaks the instant it fires, whichever one it is.
+    // over it. Both weapons really do spawn a real item at every impact point
+    // rather than just computing damage invisibly - Moonstone Explosive
+    // falling from the sky for the orbital, Super RPG down the drill shaft
+    // for the stabshot (explosiveItem below, in each case) - and both are
+    // one-time use: the launcher itself breaks the instant it fires.
     //
-    // Neither base item is a Rod any more - "Master Rod"/"Obsidian Rod" are
-    // real Bloxd FISHING rods, and casting a line is a native right-click
-    // behaviour that swallowed the click before onPlayerAltAction ever ran,
-    // so firing silently did nothing. Exactly the same class of bug that
-    // broke the shield when it was first built on a native throwable - the
-    // fix is the same too: a plain material item with no click behaviour of
-    // its own to fight with.
+    // The base launcher item itself (item, below) is neither a Rod
+    // ("Master Rod"/"Obsidian Rod" are real Bloxd FISHING rods - casting a
+    // line is a native right-click behaviour that swallowed the click before
+    // onPlayerAltAction ever ran, so firing silently did nothing, the same
+    // class of bug that broke the shield when it was first built on a native
+    // throwable) NOR a common crafting material ("Iron Bar"/"Gold Bar" are
+    // real ingots used as ingredients all over this file - Iron Mace, Iron
+    // Dagger, the Bulwark, Gold Mace, Gold Dagger, Golden Apples - so a
+    // player who already has plain ones in their inventory risks the freshly
+    // crafted, tagged launcher merging into that ordinary stack and losing
+    // the custom attribute that makes it fire at all). Both launchers are
+    // now plain, otherwise-unused junk items - Ammo and Bone - that this
+    // script never touches anywhere else, so there is nothing for the tag to
+    // collide or merge with.
     orbital: {
         enabled: true,
-        item: "Iron Bar",
+        item: "Ammo",
         name: "Orbital Strike Cannon",
         recipe: [
             { items: ["Moonstone Explosive"], amt: 500 },
@@ -728,6 +733,7 @@ const CONFIG = {
         // A ring of charges around where you're looking, each one a real
         // Moonstone Explosive dropped from height, falling with physics
         // before it detonates where it lands.
+        explosiveItem: "Moonstone Explosive",
         ringRadius: 50,
         ringCount: 10,
         fallHeight: 24,        // spawn this far above the ground before it drops
@@ -740,7 +746,7 @@ const CONFIG = {
     },
     stabshot: {
         enabled: true,
-        item: "Gold Bar",
+        item: "Bone",
         name: "Stabshot",
         recipe: [
             { items: ["Gold Bow"], amt: 1 },
@@ -748,7 +754,11 @@ const CONFIG = {
             { items: ["Moonstone Explosive"], amt: 230 },
         ],
         // One vertical shaft of charges, straight down from where you're
-        // aiming to bedrock - a drill, not a single point blast.
+        // aiming to bedrock - a drill, not a single point blast. Super RPG
+        // has no block form, so unlike the orbital's charges these are real
+        // (non-physics) item drops held in place at each shaft depth rather
+        // than a placed block.
+        explosiveItem: "Super RPG",
         columnStepY: 6,
         bedrockY: 0,
         stepDelayMs: 150,      // stagger between each charge, so it reads as drilling down
@@ -1089,7 +1099,7 @@ function orbitalAttributes() {
     const o = CONFIG.orbital;
     return {
         customDisplayName: o.name,
-        customDescription: "Right click to drop a ring of " + o.ringCount + " Moonstone Explosive charges,"
+        customDescription: "Right click to drop a ring of " + o.ringCount + " " + o.explosiveItem + " charges,"
             + " " + o.ringRadius + " blocks out from where you are looking.\n"
             + "One-time use: it breaks the moment it fires.",
         customAttributes: { [ATTR_ORBITAL]: true },
@@ -1100,7 +1110,7 @@ function stabshotAttributes() {
     const s = CONFIG.stabshot;
     return {
         customDisplayName: s.name,
-        customDescription: "Right click to drill a shaft of Moonstone Explosive charges straight down"
+        customDescription: "Right click to drill a shaft of " + s.explosiveItem + " charges straight down"
             + " to bedrock where you are looking.\n"
             + "One-time use: it breaks the moment it fires.",
         customAttributes: { [ATTR_STABSHOT]: true },
@@ -2618,12 +2628,12 @@ function fireOrbital(playerId, slot) {
         const landY = groundY == null ? centre[1] : groundY;
         const dropY = landY + o.fallHeight;
 
-        api.createItemDrop(x, dropY, z, "Moonstone Explosive", 1, false, undefined, o.fallDelayMs + 2000,
+        api.createItemDrop(x, dropY, z, o.explosiveItem, 1, false, undefined, o.fallDelayMs + 2000,
             playerId, { doPhysics: true });
         pendingStrikes.push({
             fireAt: api.now() + o.fallDelayMs, centre: [x, landY, z], radius: o.radius,
             damage: o.damage, knockbackUp: o.knockbackUp, sourceId: playerId,
-            withItem: o.item, breakRadius: o.breakBlocks ? Math.max(1, Math.round(o.radius / 2)) : 0,
+            withItem: o.explosiveItem, breakRadius: o.breakBlocks ? Math.max(1, Math.round(o.radius / 2)) : 0,
         });
     }
 
@@ -2632,9 +2642,13 @@ function fireOrbital(playerId, slot) {
 }
 
 /**
- * A single shaft of Moonstone Explosive charges, placed straight down from
- * where the player is aiming to bedrock, drilling downward as they go off
- * in sequence. One-time use: it breaks the instant it fires.
+ * A single shaft of Super RPG charges straight down from where the player is
+ * aiming to bedrock, drilling downward as they go off in sequence. Super RPG
+ * has no block form, so unlike the orbital's charges these are real item
+ * drops held in place at each shaft depth (doPhysics: false - most of the
+ * shaft runs through solid ground, where a falling item would just get
+ * stuck or clip) rather than a placed block. One-time use: the launcher
+ * breaks the instant it fires.
  */
 function fireStabshot(playerId, slot) {
     const s = CONFIG.stabshot;
@@ -2648,11 +2662,13 @@ function fireStabshot(playerId, slot) {
 
     let step = 0;
     for (let y = startY; y >= s.bedrockY && step < 60; y -= s.columnStepY, step++) {
-        api.setBlock(x, y, z, "Moonstone Explosive");
+        const fireAt = step * s.stepDelayMs;
+        api.createItemDrop(x + 0.5, y + 0.5, z + 0.5, s.explosiveItem, 1, false, undefined,
+            fireAt + 2000, playerId, { doPhysics: false });
         pendingStrikes.push({
-            fireAt: api.now() + step * s.stepDelayMs, centre: [x + 0.5, y + 0.5, z + 0.5], radius: s.radius,
+            fireAt: api.now() + fireAt, centre: [x + 0.5, y + 0.5, z + 0.5], radius: s.radius,
             damage: s.damage, knockbackUp: s.knockbackUp, sourceId: playerId,
-            withItem: s.item, breakRadius: breakRadius,
+            withItem: s.explosiveItem, breakRadius: breakRadius,
         });
     }
 
