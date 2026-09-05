@@ -2840,9 +2840,9 @@ function spawnWorldFeatures() {
         }
 
         for (let i = 0; i < positions.length; i++) {
-            const [x, y, z] = positions[i];
+            const pos = positions[i];
             const variation = n.variations[i % n.variations.length];
-            const mobId = api.attemptSpawnMob(n.mobType, x, y, z, {
+            const mobId = api.attemptSpawnMob(n.mobType, pos[0], pos[1], pos[2], {
                 variation: variation, name: "Villager",
             });
             if (mobId) {
