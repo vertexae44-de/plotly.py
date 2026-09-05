@@ -1,4 +1,5 @@
-const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue, voidGuardians, npcTrades, pendingStrikes } = require("./harness.js");
+const { ctx, world, CONFIG: C, durabilityCache, genDone, genQueue, voidGuardians, npcTrades,
+    fallingExplosives, scheduledExplosions, despawnQueue } = require("./harness.js");
 let fails = 0;
 const check = (label, cond, extra) => {
     console.log((cond ? "PASS " : "FAIL ") + label + (cond ? "" : "  <- " + extra));
@@ -1489,16 +1490,14 @@ check("respawn falls back to the Overworld position with no bed set",
 check("orbital cannon substitutes a real explosive item for the nonexistent TNT",
     C.orbital.recipe.some(r => r.items[0] === "Moonstone Explosive" && r.amt === 500),
     JSON.stringify(C.orbital.recipe));
-check("orbital cannon is the real Master Rod",
-    C.orbital.item === "Master Rod", C.orbital.item);
-check("stabshot is the real Obsidian Rod",
-    C.stabshot.item === "Obsidian Rod", C.stabshot.item);
-check("the orbital and stabshot launchers are not the same item as each other",
+check("orbital cannon is the real Arrow of Aura XP",
+    C.orbital.item === "Arrow of Aura XP", C.orbital.item);
+check("stabshot is the real Arrow of Shield",
+    C.stabshot.item === "Arrow of Shield", C.stabshot.item);
+check("the orbital and stabshot arrows are not the same item as each other",
     C.orbital.item !== C.stabshot.item, C.orbital.item);
-check("orbital charges are the real Moonstone Explosive block",
+check("orbital's falling charge is the real Moonstone Explosive block",
     C.orbital.explosiveItem === "Moonstone Explosive", C.orbital.explosiveItem);
-check("stabshot charges are the real Super RPG item",
-    C.stabshot.explosiveItem === "Super RPG", C.stabshot.explosiveItem);
 check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (() => {
     const r = C.stabshot.recipe;
     return r.some(x => x.items[0] === "Gold Bow" && x.amt === 1)
@@ -1506,83 +1505,101 @@ check("stabshot recipe costs 1 gold bow, 250 knight hearts, 230 explosives", (()
         && r.some(x => x.items[0] === "Moonstone Explosive" && x.amt === 230);
 })(), JSON.stringify(C.stabshot.recipe));
 
-// The orbital rings the ground with charges 50 blocks out from the aim
-// point, each one a real falling Moonstone Explosive item drop.
-world.inv.a = [{ name: C.orbital.item, amount: null, attributes: ctx.orbitalAttributes() }];
-world.sel.a = 0;
-world.pos.a = [0, 64, 0];
-world.targetInfo.a = { position: [0, 64, 0] };
-// Ring point 0 (angle 0) lands at [centre.x + ringRadius, centre.y, centre.z]
-// when the world is empty (findGroundY finds no floor and falls back to the
-// aim point's own height) - put "b" exactly there.
-world.pos.b = [C.orbital.ringRadius, 64, 0];
-pendingStrikes.length = 0;
-world.drops.length = 0;
-// Fires from onPlayerAttemptAltAction now, not onPlayerAltAction - a real
-// fishing rod's native cast swallows the "completed" click before that ever
-// runs, so the attempt event (which fires regardless) is what actually
-// launches it, returning "preventAction" to try to cancel the cast too.
-const orbitalAttemptResult = ctx.onPlayerAttemptAltAction("a");
-check("firing the orbital cannon returns preventAction, to try to cancel the rod's cast animation",
-    orbitalAttemptResult === "preventAction", orbitalAttemptResult);
-check("firing the orbital cannon breaks it immediately", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
-check("firing the orbital cannon queues one charge per ring point",
-    pendingStrikes.length === C.orbital.ringCount, pendingStrikes.length);
-check("firing the orbital cannon drops a real Moonstone Explosive per ring charge",
-    world.drops.filter(d => d.name === C.orbital.explosiveItem).length === C.orbital.ringCount,
-    world.drops.length);
+// Both are told apart by their own real item name - no custom tag - so
+// firing never depends on a crafted item keeping some attribute intact.
+world.mobs.length = 0; world.spawnedMobs.length = 0; world.mobSettings = {};
+world.opacities = {}; world.meleeHits.length = 0; world.despawnedMobs.length = 0;
+world.blocks = {}; world.rects.length = 0; world.sets = 0;
+fallingExplosives.length = 0; scheduledExplosions.length = 0; despawnQueue.length = 0;
 
-world.damages.length = 0;
-ctx.processPendingStrikes();
-check("no orbital charge lands before its fall delay", world.damages.length === 0, world.damages.length);
-pendingStrikes.forEach(s => { s.fireAt = -1; });   // force them all due, since api.now() is real wall-clock time in tests
-ctx.processPendingStrikes();
-check("an orbital charge lands on the ring and hits whoever is there",
-    world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
-check("every orbital charge is cleared from the queue once due", pendingStrikes.length === 0, pendingStrikes.length);
+const orbitalImpact = [10, 64, 10];
+world.pos.arrow1 = orbitalImpact;   // where onPlayerThrowableHitTerrain's getPosition(arrowEntityId) lands
+ctx.onPlayerThrowableHitTerrain("a", C.orbital.item, "arrow1");
+const orbitalPointCount = C.orbital.rings.length * C.orbital.pointsPerRing;
+check("firing the orbital arrow queues one falling charge per ring point",
+    fallingExplosives.length === orbitalPointCount, fallingExplosives.length);
+check("firing the orbital arrow schedules one explosion per ring point",
+    scheduledExplosions.length === orbitalPointCount, scheduledExplosions.length);
+check("every scheduled orbital explosion waits out the fall time before detonating",
+    scheduledExplosions.every(e => e.ticks === Math.round(C.orbital.fallTimeSeconds * 20)),
+    JSON.stringify(scheduledExplosions.map(e => e.ticks)));
+check("the arrow is teleported out of the way once it fires",
+    world.pos.arrow1[1] === -999, JSON.stringify(world.pos.arrow1));
 
-// The stabshot drills one shaft of charges straight down to bedrock and is
-// one-time use too now, same as the orbital.
-world.inv.a = [{ name: C.stabshot.item, amount: null, attributes: ctx.stabshotAttributes() }];
-world.sel.a = 0;
-world.damages.length = 0;
-pendingStrikes.length = 0;
-world.drops.length = 0;
-world.targetInfo.a = { position: [0, 6, 0] };
-world.pos.b = [0, 6, 0];
-const stabshotAttemptResult = ctx.onPlayerAttemptAltAction("a");
-check("firing the stabshot returns preventAction too",
-    stabshotAttemptResult === "preventAction", stabshotAttemptResult);
-check("firing the stabshot breaks it immediately (one-time use)",
-    world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
-const stabshotSteps = Math.floor((6 - C.stabshot.bedrockY) / C.stabshot.columnStepY) + 1;
-check("stabshot queues one charge per step down to bedrock",
-    pendingStrikes.length === stabshotSteps, pendingStrikes.length);
-check("stabshot drops a real Super RPG item per step, not a placed block "
-    + "(Super RPG has no block form)",
-    world.drops.filter(d => d.name === C.stabshot.explosiveItem).length === stabshotSteps,
-    world.drops.length);
-ctx.processPendingStrikes();
-check("the first stabshot charge detonates immediately",
-    world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+// A single tick moves every falling charge down one block and is nowhere
+// near enough to detonate anything yet (fallTimeSeconds * 20 ticks needed).
+const fallingBefore = fallingExplosives.map(f => f.pos[1]);
+ctx.processExplosionQueues();
+check("processExplosionQueues moves each falling charge down one block per tick",
+    fallingExplosives.every((f, i) => f.pos[1] === fallingBefore[i] - 1), "");
+check("no orbital explosion fires before its fall time is up",
+    world.spawnedMobs.filter(m => m.mobType === "Draugr Zombie").length === 0,
+    world.spawnedMobs.length);
 
-// onPlayerAttemptAltAction does the actual firing and already broke the
-// item (set to Air) above; if the client's predicted cast still lets the
-// "completed" onPlayerAltAction event through afterward too, it must be a
-// no-op rather than firing a second shot - there is nothing left to check
-// the tag on.
-pendingStrikes.length = 0;
-ctx.onPlayerAltAction("a");
-check("a stale onPlayerAltAction after the rod already fired and broke does not fire again",
-    pendingStrikes.length === 0, pendingStrikes.length);
+// Force every scheduled explosion due right now and let it actually detonate.
+scheduledExplosions.forEach(e => { e.ticks = 1; });
+world.spawnedMobs.length = 0; world.mobs.length = 0;
+ctx.processExplosionQueues();
+const orbitalAttackers = world.spawnedMobs.filter(m => m.mobType === "Draugr Zombie");
+check("every scheduled orbital explosion spawns an attacker + target pair of invisible mobs",
+    orbitalAttackers.length === orbitalPointCount * 2, orbitalAttackers.length);
+check("each attacker mob carries the Super RPG launcher (strength >= 2)",
+    orbitalAttackers.filter((m, i) => i % 2 === 0)
+        .every(m => world.mobSettings[m.id].attackItemName === "Super RPG"),
+    JSON.stringify(world.mobSettings));
+check("every explosion mob is made invisible",
+    orbitalAttackers.every(m => world.opacities[m.id] === 0), JSON.stringify(world.opacities));
+check("every explosion forces a real melee hit to trigger the launcher's native blast",
+    world.meleeHits.length === orbitalPointCount, world.meleeHits.length);
+check("orbital explosions clear a small cube of terrain per charge",
+    world.rects.some(r => r.name === "Air"
+        && r.p2[0] - r.p1[0] === C.orbital.breakRadius * 2), JSON.stringify(world.rects.slice(-3)));
+check("every detonated orbital explosion is cleared from the queue",
+    scheduledExplosions.length === 0, scheduledExplosions.length);
 
-// A plain fishing rod (no orbital/stabshot tag) must be left alone entirely -
-// this only ever intercepts the two tagged launchers, never an ordinary rod.
-world.inv.a = [{ name: "Master Rod", amount: null, attributes: undefined }];
-world.sel.a = 0;
-const plainRodResult = ctx.onPlayerAttemptAltAction("a");
-check("a plain, untagged Master Rod is never intercepted",
-    plainRodResult === undefined, plainRodResult);
+// The mobs behind an explosion despawn (no death, no loot, no lag) exactly
+// 3 ticks after they were spawned, never immediately and never left behind.
+check("explosion mobs are not despawned the instant they fire",
+    world.despawnedMobs.length === 0, world.despawnedMobs.length);
+// createExplosion resets the despawn countdown to 0 every time it fires (the
+// last of the 64 explosions above did so last), so it takes 3 more ticks
+// from here before pendingDespawnTicks reaches 3 and the cleanup runs.
+ctx.processExplosionQueues();
+ctx.processExplosionQueues();
+ctx.processExplosionQueues();
+check("explosion mobs are despawned (not killed) after a few ticks, so no death drops pile up",
+    world.despawnedMobs.length === orbitalAttackers.length, world.despawnedMobs.length);
+
+// Stabshot is one instant straight-down column, not a fall - everything
+// detonates on the very next tick, no staggering.
+world.mobs.length = 0; world.spawnedMobs.length = 0; world.meleeHits.length = 0;
+world.despawnedMobs.length = 0; world.rects.length = 0;
+scheduledExplosions.length = 0; despawnQueue.length = 0;
+const stabshotImpact = [20, 40, 20];
+world.pos.arrow2 = stabshotImpact;
+ctx.onPlayerThrowableHitTerrain("a", C.stabshot.item, "arrow2");
+check("firing the stabshot schedules one explosion per block of depth, plus the surface hit",
+    scheduledExplosions.length === C.stabshot.depth + 1, scheduledExplosions.length);
+check("every stabshot explosion is due on the very next tick, not staggered",
+    scheduledExplosions.every(e => e.ticks === 0), JSON.stringify(scheduledExplosions.map(e => e.ticks)));
+ctx.processExplosionQueues();
+check("the whole stabshot column detonates together in a single tick",
+    world.spawnedMobs.filter(m => m.mobType === "Draugr Zombie").length === (C.stabshot.depth + 1) * 2,
+    world.spawnedMobs.length);
+// processExplosionQueues drains scheduledExplosions back-to-front, so the
+// surface entry (index 0, pushed first) is the LAST one actually detonated -
+// its attacker/target pair is the last pair in spawnedMobs.
+const surfaceAttacker = world.spawnedMobs[world.spawnedMobs.length - 2];
+check("stabshot's surface explosion uses the RPG (strength 1)",
+    world.mobSettings[surfaceAttacker.id].attackItemName === "RPG",
+    world.mobSettings[surfaceAttacker.id]);
+
+// Neither arrow does anything when some other item lands - only the two
+// exact real item names configured above ever trigger an explosion.
+scheduledExplosions.length = 0;
+ctx.onPlayerThrowableHitTerrain("a", "Arrow", "arrow3");
+check("a plain Arrow landing never triggers an explosion",
+    scheduledExplosions.length === 0, scheduledExplosions.length);
 
 // -------------------------------------------------------------------- vanity flex
 check("the vanity item is the real Diorite block, not a fake item",

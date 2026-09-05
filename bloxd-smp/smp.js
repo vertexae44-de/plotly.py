@@ -28,10 +28,10 @@
 //  Village          a ring of real houses around spawn, one villager (real
 //                   NPC mob) per house, right click to trade
 //  Ocean            a ring of water near spawn with a custom sea mob
-//  Orbital Strike   one-time use, rings the ground 50 blocks out with
-//                   falling Moonstone Explosive charges
-//  Stabshot         one-time use, drills a shaft of Moonstone Explosive
-//                   charges straight down to bedrock
+//  Orbital Strike   a craftable arrow - explodes on impact into a falling
+//                   ring of real explosions, up to 16 blocks out
+//  Stabshot         a craftable arrow - explodes on impact into a real
+//                   blast straight down, 51 blocks deep
 //  Bed spawn        stand on any bed to set your respawn point
 //  Crystal PvP      place a Crystal, hit it, everything nearby is launched
 //  Cart PvP         catch someone in a boat and they take extra damage
@@ -698,37 +698,25 @@ const CONFIG = {
     },
 
     // ---- Orbital Strike Cannon & Stabshot ---------------------------------
-    // Bloxd has neither a TNT item nor an API call that detonates one - the
-    // only "explosion" this whole script can make is the same trick Crystal
-    // PvP already uses: damage everyone in a radius and draw particles/sound
-    // over it. Both weapons really do spawn a real item at every impact point
-    // rather than just computing damage invisibly - Moonstone Explosive
-    // falling from the sky for the orbital, Super RPG down the drill shaft
-    // for the stabshot (explosiveItem below, in each case) - and both are
-    // one-time use: the launcher itself breaks the instant it fires.
+    // Real native explosions this time, not a fake damage-in-radius trick
+    // and not a right-click launcher item at all - every launcher tried that
+    // way hit a different native-item conflict (a fishing rod's cast
+    // swallowing the click, a common crafting material's stack merging away
+    // its tag). Both are craftable ARROWS instead: Arrow of Aura XP for the
+    // Orbital Strike Cannon, Arrow of Shield for Stabshot. Shoot one from a
+    // bow and onPlayerThrowableHitTerrain fires the instant it lands on
+    // anything, told apart by the arrow's own real item name - no custom
+    // tag needed at all, so there is nothing left for a native behaviour or
+    // a stack merge to fight over.
     //
-    // The launcher items ARE real Bloxd fishing rods again ("Master Rod" /
-    // "Obsidian Rod") - that was the original design and the look this world
-    // wants - even though a rod's native right-click (casting a line) is
-    // exactly what broke firing the first time this was tried: casting
-    // swallows the click before onPlayerAltAction ever runs, so that
-    // "complete" event never fires at all while holding one. Rather than
-    // give up the rod look, onPlayerAttemptAltAction below - the "about to
-    // act" event, fired BEFORE the client resolves what the click does - is
-    // where these two actually fire from: it checks for the orbital/stabshot
-    // tag itself, fires immediately, and returns "preventAction" to try to
-    // stop the cast animation too. Bloxd's own docs are explicit that
-    // preventAction "may not work as well for certain actions which the
-    // game client predicts to succeed" - a rod cast is exactly that kind of
-    // action - so a stray cast animation may still flash even though the
-    // fire logic itself no longer depends on it. onPlayerAltAction's own
-    // ATTR_ORBITAL/ATTR_STABSHOT branches are left in place as a harmless
-    // second attempt for any client where the complete event still reaches
-    // us; the item already breaking itself (set to Air) the instant it
-    // fires is what stops that from ever firing the shot a second time.
+    // The explosion itself is real too: forcing one invisible mob to
+    // melee-hit another invisible mob while carrying a real launcher item
+    // (RPG / Super RPG) as its attackItemName makes Bloxd's own native
+    // explosion for that weapon go off for real - actual terrain damage,
+    // actual knockback, not this script computing any of it by hand.
     orbital: {
         enabled: true,
-        item: "Master Rod",
+        item: "Arrow of Aura XP",
         name: "Orbital Strike Cannon",
         recipe: [
             { items: ["Moonstone Explosive"], amt: 500 },
@@ -736,43 +724,32 @@ const CONFIG = {
             { items: ["Diamond Bow"], amt: 2 },
             { items: ["Knight Heart"], amt: 400 },
         ],
-        // A ring of charges around where you're looking, each one a real
-        // Moonstone Explosive dropped from height, falling with physics
-        // before it detonates where it lands.
-        explosiveItem: "Moonstone Explosive",
-        ringRadius: 50,
-        ringCount: 10,
-        fallHeight: 24,        // spawn this far above the ground before it drops
-        fallDelayMs: 1500,     // roughly how long that fall takes
-        radius: 7,             // blast radius per charge, not the whole ring
-        damage: 60,
-        knockbackUp: 9,
-        breakBlocks: true,
-        range: 60,             // how far out getPlayerTargetInfo may aim
+        produces: 4,
+        // A falling ring of real explosions around wherever the arrow lands -
+        // several rings at once, each with its own radius and point count.
+        explosiveItem: "Moonstone Explosive",   // the falling visual block
+        rings: [0, 7, 12, 16],
+        pointsPerRing: 16,
+        fallHeight: 40,          // spawn this far above impact before it drops
+        fallTimeSeconds: 2.1,    // roughly how long that fall takes
+        strength: 2,             // RPG (1) vs Super RPG (2+) - see createExplosion
+        breakRadius: 4,          // clears a small cube of terrain per charge
     },
     stabshot: {
         enabled: true,
-        item: "Obsidian Rod",
+        item: "Arrow of Shield",
         name: "Stabshot",
         recipe: [
             { items: ["Gold Bow"], amt: 1 },
             { items: ["Knight Heart"], amt: 250 },
             { items: ["Moonstone Explosive"], amt: 230 },
         ],
-        // One vertical shaft of charges, straight down from where you're
-        // aiming to bedrock - a drill, not a single point blast. Super RPG
-        // has no block form, so unlike the orbital's charges these are real
-        // (non-physics) item drops held in place at each shaft depth rather
-        // than a placed block.
-        explosiveItem: "Super RPG",
-        columnStepY: 6,
-        bedrockY: 0,
-        stepDelayMs: 150,      // stagger between each charge, so it reads as drilling down
-        radius: 5,
-        damage: 50,
-        knockbackUp: 5,
-        breakBlocks: true,
-        range: 60,
+        produces: 4,
+        // One straight column of real explosions, from the impact point
+        // down `depth` blocks, all going off together rather than falling.
+        depth: 51,
+        strength: 2,
+        breakRadius: 3,          // clears a small cube of terrain per charge
     },
 
     // ---- Villagers ------------------------------------------------------------
@@ -886,8 +863,6 @@ const ATTR_ORB = "smpOrb";
 const ATTR_MACE = "smpMace";
 const ATTR_SPEAR = "smpSpear";
 const ATTR_DAGGER = "smpDagger";
-const ATTR_ORBITAL = "smpOrbital";
-const ATTR_STABSHOT = "smpStabshot";
 const ATTR_WINDCHARGE = "smpWindCharge";
 const ATTR_SHIELD = "smpShield";
 const ATTR_APPLE = "smpApple";
@@ -1126,14 +1101,17 @@ function gliderAttributes(itemName, durabilityLeft) {
     };
 }
 
+/**
+ * No custom tag on either of these any more - onPlayerThrowableHitTerrain
+ * tells the arrows apart by their own real item name, so the crafted item
+ * only needs a nicer name and tooltip, nothing functional.
+ */
 function orbitalAttributes() {
     const o = CONFIG.orbital;
     return {
         customDisplayName: o.name,
-        customDescription: "Right click to drop a ring of " + o.ringCount + " " + o.explosiveItem + " charges,"
-            + " " + o.ringRadius + " blocks out from where you are looking.\n"
-            + "One-time use: it breaks the moment it fires.",
-        customAttributes: { [ATTR_ORBITAL]: true },
+        customDescription: "Shoot from a bow. Explodes on impact into a falling ring of real "
+            + o.explosiveItem + " blasts, " + o.rings[o.rings.length - 1] + " blocks out at its widest.",
     };
 }
 
@@ -1141,10 +1119,8 @@ function stabshotAttributes() {
     const s = CONFIG.stabshot;
     return {
         customDisplayName: s.name,
-        customDescription: "Right click to drill a shaft of " + s.explosiveItem + " charges straight down"
-            + " to bedrock where you are looking.\n"
-            + "One-time use: it breaks the moment it fires.",
-        customAttributes: { [ATTR_STABSHOT]: true },
+        customDescription: "Shoot from a bow. Explodes on impact into a real blast straight down, "
+            + s.depth + " blocks deep.",
     };
 }
 
@@ -1357,7 +1333,7 @@ function registerRecipes(playerId) {
     if (CONFIG.orbital.enabled) {
         api.editItemCraftingRecipes(playerId, CONFIG.orbital.item, [{
             requires: CONFIG.orbital.recipe,
-            produces: 1,
+            produces: CONFIG.orbital.produces,
             attributes: orbitalAttributes(),
         }]);
     }
@@ -1365,7 +1341,7 @@ function registerRecipes(playerId) {
     if (CONFIG.stabshot.enabled) {
         api.editItemCraftingRecipes(playerId, CONFIG.stabshot.item, [{
             requires: CONFIG.stabshot.recipe,
-            produces: 1,
+            produces: CONFIG.stabshot.produces,
             attributes: stabshotAttributes(),
         }]);
     }
@@ -2552,74 +2528,178 @@ function explodeCrystal(placerId, x, y, z) {
 // Orbital Strike Cannon & Stabshot
 // -----------------------------------------------------------------------------
 
-/** Where a player is aiming: their block target if there is one, else a point out along their facing. */
-function aimPoint(playerId, range) {
-    const target = api.getPlayerTargetInfo(playerId);
-    if (target && target.position) {
-        return target.position;
-    }
-    const pos = api.getPosition(playerId);
-    const facing = api.getPlayerFacingInfo(playerId);
-    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
-    return [pos[0] + dir[0] * range, pos[1] + dir[1] * range, pos[2] + dir[2] * range];
-}
+// Falling charges (orbital's ring) and delayed explosions (both weapons)
+// waiting their turn - there is no timer API in World Code, so this is
+// ticked forward every tick() the same way terrain generation is queued.
+const fallingExplosives = [];
+const scheduledExplosions = [];
+// The pair of invisible mobs behind each blast (see createExplosion), kept
+// only long enough to despawn them cleanly a few ticks later.
+const despawnQueue = [];
+let pendingDespawnTicks = 0;
 
 /**
- * The same "damage everyone in a radius, then draw it" trick Crystal PvP
- * uses - the only real explosion this API can make. breakRadius, if given,
- * also clears a cube of terrain around centre - this is what makes the
- * spawned Moonstone Explosive block disappear when it goes off, along with
- * whatever else is nearby.
+ * Forces a real, native explosion at pos: one invisible mob (`attacker`) is
+ * given a real launcher item (RPG for strength 1, Super RPG otherwise) as
+ * its attackItemName, and a second invisible mob (`target`) - parked just
+ * below it with huge health so the hit can never actually kill it - is
+ * forced to melee-hit it via applyMeleeHit. That single forced hit is
+ * enough to trigger the launcher's own native explosion for real: real
+ * damage and knockback, nothing this script computes by hand.
+ *
+ * Both mobs are always removed with despawnMob rather than an actual kill
+ * (see processExplosionQueues), specifically because despawnMob skips
+ * "on death" flows entirely - no death animation, no loot drop, no
+ * killfeed entry for either invisible mob. A ring or column strike spawns a
+ * lot of these in one go, and real death drops piling up under every blast
+ * would be exactly the kind of lag this trick has to avoid. breakRadius, if
+ * given, clears a small cube of terrain at the same spot - real block
+ * destruction the explosion itself leaves behind, independent of whatever
+ * the native RPG explosion does or doesn't touch on its own.
  */
-function blastAt(sourceId, centre, radius, damage, knockbackUp, withItem, breakRadius) {
-    const targets = api.getPlayerIds().concat(api.getMobIds());
-    for (let i = 0; i < targets.length; i++) {
-        const victim = targets[i];
-        const pos = api.getPosition(victim);
-        if (!pos) {
-            continue;
-        }
-        const dx = pos[0] - centre[0];
-        const dy = pos[1] - centre[1];
-        const dz = pos[2] - centre[2];
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance > radius) {
-            continue;
-        }
-        const falloff = 1 - distance / radius;
-        api.attemptApplyDamage({
-            eId: sourceId,
-            hitEId: victim,
-            attemptedDmgAmt: Math.max(1, Math.round(damage * falloff)),
-            withItem: withItem,
-        });
-        const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
-        api.applyImpulse(victim, (dx / length) * 5 * falloff, knockbackUp * falloff, (dz / length) * 5 * falloff);
-        if (isPlayer(victim)) {
-            api.shakePlayerCamera(victim, Math.min(1, falloff), 600);
-        }
-    }
+function createExplosion(pos, strength, breakRadius) {
+    const attacker = api.attemptSpawnMob("Draugr Zombie", pos[0], pos[1], pos[2]);
+    api.setMobSetting(attacker, "attackItemName", strength === 1 ? "RPG" : "Super RPG");
+    api.setMobSetting(attacker, "attackRadius", 1e6);
+    api.setMobSetting(attacker, "attackInterval", 1e6);
+    api.setMobSetting(attacker, "baseWalkingSpeed", 0);
+    api.setMobSetting(attacker, "baseRunningSpeed", 0);
+    api.setMobSetting(attacker, "attackImpulse", 0);
+    api.setPlayerOpacity(attacker, 0);
+
+    const target = api.attemptSpawnMob("Draugr Zombie", pos[0], pos[1] - 2, pos[2]);
+    api.setMobSetting(target, "baseWalkingSpeed", 0);
+    api.setMobSetting(target, "baseRunningSpeed", 0);
+    api.setMobSetting(target, "initialHealth", 1e6);
+    api.setPlayerOpacity(target, 0);
+
+    api.applyMeleeHit(target, attacker, [0, 0, 0]);
+
+    despawnQueue.push(attacker, target);
+    pendingDespawnTicks = 0;
 
     if (breakRadius) {
-        const x = Math.floor(centre[0]), y = Math.floor(centre[1]), z = Math.floor(centre[2]);
+        const x = Math.floor(pos[0]), y = Math.floor(pos[1]), z = Math.floor(pos[2]);
         api.setBlockRect([x - breakRadius, y - breakRadius, z - breakRadius],
             [x + breakRadius, y + breakRadius, z + breakRadius], "Air");
     }
-
-    api.broadcastSound("ominousBellHit", 1.0, 0.55, { playerIdOrPos: centre, maxHearDist: 90 });
-    api.playParticleEffect({
-        presetId: "stomp",
-        pos1: [centre[0] - radius / 2, centre[1], centre[2] - radius / 2],
-        pos2: [centre[0] + radius / 2, centre[1] + 3, centre[2] + radius / 2],
-    });
 }
+
+/**
+ * Several rings of falling charges around where the arrow landed, each
+ * point a real physics-free falling block (the same visual technique
+ * terrain generation's marker blocks use, just moved down a block a tick at
+ * a time) that turns into a real explosion once it finishes falling.
+ */
+function fireOrbitalRing(pos) {
+    const o = CONFIG.orbital;
+    const fallTicks = Math.round(o.fallTimeSeconds * 20);
+    for (let r = 0; r < o.rings.length; r++) {
+        const radius = o.rings[r];
+        for (let i = 0; i < o.pointsPerRing; i++) {
+            const angle = Math.PI * 2 * i / o.pointsPerRing;
+            const x = Math.round(pos[0] + Math.cos(angle) * radius);
+            const z = Math.round(pos[2] + Math.sin(angle) * radius);
+
+            fallingExplosives.push({ pos: [x, pos[1] + o.fallHeight, z], ticks: 0, fallTicks: fallTicks });
+            scheduledExplosions.push({
+                pos: [x, pos[1], z], strength: o.strength, ticks: fallTicks, breakRadius: o.breakRadius,
+            });
+        }
+    }
+}
+
+/**
+ * One straight column of real explosions from the impact point down
+ * `stabshot.depth` blocks, all set to go off on the very next tick rather
+ * than falling or staggering - a single vertical strike, not a drill.
+ */
+function fireStabshotColumn(pos) {
+    const s = CONFIG.stabshot;
+    scheduledExplosions.push({ pos: pos, strength: 1, ticks: 0, breakRadius: s.breakRadius });
+    for (let h = 1; h <= s.depth; h++) {
+        scheduledExplosions.push({
+            pos: [pos[0], pos[1] - h, pos[2]], strength: s.strength, ticks: 0, breakRadius: s.breakRadius,
+        });
+    }
+}
+
+/** Ticks the falling-charge and delayed-explosion queues forward. Called from tick(). */
+function processExplosionQueues() {
+    pendingDespawnTicks++;
+    if (pendingDespawnTicks === 3 && despawnQueue.length) {
+        for (let i = 0; i < despawnQueue.length; i++) {
+            api.despawnMob(despawnQueue[i]);
+        }
+        despawnQueue.length = 0;
+    }
+
+    for (let i = scheduledExplosions.length - 1; i >= 0; i--) {
+        const e = scheduledExplosions[i];
+        e.ticks--;
+        if (e.ticks <= 0) {
+            createExplosion(e.pos, e.strength, e.breakRadius);
+            scheduledExplosions.splice(i, 1);
+        }
+    }
+
+    for (let i = fallingExplosives.length - 1; i >= 0; i--) {
+        const f = fallingExplosives[i];
+        api.setBlock(f.pos[0], f.pos[1], f.pos[2], "Air");
+        f.pos[1]--;
+        api.setBlock(f.pos[0], f.pos[1], f.pos[2], CONFIG.orbital.explosiveItem);
+
+        f.ticks++;
+        if (f.ticks >= f.fallTicks) {
+            api.setBlock(f.pos[0], f.pos[1], f.pos[2], "Air");
+            fallingExplosives.splice(i, 1);
+        }
+    }
+}
+
+/**
+ * Both launchers are arrows, told apart by their own real item name - no
+ * custom tag needed, so there is nothing for a native behaviour or an
+ * inventory stack merge to fight over. Fires the instant the arrow lands on
+ * anything at all, then teleports the arrow entity out of the way.
+ */
+function onPlayerThrowableHitTerrain(playerId, arrowName, arrowEntityId) {
+    if (CONFIG.orbital.enabled && arrowName === CONFIG.orbital.item) {
+        const pos = api.getPosition(arrowEntityId);
+        if (!pos) {
+            return;
+        }
+        api.setPosition(arrowEntityId, 0, -999, 0);
+        fireOrbitalRing(pos);
+        tell(playerId, "Orbital strike incoming...", "#ff6b6b");
+    } else if (CONFIG.stabshot.enabled && arrowName === CONFIG.stabshot.item) {
+        const pos = api.getPosition(arrowEntityId);
+        if (!pos) {
+            return;
+        }
+        api.setPosition(arrowEntityId, 0, -999, 0);
+        fireStabshotColumn(pos);
+        tell(playerId, "Stabshot drilling to bedrock...", "#ff6b6b");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Villagers & Ocean
+// -----------------------------------------------------------------------------
+
+// mobId -> the trade it offers. Assigned once at spawn, cycling through
+// CONFIG.npc.trades, so every villager has exactly one fixed trade rather
+// than the whole list (closer to how Minecraft villagers work).
+const npcTrades = {};
+
+let worldFeaturesSpawned = false;
 
 /**
  * Scans straight down from (x, fromY, z) for the first solid block, and
  * returns the empty space just above it - or null if the chunk isn't
- * loaded or nothing solid turns up within maxDepth. Shared by the orbital's
- * ring (where each charge should land) and nothing else needs it, but kept
- * general rather than folded into fireOrbital.
+ * loaded or nothing solid turns up within maxDepth. Used by the village's
+ * per-house ground detection (groundYNear below) since this script has no
+ * way to know the Overworld's real terrain height otherwise.
  */
 function findGroundY(x, z, fromY, maxDepth) {
     const fx = Math.floor(x), fz = Math.floor(z), fy = Math.floor(fromY);
@@ -2635,104 +2715,6 @@ function findGroundY(x, z, fromY, maxDepth) {
     }
     return null;
 }
-
-// Charges waiting on their fall or their drill delay - there is no timer
-// API, so this is ticked forward the same way the terrain generation queue
-// is.
-const pendingStrikes = [];
-
-/**
- * A ring of Moonstone Explosive charges around where the player is aiming,
- * each one a real physics item drop that falls before it detonates roughly
- * where it lands. One-time use: it breaks the instant it fires.
- */
-function fireOrbital(playerId, slot) {
-    const o = CONFIG.orbital;
-    const centre = aimPoint(playerId, o.range);
-    api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
-
-    for (let i = 0; i < o.ringCount; i++) {
-        const angle = (i / o.ringCount) * Math.PI * 2;
-        const x = centre[0] + Math.cos(angle) * o.ringRadius;
-        const z = centre[2] + Math.sin(angle) * o.ringRadius;
-        const groundY = findGroundY(x, z, centre[1] + o.fallHeight, 80);
-        const landY = groundY == null ? centre[1] : groundY;
-        const dropY = landY + o.fallHeight;
-
-        api.createItemDrop(x, dropY, z, o.explosiveItem, 1, false, undefined, o.fallDelayMs + 2000,
-            playerId, { doPhysics: true });
-        pendingStrikes.push({
-            fireAt: api.now() + o.fallDelayMs, centre: [x, landY, z], radius: o.radius,
-            damage: o.damage, knockbackUp: o.knockbackUp, sourceId: playerId,
-            withItem: o.explosiveItem, breakRadius: o.breakBlocks ? Math.max(1, Math.round(o.radius / 2)) : 0,
-        });
-    }
-
-    tell(playerId, "Orbital strike incoming...", "#ff6b6b");
-    api.playSound(playerId, "magicAccent4", 1.0, 0.6);
-}
-
-/**
- * A single shaft of Super RPG charges straight down from where the player is
- * aiming to bedrock, drilling downward as they go off in sequence. Super RPG
- * has no block form, so unlike the orbital's charges these are real item
- * drops held in place at each shaft depth (doPhysics: false - most of the
- * shaft runs through solid ground, where a falling item would just get
- * stuck or clip) rather than a placed block. One-time use: the launcher
- * breaks the instant it fires.
- */
-function fireStabshot(playerId, slot) {
-    const s = CONFIG.stabshot;
-    const centre = aimPoint(playerId, s.range);
-    api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
-
-    const x = Math.floor(centre[0]);
-    const z = Math.floor(centre[2]);
-    const startY = Math.floor(centre[1]);
-    const breakRadius = s.breakBlocks ? Math.max(1, Math.round(s.radius / 2)) : 0;
-
-    let step = 0;
-    for (let y = startY; y >= s.bedrockY && step < 60; y -= s.columnStepY, step++) {
-        const fireAt = step * s.stepDelayMs;
-        api.createItemDrop(x + 0.5, y + 0.5, z + 0.5, s.explosiveItem, 1, false, undefined,
-            fireAt + 2000, playerId, { doPhysics: false });
-        pendingStrikes.push({
-            fireAt: api.now() + fireAt, centre: [x + 0.5, y + 0.5, z + 0.5], radius: s.radius,
-            damage: s.damage, knockbackUp: s.knockbackUp, sourceId: playerId,
-            withItem: s.explosiveItem, breakRadius: breakRadius,
-        });
-    }
-
-    tell(playerId, "Stabshot drilling to bedrock...", "#ff6b6b");
-    api.playSound(playerId, "magicAccent3", 0.9, 0.7);
-}
-
-/** Fires whatever pending charges have come due. Called from tick(). */
-function processPendingStrikes() {
-    if (pendingStrikes.length === 0) {
-        return;
-    }
-    const now = api.now();
-    for (let i = pendingStrikes.length - 1; i >= 0; i--) {
-        const strike = pendingStrikes[i];
-        if (now >= strike.fireAt) {
-            blastAt(strike.sourceId, strike.centre, strike.radius, strike.damage,
-                strike.knockbackUp, strike.withItem, strike.breakRadius);
-            pendingStrikes.splice(i, 1);
-        }
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Villagers & Ocean
-// -----------------------------------------------------------------------------
-
-// mobId -> the trade it offers. Assigned once at spawn, cycling through
-// CONFIG.npc.trades, so every villager has exactly one fixed trade rather
-// than the whole list (closer to how Minecraft villagers work).
-const npcTrades = {};
-
-let worldFeaturesSpawned = false;
 
 /** The ground height at one x/z, scanning down from a generous search height, or fallbackY if nothing solid turns up. */
 function groundYNear(x, z, fallbackY) {
@@ -3510,7 +3492,7 @@ function tick() {
         processGeneration();
     }
 
-    processPendingStrikes();
+    processExplosionQueues();
 }
 
 /** Any colour of Bed or Strongbed, head half included - standing on either sets your spawn. */
@@ -3603,35 +3585,6 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
     }
 }
 
-/**
- * Fires before the client resolves what a right click does - unlike
- * onPlayerAltAction (which never runs at all while holding a real fishing
- * rod, since casting a line swallows the click first), this "attempt" event
- * reaches us either way. The orbital and stabshot are built on real rods
- * ("Master Rod" / "Obsidian Rod") on purpose, so this is where they actually
- * fire from: check the tag directly and launch immediately, then return
- * "preventAction" to try to cancel the cast animation too. Bloxd's own docs
- * warn preventAction "may not work as well for certain actions which the
- * game client predicts to succeed" - a rod cast is exactly that - so a
- * stray casting animation may still flash even though firing itself no
- * longer depends on the click completing.
- */
-function onPlayerAttemptAltAction(playerId) {
-    const slot = heldSlot(playerId);
-    if (!slot) {
-        return;
-    }
-    const custom = customAttrs(slot.item);
-    if (custom[ATTR_ORBITAL]) {
-        fireOrbital(playerId, slot);
-        return "preventAction";
-    }
-    if (custom[ATTR_STABSHOT]) {
-        fireStabshot(playerId, slot);
-        return "preventAction";
-    }
-}
-
 function onPlayerAltAction(playerId) {
     const slot = heldSlot(playerId);
     if (!slot) {
@@ -3654,10 +3607,6 @@ function onPlayerAltAction(playerId) {
         spearLunge(playerId, slot);
     } else if (custom[ATTR_WINDCHARGE]) {
         useWindChargeItem(playerId, slot);
-    } else if (custom[ATTR_ORBITAL]) {
-        fireOrbital(playerId, slot);
-    } else if (custom[ATTR_STABSHOT]) {
-        fireStabshot(playerId, slot);
     } else if (CONFIG.offhand.enabled && CONFIG.offhand.swapOnRightClick) {
         // A shield does nothing on right click any more - putting one in the
         // off-hand is the only way it ever guards, and that is a deliberate
@@ -3864,8 +3813,9 @@ function playerCommand(playerId, command) {
                 + "craft and place a Purple Portal for the Nether or a "
                 + "Black Portal for the End, then stand on it | /where shows your dimension | "
                 + "craft a Crystal, place it and hit it to blow up everything nearby | "
-                + "the " + CONFIG.orbital.name + " rings the ground with charges and the "
-                + CONFIG.stabshot.name + " drills straight to bedrock, both one-time use | "
+                + "craft and shoot the " + CONFIG.orbital.name + " (" + CONFIG.orbital.item
+                + ") for a falling ring of explosions, or the " + CONFIG.stabshot.name
+                + " (" + CONFIG.stabshot.item + ") for a blast straight down | "
                 + "right click a villager to trade | "
                 + "sleep in (stand on) a bed to set your spawn point | "
                 + "type " + CONFIG.anonymous.chatCommand + " to go anonymous | "
@@ -3910,9 +3860,9 @@ function playerCommand(playerId, command) {
             } else if (what === "shield") {
                 api.giveItem(playerId, CONFIG.shield.item, 1, shieldAttributes(CONFIG.shield.durability));
             } else if (what === "orbital") {
-                api.giveItem(playerId, CONFIG.orbital.item, 1, orbitalAttributes());
+                api.giveItem(playerId, CONFIG.orbital.item, 8, orbitalAttributes());
             } else if (what === "stabshot") {
-                api.giveItem(playerId, CONFIG.stabshot.item, 1, stabshotAttributes());
+                api.giveItem(playerId, CONFIG.stabshot.item, 8, stabshotAttributes());
             } else if (what === "netherportal") {
                 api.giveItem(playerId, CONFIG.dimensions.list.nether.portalBlock, 8);
             } else if (what === "endportal") {

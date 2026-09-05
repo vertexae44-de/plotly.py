@@ -11,6 +11,7 @@ const world = {
     sounds: [], meshAttachments: {},
     worldChanges: [], protectedBlocks: {},
     crouching: {}, spawnedMobs: [], mobSpawnFails: false, targetInfo: {},
+    mobSettings: {}, opacities: {}, meleeHits: [], despawnedMobs: [],
 };
 const ids = ["a", "b"];
 
@@ -89,6 +90,18 @@ const api = {
     isBlockInLoadedChunk: () => world.chunkLoaded !== false,
 
     attemptApplyDamage: opts => { world.damages.push(opts); return true; },
+    setMobSetting: (mobId, setting, value) => {
+        (world.mobSettings[mobId] = world.mobSettings[mobId] || {})[setting] = value;
+    },
+    setPlayerOpacity: (mobId, opacity) => { world.opacities[mobId] = opacity; },
+    applyMeleeHit: (hittingEId, hitEId, dirFacing) => {
+        world.meleeHits.push({ hittingEId, hitEId, dirFacing });
+        return true;
+    },
+    despawnMob: mobId => {
+        world.despawnedMobs.push(mobId);
+        world.mobs = world.mobs.filter(m => m !== mobId);
+    },
     attemptCreateMeshEntity: (type, opts, name) => {
         if (world.meshSpawnFails) return null;
         const id = "mesh" + (++world.mobSeq);
@@ -134,9 +147,11 @@ const genDone = vm.runInContext("genDone", ctx);
 const genQueue = vm.runInContext("genQueue", ctx);
 const voidGuardians = vm.runInContext("voidGuardians", ctx);
 const npcTrades = vm.runInContext("npcTrades", ctx);
-const pendingStrikes = vm.runInContext("pendingStrikes", ctx);
+const fallingExplosives = vm.runInContext("fallingExplosives", ctx);
+const scheduledExplosions = vm.runInContext("scheduledExplosions", ctx);
+const despawnQueue = vm.runInContext("despawnQueue", ctx);
 
 module.exports = {
     ctx, world, api, CONFIG, durabilityCache, genDone, genQueue,
-    voidGuardians, npcTrades, pendingStrikes,
+    voidGuardians, npcTrades, fallingExplosives, scheduledExplosions, despawnQueue,
 };

@@ -468,52 +468,40 @@ of them.
 
 ## Orbital Strike Cannon & Stabshot
 
-Bloxd has **no TNT item and no explosion-trigger API** — the only "explosion" this whole script can
-make is the same trick Crystal PvP already uses: damage everyone in a radius and draw particles and
-sound over it. Both weapons really do spawn a real explosive item at every impact point rather than
-computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to your facing direction
-if you're not looking at a block). **Both are one-time use**: the launcher item breaks the instant
-it fires, whichever one it is.
+Both are craftable **arrows**, not right-click launcher items — every launcher item tried before
+this hit its own native-behaviour wall (a fishing rod's cast swallowing the click, a common crafting
+material's stack merging away its tag), so firing was moved onto something that has no click of its
+own to fight over: shoot the arrow from a bow and it explodes wherever it lands.
 
-- **Orbital Strike Cannon** (a `Master Rod`) — right click drops a **ring** of `orbital.ringCount`
-  (10) **Moonstone Explosive** charges, `orbital.ringRadius` (50) blocks out from where you're
-  aiming. Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that
-  falls from `orbital.fallHeight` above the ground and detonates roughly where it lands, after
-  `orbital.fallDelayMs`. The landing height under each ring point is found by scanning straight down
-  for the first solid block; if that column isn't loaded or nothing solid turns up, that one charge
-  falls back to detonating at your own height instead of guessing.
-- **Stabshot** (an `Obsidian Rod`) — right click places a single **vertical shaft** of **Super RPG**
-  charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
-  `stabshot.columnStepY` (6) blocks apart, each set off in sequence (`stabshot.stepDelayMs` apart)
-  so it reads as drilling downward rather than one instant blast. Super RPG has no block form, so
-  unlike the orbital's charges these are real item drops held in place (`doPhysics: false`) at each
-  shaft depth rather than a placed block — most of the shaft runs through solid ground, where a
-  falling item would just get stuck or clip.
+- **Orbital Strike Cannon** (`Arrow of Aura XP`) — explodes on impact into several **falling rings**
+  of real explosions at once (`orbital.rings`, default `[0, 7, 12, 16]` blocks out, `orbital.pointsPerRing`
+  per ring). Each point is a real **Moonstone Explosive** block that visually falls from
+  `orbital.fallHeight` before detonating, after `orbital.fallTimeSeconds`.
+- **Stabshot** (`Arrow of Shield`) — explodes on impact into one straight **column** of real
+  explosions running `stabshot.depth` (51) blocks straight down, all going off together on the very
+  next tick rather than falling or staggering — a single vertical strike, not a drill.
 
-**Why real fishing rods, and how firing actually works:** both launchers are deliberately built on
-real Bloxd fishing rods (`Master Rod` / `Obsidian Rod`) — that's the intended look — even though a
-rod's native right-click (casting a line) is exactly what breaks a naive implementation: casting
-swallows the click before `onPlayerAltAction` (the "completed click" event) ever runs, so while
-holding one that event never fires at all, the same class of bug that broke the shield when it was
-first built on `Brown Paintball Explosive Item`, a native throwable. The fix is
-`onPlayerAttemptAltAction` — the "about to act" event, which Bloxd fires *before* the client
-resolves what the click does, so it reaches us regardless of what the item's native behaviour is.
-That's where the orbital and stabshot actually fire from now: it checks the item's tag directly,
-fires immediately, and returns `"preventAction"` to try to cancel the cast animation too. Bloxd's
-own docs are explicit that `preventAction` "may not work as well for certain actions which the game
-client predicts to succeed" — a rod cast is exactly that kind of action — so a stray casting
-animation may still flash even though firing itself no longer depends on the click completing.
-`onPlayerAltAction`'s own handling for both launchers is left in place as a harmless second
-attempt on top, for any client where the "completed" event still reaches us — the launcher having
-already broken itself (set to `Air`) the instant it fires is what stops that from ever firing the
-same shot twice.
+**How the explosion itself works — real, not simulated:** every previous version of these two faked
+an explosion the same way Crystal PvP does (damage everyone in a radius, draw particles over it).
+This one is real: `createExplosion` spawns two invisible mobs at the impact point — one (`attacker`)
+carrying a genuine launcher item (`RPG` for strength 1, `Super RPG` otherwise) as its
+`attackItemName`, and one (`target`) parked just below it with enormous health so the hit can never
+actually kill it — then forces a single `applyMeleeHit` between them. That one forced hit is enough
+to trigger the launcher's own native explosion for real: actual terrain damage, actual knockback,
+nothing this script computes by hand. Both mobs are removed afterward with `despawnMob`, never an
+actual kill — `despawnMob` explicitly skips "on death" flows, so neither one leaves a death
+animation, a loot drop, or a killfeed entry. A ring or column strike spawns dozens of these in one
+go, and real death drops piling up under every blast is exactly the kind of lag this avoids.
+`breakRadius` on top of that clears a small cube of terrain at each explosion, independent of
+whatever the native blast does or doesn't touch on its own.
 
-There is no timer API in World Code, so both weapons' delays are tracked the same way terrain
-generation is queued — a small array of pending charges drained every `tick()`. Every explosion also
-clears a small cube of terrain around itself (`breakBlocks`), which is what makes the orbital's
-explosive block disappear when it goes off. Ring size, shaft depth/spacing, radii, damage and
-knockback — and which real item each weapon spawns (`explosiveItem`) — are all tunable in
-`CONFIG.orbital` / `CONFIG.stabshot`.
+There is no timer API in World Code, so both the falling ring and the delayed detonations are
+tracked the same way terrain generation is queued — small arrays (`fallingExplosives`,
+`scheduledExplosions`, `despawnQueue`) drained every `tick()` via `processExplosionQueues`. Neither
+arrow needs a custom tag to work: `onPlayerThrowableHitTerrain` tells them apart by their own real
+item name, so there's nothing for a native behaviour or an inventory stack merge to collide with.
+Ring/column shape, fall time, strength, and `breakRadius` are all tunable in `CONFIG.orbital` /
+`CONFIG.stabshot`.
 
 ## Bed spawn points
 
