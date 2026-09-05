@@ -160,28 +160,23 @@ shown here.
 allows: each "dimension" is a far-apart region of the same world, dressed with its own fog, ambient
 light, sky light and gravity through per-player client options.
 
-| | Y origin | Portal | Feel |
+| | X/Z origin | Portal | Feel |
 | --- | --- | --- | --- |
-| Overworld | ordinary height | — | normal |
-| The Nether | `y = -10000` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
-| The End | `y = -30000` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
-| The Void | `y = -50000` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
+| Overworld | wherever you normally build | — | normal |
+| The Nether | `x = -10000, z = 0` | Purple Portal | red fog (`#6b1105`), 5-chunk view |
+| The End | `x = -30000, z = 0` | Black Portal | violet fog (`#2e0f52`), 8-chunk view, 0.7× gravity |
+| The Void | `x = 50000, z = 0` | none | near-black fog (`#020204`), 3-chunk view, 0.5× gravity |
 
-**Stacked by Y this time, at x=0,z=0 for all three.** An earlier version tried exactly this layout
-and it looked broken in-game — Void terrain never generated at all, and Nether/End arrivals fell
-straight through the platform — which was blamed on Bloxd's buildable range not reaching that deep,
-so the regions were spread across X instead. The real cause turned out to be a different bug: the
-"is this chunk already built" check read a `Bedrock` marker at world **y=0** to decide whether to
-skip regenerating a chunk, and Bloxd's own Overworld terrain generator has no idea these fake
-dimensions exist — at whatever X/Z a dimension used, it may still lay its own floor down near y=0,
-which tricked that check into thinking the chunk was already generated before this script ever
-built anything there. The marker now sits at `originY + markerY`, deep inside each dimension's own
-band, so it can't collide with real Overworld terrain or another dimension's band, and the Y-stacked
-layout works correctly.
+**This is the X/Z layout, and it's the one that actually works in-game.** Y-stacking the three
+regions directly below the Overworld (`y = -10000` / `-30000` / `-50000`) has now been tried twice,
+on the assumption Bloxd's buildable range reached that far down. Both times it failed for real
+players on all three dimensions: arrivals landed back in the Overworld instead of the target
+dimension, and no terrain ever generated. That's Bloxd's own buildable range rejecting positions
+that deep — not a bug in this script's chunk-marker logic.
 
-`dimensions.regionHalfHeight` (**3000**) is how far from that Y origin still counts as "inside" the
-dimension; with 20000 blocks between each origin, that clears whatever generation actually builds
-without reaching into a neighbour's band or back into ordinary Overworld height.
+`dimensions.regionHalfSize` (**4000**) is how far from that origin still counts as "inside" the
+dimension; with 20000+ blocks between each origin, that only has to clear whatever generation
+actually builds, not fight a neighbour.
 
 Craft a portal block, place it, **stand on it**. Standing on the same block inside that dimension
 brings you home — the game remembers the Overworld position you left from (`state.overworldPos`)
@@ -224,11 +219,12 @@ ticks (`columnsPerTick`) so a big reveal never stalls the server.
   always have ground under them. Its rock is **richer per block** than the Nether's — Iron,
   Emerald, Moonstone, Diamond and Lunite — because most End columns are open void, so there is
   far less stone to dig through.
-- **The Void** — dark, cracked platforms (Black Concrete under Cracked Stone Bricks, with Mossy
-  Stone Bricks patches) that read as abandoned rather than merely empty. Scattered among them are
-  small ruined **towers and houses** built from Stone Bricks and Mossy Stone Bricks, each one
-  guarded by 3 hostile mobs — see **The Void, and the way out** below for how those actually pay
-  out an escape.
+- **The Void** — a closed cavern like the Nether's rather than floating islands: bedrock floor,
+  rolling ground, a Black Concrete ceiling overhead, all in **Black Concrete** with **Brown
+  Concrete** patches instead of the Nether's red stone and magma — dark and dead rather than
+  hostile-looking. No lava sea. Scattered through it are small ruined **towers and houses** built
+  from Stone Bricks and Mossy Stone Bricks, each one guarded by 3 hostile mobs — see **The Void,
+  and the way out** below for how those actually pay out an escape.
 
 Terrain is **deterministic value noise**, not `Math.random`: the same column always produces the same
 blocks, so chunk edges line up and nothing shifts between visits. A generated chunk is marked with one

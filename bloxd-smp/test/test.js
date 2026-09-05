@@ -684,21 +684,18 @@ check("orbs are spent, change given back",
 check("you come back with hearts", world.db.b.smpMaxHp === C.resurrection.heartsOnReturn, world.db.b.smpMaxHp);
 check("resurrection is announced", world.log.some(l => /Void/.test(l)), "");
 
-// the Void generates dark, cracked platforms to stand on - no orbs in the
-// terrain any more, those only ever come from slain guardians now
+// the Void is a closed cavern like the Nether's - always solid ground
+// somewhere in the column, dark and dead rather than lit up red. No orbs in
+// the terrain any more, those only ever come from slain guardians now.
 world.blocks = {};
 let solidCount = 0;
-for (let i = 0; i < 4000; i++) {
+for (let i = 0; i < 400; i++) {
     world.blocks = {};
-    ctx.buildVoidColumn(0, 0, (i % 80) - 40, ((i / 80) | 0) - 25, 0);
+    ctx.buildVoidColumn(0, 0, i * 11, i * 17);
     const vals = Object.keys(world.blocks).map(k => world.blocks[k]);
     if (vals.length) solidCount++;
 }
-check("the Void has platforms to stand on", solidCount > 0, solidCount);
-// Sized to match the End's bigger islands now, so it is no longer mostly
-// empty over this sample range - just no longer wall-to-wall solid either.
-check("the Void still has some open gaps, not wall-to-wall solid",
-    solidCount < 4000, solidCount);
+check("the Void has platforms to stand on", solidCount === 400, solidCount);
 check("the Void has no portal out", VOID.portalBlock === undefined, VOID.portalBlock);
 
 // killing a void guardian is the only source of an Orb of Resurrection
@@ -808,22 +805,22 @@ check("different seeds give different terrain",
 
 // run a player around the nether until the first chunk finishes
 world.blocks = {}; world.rects.length = 0;
-world.pos.a = [0, NDIM.originY, 0];
+world.pos.a = [NDIM.originX, 60, NDIM.originZ];
 ctx.stateOf("a").dimension = null;
 ctx.stateOf("a").lastGenChunk = null;
-const markerKey = "0," + (NDIM.originY + GEN.markerY) + ",0";
+const markerKey = NDIM.originX + "," + GEN.markerY + "," + NDIM.originZ;
 let genTicks = 0;
 while (genTicks < 3000 && world.blocks[markerKey] !== GEN.markerBlock) {
     ctx.tick();
     genTicks++;
 }
-const nAt = y => world.blocks["0," + (NDIM.originY + y) + ",0"];
+const nAt = y => world.blocks[NDIM.originX + "," + y + "," + NDIM.originZ];
 check("nether chunk generates", genTicks < 3000, genTicks + " ticks");
 check("nether has a bedrock floor", nAt(GEN.nether.floorY) === GEN.nether.blocks.floor, nAt(GEN.nether.floorY));
 check("nether has a ceiling", nAt(GEN.nether.ceilingY) === GEN.nether.blocks.ceiling, nAt(GEN.nether.ceilingY));
 check("nether has a lava sea", nAt(GEN.nether.lavaLevel) === GEN.nether.blocks.liquid, nAt(GEN.nether.lavaLevel));
 check("chunk is marked generated",
-    ctx.chunkGenerated("nether", 0, 0, NDIM.originY), "");
+    ctx.chunkGenerated("nether", NDIM.originX / GEN.chunkSize, NDIM.originZ / GEN.chunkSize), "");
 // Drain the whole queue first - the 5x5 around the player is still building,
 // and ore placement writes blocks every tick, so "nothing changed" only means
 // anything once there is no work left.
@@ -842,10 +839,10 @@ check("a generated chunk is never rebuilt",
 
 // the end builds islands over void
 world.blocks = {};
-world.pos.a = [0, EDIM.originY, 0];
+world.pos.a = [EDIM.originX, 60, EDIM.originZ];
 ctx.stateOf("a").dimension = null;
 ctx.stateOf("a").lastGenChunk = null;
-const endMarkerKey = "0," + (EDIM.originY + GEN.markerY) + ",0";
+const endMarkerKey = EDIM.originX + "," + GEN.markerY + "," + EDIM.originZ;
 let endTicks = 0;
 while (endTicks < 3000 && world.blocks[endMarkerKey] !== GEN.markerBlock) {
     ctx.tick();
@@ -858,7 +855,7 @@ check("end has island blocks", endSolid > 0, endSolid);
 check("end arrival point is solid ground",
     ctx.buildEndColumn === undefined || (() => {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, 0, 0, 0);
+        ctx.buildEndColumn(0, 0, 0, 0);
         return Object.keys(world.blocks).length > 0;
     })(), "centre island missing");
 check("far end columns can still be void", (() => {
@@ -866,7 +863,7 @@ check("far end columns can still be void", (() => {
     let anyVoid = false;
     for (let i = 1; i < 60 && !anyVoid; i++) {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, i * 37, i * 53, 0);
+        ctx.buildEndColumn(0, 0, i * 37, i * 53);
         if (Object.keys(world.blocks).length === 0) anyVoid = true;
     }
     return anyVoid;
@@ -899,17 +896,17 @@ check("end columns actually contain ores", eFound.length > 0, eFound.join(","));
 
 // the same column, built twice, must come back byte-identical
 world.blocks = {};
-ctx.buildNetherColumn(0, 0, 41, 67, 0);
+ctx.buildNetherColumn(0, 0, 41, 67);
 const firstPass = JSON.stringify(world.blocks);
 world.blocks = {};
-ctx.buildNetherColumn(0, 0, 41, 67, 0);
+ctx.buildNetherColumn(0, 0, 41, 67);
 check("ore placement is deterministic", JSON.stringify(world.blocks) === firstPass, "");
 
 // nothing structural may be replaced by an ore
 check("ores never replace the bedrock floor", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         if (world.blocks["0," + GEN.nether.floorY + ",0"] !== GEN.nether.blocks.floor) {
             return false;
         }
@@ -920,7 +917,7 @@ check("ores never replace the bedrock floor", (() => {
 check("ores never replace the nether ceiling", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         if (world.blocks["0," + GEN.nether.ceilingY + ",0"] !== GEN.nether.blocks.ceiling) {
             return false;
         }
@@ -931,7 +928,7 @@ check("ores never replace the nether ceiling", (() => {
 check("ores never replace the end's surface layer", (() => {
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildEndColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildEndColumn(0, 0, i * 11, i * 17);
         const keys = Object.keys(world.blocks);
         if (keys.length === 0) {
             continue;   // open void, nothing to check
@@ -955,7 +952,7 @@ check("ores with a maxY stay below it", (() => {
     }
     for (let i = 0; i < 400; i++) {
         world.blocks = {};
-        ctx.buildNetherColumn(0, 0, i * 11, i * 17, 0);
+        ctx.buildNetherColumn(0, 0, i * 11, i * 17);
         for (const k of Object.keys(world.blocks)) {
             const hit = capped.find(o => o.block === world.blocks[k]);
             if (hit && parseInt(k.split(",")[1], 10) > hit.maxY) {
@@ -975,36 +972,36 @@ check("overworld chunks are never queued", (() => {
 })(), Object.keys(genDone).join(" "));
 
 // ------------------------------------------------------------ region geometry
-// Dimensions now claim a band of +/- regionHalfHeight around their own Y
-// origin instead of an X/Z square - stacked at y=-10000/-30000/-50000, well
-// clear of ordinary Overworld height and of each other. If two bands ever
-// overlap, dimensionAt returns whichever is listed first and the other
-// dimension silently stops existing - so check every pair stays clear.
+// Dimensions claim a square of +/- regionHalfSize around their own X/Z origin -
+// the layout confirmed working in-game. If two regions ever overlap,
+// dimensionAt returns whichever is listed first and the other dimension
+// silently stops existing - so check every pair stays clear.
 (() => {
-    const half = C.dimensions.regionHalfHeight;
-    const names = Object.keys(C.dimensions.list).filter(k => C.dimensions.list[k].originY != null);
+    const half = C.dimensions.regionHalfSize;
+    const names = Object.keys(C.dimensions.list).filter(k => C.dimensions.list[k].originX != null);
     let clash = null;
     for (let i = 0; i < names.length; i++) {
         for (let j = i + 1; j < names.length; j++) {
             const a = C.dimensions.list[names[i]];
             const b = C.dimensions.list[names[j]];
-            const apart = Math.abs(a.originY - b.originY);
-            if (apart < half * 2) {
+            const apartX = Math.abs(a.originX - b.originX);
+            const apartZ = Math.abs(a.originZ - b.originZ);
+            if (apartX < half * 2 && apartZ < half * 2) {
                 clash = names[i] + " and " + names[j] + " overlap";
             }
         }
     }
-    check("no two dimension Y-bands overlap", clash === null, clash || "");
+    check("no two dimension regions overlap", clash === null, clash || "");
 })();
 
 // every dimension also has to land back on itself: put a player at its
 // origin and dimensionAt must name that same dimension
 Object.keys(C.dimensions.list).forEach(key => {
     const d = C.dimensions.list[key];
-    if (d.originY == null) {
+    if (d.originX == null) {
         return;   // the overworld has no fixed region to test this way
     }
-    const pos = [0, d.originY, 0];
+    const pos = [d.originX, 60, d.originZ];
     check("a player at the origin of " + key + " is in " + key,
         ctx.dimensionAt(pos) === key, ctx.dimensionAt(pos));
 });
@@ -1021,8 +1018,8 @@ Object.keys(C.dimensions.list).filter(k => k !== "overworld").forEach(key => {
     const arrived = ctx.dimensionAt(world.pos.b);
     check("travelling to " + key + " from the overworld lands inside it",
         arrived === key, arrived + " at " + world.pos.b);
-    check("arriving in " + key + " lands at its arrival Y",
-        world.pos.b[0] === 0 && world.pos.b[2] === 0 && world.pos.b[1] === d.arrivalY, world.pos.b);
+    check("arriving in " + key + " lands at its origin",
+        world.pos.b[0] === d.originX && world.pos.b[2] === d.originZ, world.pos.b);
     ctx.travelTo("b", "overworld");
     check("coming back from " + key + " returns you to where you left",
         world.pos.b[0] === startPos[0] && world.pos.b[1] === startPos[1] && world.pos.b[2] === startPos[2],
@@ -1049,7 +1046,7 @@ check("every dimension sets a fog colour and a fog distance", (() => {
 })(), "");
 
 // and the fog has to actually reach the player when they arrive
-world.pos.b = [0, NDIM.originY, 0];
+world.pos.b = [NDIM.originX, 64, NDIM.originZ];
 ctx.stateOf("b").dimension = null;
 ctx.enterDimension("b", "nether", false);
 check("arriving in the nether pushes its fog colour to the client",
@@ -1222,7 +1219,7 @@ world.db.b.smpMaxHp = 100;
 if (ctx.dimensionAt(world.pos.b) === "void") ctx.travelTo("b", "overworld");
 
 // dying again while still exiled in the Void raises no further noise
-world.pos.b = [0, C.dimensions.list["void"].originY, 0];
+world.pos.b = [C.dimensions.list["void"].originX, 64, C.dimensions.list["void"].originZ];
 ctx.tick();
 world.log.length = 0; world.sounds.length = 0;
 ctx.onAttemptKillPlayer("b", "a");
