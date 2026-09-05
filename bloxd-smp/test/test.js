@@ -1489,17 +1489,10 @@ check("respawn falls back to the Overworld position with no bed set",
 check("orbital cannon substitutes a real explosive item for the nonexistent TNT",
     C.orbital.recipe.some(r => r.items[0] === "Moonstone Explosive" && r.amt === 500),
     JSON.stringify(C.orbital.recipe));
-check("orbital cannon is not built on a fishing rod (native casting swallows the click)",
-    C.orbital.item === "Ammo", C.orbital.item);
-check("stabshot is not built on a fishing rod either",
-    C.stabshot.item === "Bone", C.stabshot.item);
-check("orbital cannon is not built on a common crafting material either (a plain stack of it "
-    + "could merge with the tagged one and swallow its custom attributes)",
-    ["Iron Bar", "Gold Bar", "Moonstone", "Stick", "Stone", "Diamond"].indexOf(C.orbital.item) === -1,
-    C.orbital.item);
-check("stabshot is not built on a common crafting material either",
-    ["Iron Bar", "Gold Bar", "Moonstone", "Stick", "Stone", "Diamond"].indexOf(C.stabshot.item) === -1,
-    C.stabshot.item);
+check("orbital cannon is the real Master Rod",
+    C.orbital.item === "Master Rod", C.orbital.item);
+check("stabshot is the real Obsidian Rod",
+    C.stabshot.item === "Obsidian Rod", C.stabshot.item);
 check("the orbital and stabshot launchers are not the same item as each other",
     C.orbital.item !== C.stabshot.item, C.orbital.item);
 check("orbital charges are the real Moonstone Explosive block",
@@ -1525,7 +1518,13 @@ world.targetInfo.a = { position: [0, 64, 0] };
 world.pos.b = [C.orbital.ringRadius, 64, 0];
 pendingStrikes.length = 0;
 world.drops.length = 0;
-ctx.onPlayerAltAction("a");
+// Fires from onPlayerAttemptAltAction now, not onPlayerAltAction - a real
+// fishing rod's native cast swallows the "completed" click before that ever
+// runs, so the attempt event (which fires regardless) is what actually
+// launches it, returning "preventAction" to try to cancel the cast too.
+const orbitalAttemptResult = ctx.onPlayerAttemptAltAction("a");
+check("firing the orbital cannon returns preventAction, to try to cancel the rod's cast animation",
+    orbitalAttemptResult === "preventAction", orbitalAttemptResult);
 check("firing the orbital cannon breaks it immediately", world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
 check("firing the orbital cannon queues one charge per ring point",
     pendingStrikes.length === C.orbital.ringCount, pendingStrikes.length);
@@ -1551,7 +1550,9 @@ pendingStrikes.length = 0;
 world.drops.length = 0;
 world.targetInfo.a = { position: [0, 6, 0] };
 world.pos.b = [0, 6, 0];
-ctx.onPlayerAltAction("a");
+const stabshotAttemptResult = ctx.onPlayerAttemptAltAction("a");
+check("firing the stabshot returns preventAction too",
+    stabshotAttemptResult === "preventAction", stabshotAttemptResult);
 check("firing the stabshot breaks it immediately (one-time use)",
     world.inv.a[0] === null, JSON.stringify(world.inv.a[0]));
 const stabshotSteps = Math.floor((6 - C.stabshot.bedrockY) / C.stabshot.columnStepY) + 1;
@@ -1564,6 +1565,24 @@ check("stabshot drops a real Super RPG item per step, not a placed block "
 ctx.processPendingStrikes();
 check("the first stabshot charge detonates immediately",
     world.damages.some(d => d.hitEId === "b"), JSON.stringify(world.damages));
+
+// onPlayerAttemptAltAction does the actual firing and already broke the
+// item (set to Air) above; if the client's predicted cast still lets the
+// "completed" onPlayerAltAction event through afterward too, it must be a
+// no-op rather than firing a second shot - there is nothing left to check
+// the tag on.
+pendingStrikes.length = 0;
+ctx.onPlayerAltAction("a");
+check("a stale onPlayerAltAction after the rod already fired and broke does not fire again",
+    pendingStrikes.length === 0, pendingStrikes.length);
+
+// A plain fishing rod (no orbital/stabshot tag) must be left alone entirely -
+// this only ever intercepts the two tagged launchers, never an ordinary rod.
+world.inv.a = [{ name: "Master Rod", amount: null, attributes: undefined }];
+world.sel.a = 0;
+const plainRodResult = ctx.onPlayerAttemptAltAction("a");
+check("a plain, untagged Master Rod is never intercepted",
+    plainRodResult === undefined, plainRodResult);
 
 // -------------------------------------------------------------------- vanity flex
 check("the vanity item is the real Diorite block, not a fake item",

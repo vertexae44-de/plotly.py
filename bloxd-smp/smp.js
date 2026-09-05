@@ -707,23 +707,28 @@ const CONFIG = {
     // for the stabshot (explosiveItem below, in each case) - and both are
     // one-time use: the launcher itself breaks the instant it fires.
     //
-    // The base launcher item itself (item, below) is neither a Rod
-    // ("Master Rod"/"Obsidian Rod" are real Bloxd FISHING rods - casting a
-    // line is a native right-click behaviour that swallowed the click before
-    // onPlayerAltAction ever ran, so firing silently did nothing, the same
-    // class of bug that broke the shield when it was first built on a native
-    // throwable) NOR a common crafting material ("Iron Bar"/"Gold Bar" are
-    // real ingots used as ingredients all over this file - Iron Mace, Iron
-    // Dagger, the Bulwark, Gold Mace, Gold Dagger, Golden Apples - so a
-    // player who already has plain ones in their inventory risks the freshly
-    // crafted, tagged launcher merging into that ordinary stack and losing
-    // the custom attribute that makes it fire at all). Both launchers are
-    // now plain, otherwise-unused junk items - Ammo and Bone - that this
-    // script never touches anywhere else, so there is nothing for the tag to
-    // collide or merge with.
+    // The launcher items ARE real Bloxd fishing rods again ("Master Rod" /
+    // "Obsidian Rod") - that was the original design and the look this world
+    // wants - even though a rod's native right-click (casting a line) is
+    // exactly what broke firing the first time this was tried: casting
+    // swallows the click before onPlayerAltAction ever runs, so that
+    // "complete" event never fires at all while holding one. Rather than
+    // give up the rod look, onPlayerAttemptAltAction below - the "about to
+    // act" event, fired BEFORE the client resolves what the click does - is
+    // where these two actually fire from: it checks for the orbital/stabshot
+    // tag itself, fires immediately, and returns "preventAction" to try to
+    // stop the cast animation too. Bloxd's own docs are explicit that
+    // preventAction "may not work as well for certain actions which the
+    // game client predicts to succeed" - a rod cast is exactly that kind of
+    // action - so a stray cast animation may still flash even though the
+    // fire logic itself no longer depends on it. onPlayerAltAction's own
+    // ATTR_ORBITAL/ATTR_STABSHOT branches are left in place as a harmless
+    // second attempt for any client where the complete event still reaches
+    // us; the item already breaking itself (set to Air) the instant it
+    // fires is what stops that from ever firing the shot a second time.
     orbital: {
         enabled: true,
-        item: "Ammo",
+        item: "Master Rod",
         name: "Orbital Strike Cannon",
         recipe: [
             { items: ["Moonstone Explosive"], amt: 500 },
@@ -747,7 +752,7 @@ const CONFIG = {
     },
     stabshot: {
         enabled: true,
-        item: "Bone",
+        item: "Obsidian Rod",
         name: "Stabshot",
         recipe: [
             { items: ["Gold Bow"], amt: 1 },
@@ -3595,6 +3600,35 @@ function onAttemptKillPlayer(killedPlayer, attackingLifeform) {
 
     if (shouldDrop) {
         dropOrbs(killedPlayer, lost);
+    }
+}
+
+/**
+ * Fires before the client resolves what a right click does - unlike
+ * onPlayerAltAction (which never runs at all while holding a real fishing
+ * rod, since casting a line swallows the click first), this "attempt" event
+ * reaches us either way. The orbital and stabshot are built on real rods
+ * ("Master Rod" / "Obsidian Rod") on purpose, so this is where they actually
+ * fire from: check the tag directly and launch immediately, then return
+ * "preventAction" to try to cancel the cast animation too. Bloxd's own docs
+ * warn preventAction "may not work as well for certain actions which the
+ * game client predicts to succeed" - a rod cast is exactly that - so a
+ * stray casting animation may still flash even though firing itself no
+ * longer depends on the click completing.
+ */
+function onPlayerAttemptAltAction(playerId) {
+    const slot = heldSlot(playerId);
+    if (!slot) {
+        return;
+    }
+    const custom = customAttrs(slot.item);
+    if (custom[ATTR_ORBITAL]) {
+        fireOrbital(playerId, slot);
+        return "preventAction";
+    }
+    if (custom[ATTR_STABSHOT]) {
+        fireStabshot(playerId, slot);
+        return "preventAction";
     }
 }
 

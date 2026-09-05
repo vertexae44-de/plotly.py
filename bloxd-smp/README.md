@@ -56,8 +56,8 @@ Recipes are registered per player on join, so they show up in the normal craftin
 | **Black Portal** ×2 (The End) | 8 Obsidian + 1 Moonstone |
 | **Wood / Iron / Gold / Diamond Hang Glider** | **100 Moonstone + 30 Diamond** (same cost for all four) |
 | **Heart** | 4 Block of Diamond + 2 Knight Heart + 4 Lunite |
-| **Orbital Strike Cannon** (Ammo) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
-| **Stabshot** (Bone) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
+| **Orbital Strike Cannon** (Master Rod) | 500 Moonstone Explosive + 30 Arrow + 2 Diamond Bow + 400 Knight Heart |
+| **Stabshot** (Obsidian Rod) | 1 Gold Bow + 250 Knight Heart + 230 Moonstone Explosive |
 | **"what the skibidi bop un dada really bought this ok"** (Diorite) | 39000 Block of Moonstone — a joke/vanity flex, no gameplay effect |
 
 Kills and `/withdraw` are still the cheap way to a Heart — the crafting recipe is a deliberately
@@ -475,14 +475,14 @@ computing damage invisibly, aimed with `getPlayerTargetInfo` (falling back to yo
 if you're not looking at a block). **Both are one-time use**: the launcher item breaks the instant
 it fires, whichever one it is.
 
-- **Orbital Strike Cannon** (an `Ammo` item) — right click drops a **ring** of `orbital.ringCount`
+- **Orbital Strike Cannon** (a `Master Rod`) — right click drops a **ring** of `orbital.ringCount`
   (10) **Moonstone Explosive** charges, `orbital.ringRadius` (50) blocks out from where you're
   aiming. Each charge is a real physics item drop (`createItemDrop` with `doPhysics: true`) that
   falls from `orbital.fallHeight` above the ground and detonates roughly where it lands, after
   `orbital.fallDelayMs`. The landing height under each ring point is found by scanning straight down
   for the first solid block; if that column isn't loaded or nothing solid turns up, that one charge
   falls back to detonating at your own height instead of guessing.
-- **Stabshot** (a `Bone` item) — right click places a single **vertical shaft** of **Super RPG**
+- **Stabshot** (an `Obsidian Rod`) — right click places a single **vertical shaft** of **Super RPG**
   charges straight down from where you're aiming to `stabshot.bedrockY` (0), spaced
   `stabshot.columnStepY` (6) blocks apart, each set off in sequence (`stabshot.stepDelayMs` apart)
   so it reads as drilling downward rather than one instant blast. Super RPG has no block form, so
@@ -490,18 +490,23 @@ it fires, whichever one it is.
   shaft depth rather than a placed block — most of the shaft runs through solid ground, where a
   falling item would just get stuck or clip.
 
-**Why plain, otherwise-unused items for the launchers, not `Master Rod`/`Obsidian Rod` or `Iron
-Bar`/`Gold Bar`:** the first version used the rods — real Bloxd items that happen to be **fishing
-rods** — and firing silently did nothing. A fishing rod has its own native right-click behaviour
-(casting a line) that swallows the click before `onPlayerAltAction` ever runs, exactly the same
-class of bug that broke the shield when it was first built on `Brown Paintball Explosive Item`, a
-native throwable. Swapping to `Iron Bar`/`Gold Bar` fixed that, but broke firing all over again a
-different way: those are common crafting materials used as ingredients all over this script (Iron
-Mace, Iron Dagger, the Bulwark, Gold Mace, Gold Dagger, Golden Apples), so a player who already had
-a plain stack of one risked the freshly crafted, tagged launcher merging into that ordinary stack
-and losing the custom attribute that makes it fire at all. The fix is a plain, otherwise-unused item
-(`Ammo` / `Bone`) that this script never touches anywhere else — no native click behaviour to fight,
-and nothing for the tag to collide or merge with.
+**Why real fishing rods, and how firing actually works:** both launchers are deliberately built on
+real Bloxd fishing rods (`Master Rod` / `Obsidian Rod`) — that's the intended look — even though a
+rod's native right-click (casting a line) is exactly what breaks a naive implementation: casting
+swallows the click before `onPlayerAltAction` (the "completed click" event) ever runs, so while
+holding one that event never fires at all, the same class of bug that broke the shield when it was
+first built on `Brown Paintball Explosive Item`, a native throwable. The fix is
+`onPlayerAttemptAltAction` — the "about to act" event, which Bloxd fires *before* the client
+resolves what the click does, so it reaches us regardless of what the item's native behaviour is.
+That's where the orbital and stabshot actually fire from now: it checks the item's tag directly,
+fires immediately, and returns `"preventAction"` to try to cancel the cast animation too. Bloxd's
+own docs are explicit that `preventAction` "may not work as well for certain actions which the game
+client predicts to succeed" — a rod cast is exactly that kind of action — so a stray casting
+animation may still flash even though firing itself no longer depends on the click completing.
+`onPlayerAltAction`'s own handling for both launchers is left in place as a harmless second
+attempt on top, for any client where the "completed" event still reaches us — the launcher having
+already broken itself (set to `Air`) the instant it fires is what stops that from ever firing the
+same shot twice.
 
 There is no timer API in World Code, so both weapons' delays are tracked the same way terrain
 generation is queued — a small array of pending charges drained every `tick()`. Every explosion also
