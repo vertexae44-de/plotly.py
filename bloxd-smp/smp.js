@@ -799,7 +799,7 @@ const CONFIG = {
     commands: {
         publicCommands: ["hp", "hearts", "withdraw", "mend", "offhand", "shield", "reforge",
             "smphelp", "where", "anon", "orbs"],
-        adminNames: [],        // e.g. ["YourName"] - needed for /unban, /orb, /sethp
+        adminNames: ["vertz_alt"],   // needed for /unban, /dim, /sethp
     },
 };
 
