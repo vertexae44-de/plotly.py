@@ -4,6 +4,11 @@ const DURABILITY = 5000;
 // Names the wind charge item might go by in the game; the first that works is used.
 const WIND_ITEM_NAMES = ["Iron Fragments", "Iron Fragment"];
 
+// The shulker is a White Paintball in your inventory; placing it turns it
+// into an Iron Chest full of gold apples.
+const SHULKER_ITEM_NAMES = ["White Paintball", "White Paint Ball"];
+const SHULKER_BLOCK_REGEX = /white\s*paint\s*ball/i;
+
 // Gives an item. If the game rejects the options (e.g. an unknown attribute),
 // retries with just the display name, then with no options, so one bad
 // attribute never stops the rest of the kit. Returns true on success.
@@ -36,7 +41,6 @@ const KIT = [
   ["Splash Strength Potion", 5],
   ["Speed Potion", 1],
   ["Splash Speed Potion", 5],
-  ["Iron Chest", 5, {customDisplayName: "Shulker"}],
   ["Gold Apple", 64],
   ["Cornbread", 64],
   ["Cobweb", 999],
@@ -44,14 +48,22 @@ const KIT = [
   ["Moonstone Chest", 999, {customDisplayName: "Ender Chets"}],
 ];
 
+// Tries each name in turn and stops at the first one the game accepts.
+function giveAny(playerId, names, amount, opts) {
+  return names.some(n => give(playerId, n, amount, opts));
+}
+
 function onPlayerChat(playerId, msg) {
   if (msg.startsWith("!Wemmbukit") || msg.startsWith("!wemmbukit")) {
     const failed = [];
     for (const [name, amount, opts] of KIT) {
       if (!give(playerId, name, amount, opts)) failed.push(name);
     }
-    if (!WIND_ITEM_NAMES.some(n => give(playerId, n, 999, {customDisplayName: "Wind Charge"}))) {
+    if (!giveAny(playerId, WIND_ITEM_NAMES, 999, {customDisplayName: "Wind Charge"})) {
       failed.push("Wind Charge (Iron Fragments)");
+    }
+    if (!giveAny(playerId, SHULKER_ITEM_NAMES, 5, {customDisplayName: "Shulker"})) {
+      failed.push("Shulker (White Paintball)");
     }
     api.sendMessage(playerId, "Successfully received Wemmbu kit.", {color: "Yellow"});
     if (failed.length > 0) {
@@ -152,13 +164,14 @@ function onPlayerDamagingOtherPlayer(attackerId, victimId, damage, withItem) {
   if (bonus > 0) return damage + bonus;
 }
 
-// ---- Shulker (Iron Chest) ----
-// Any Iron Chest placed gets filled with gold apples.
+// ---- Shulker (White Paintball -> Iron Chest) ----
+// Placing a White Paintball swaps it for an Iron Chest filled with gold apples.
 const SHULKER_SLOTS = 27;
 const SHULKER_APPLES_PER_SLOT = 16;
 
 function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
-  if (toBlock !== "Iron Chest") return;
+  if (typeof toBlock !== "string" || !SHULKER_BLOCK_REGEX.test(toBlock)) return;
+  api.setBlock(x, y, z, "Iron Chest");
   for (let slot = 0; slot < SHULKER_SLOTS; slot++) {
     api.setStandardChestItemSlot([x, y, z], slot, "Gold Apple", SHULKER_APPLES_PER_SLOT);
   }
