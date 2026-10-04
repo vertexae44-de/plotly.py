@@ -1,14 +1,810 @@
 // =====================================================================
-//  WORLD CODE  (Wemmbu kit + Sonic Boom + Totem + Ranks/Leaderboard)
+//  WORLD CODE  (Weapons/Durability + Wemmbu kit + Sonic Boom + Totem + Ranks)
 // =====================================================================
 
-// ================= Wemmbu kit settings =================
-// Durability given to the armor, sword, axe and maces in the kit.
-const DURABILITY = 5000;
+// ================= Weapons + Durability + Mending + Crafting =================
 
-// Names the wind charge item might go by in the game; the first that works is used.
-const WIND_ITEM_NAMES = ["Iron Fragments", "Iron Fragment"];
+// ---- Custom item tags -------------------------------------------------------
+const ATTR_MACE = "smpMace";
+const ATTR_SPEAR = "smpSpear";
+const ATTR_DAGGER = "smpDagger";
+const ATTR_WINDCHARGE = "smpWindCharge";
+const ATTR_DUR = "smpDur";
+const ATTR_DUR_MAX = "smpDurMax";
 
+// Per-player runtime state (fall distance, cooldown timers).
+const players = {};
+function stateOf(playerId) {
+    let s = players[playerId];
+    if (!s) {
+        s = players[playerId] = { fallDistance: 0, lastY: null, lastCharge: 0, lastLunge: 0 };
+    }
+    return s;
+}
+
+// Tracks how far each player has fallen; called every tick.
+function trackFall(playerId) {
+    const s = stateOf(playerId);
+    const y = api.getPosition(playerId)[1];
+    if (s.lastY === null || y >= s.lastY) {
+        s.fallDistance = 0;               // standing or rising
+    } else {
+        s.fallDistance += s.lastY - y;    // falling
+    }
+    s.lastY = y;
+}
+
+function isPlayer(entityId) {
+    return entityId != null && api.getPlayerIds().indexOf(entityId) !== -1;
+}
+
+function isAlive(lifeformId) {
+    return api.isAlive(lifeformId);
+}
+
+function tell(playerId, message, colour) {
+    api.sendMessage(playerId, message, { color: colour || "#ffffff" });
+}
+
+// ---- CONFIG ------------------------------------------------------------------
+const CONFIG = {
+    // ---- Windburst Mace (Gambit) --------------------------------------------
+    mace: {
+        item: "Moonstone Mace",
+        name: "Gambit",
+        durability: 400,
+
+        minSmashFall: 1.5,           // blocks you must be falling for a smash
+        damagePerBlockFallen: 2.5,
+        maxSmashDamage: 60,
+
+        windBurstLevel: 3,           // 0 disables it
+        windBurstPerLevel: 4.5,
+
+        densityLevel: 3,             // 0 disables it
+        densityPerLevel: 0.75,
+
+        chargeUpwardImpulse: 11,
+        chargeCooldownMs: 4000,
+        chargeDurabilityCost: 3,
+
+        knockbackRadius: 4.5,
+        knockbackForce: 9,
+        knockbackUp: 5,
+        knockbackHitsMobs: true,
+
+        recipe: [
+            { items: ["Moonstone"], amt: 400 },
+            { items: ["Knight Heart"], amt: 4 },
+            { items: ["Stick"], amt: 2 },
+        ],
+    },
+
+    // ---- Crucible (Breach) --------------------------------------------------
+    crucible: {
+        name: "Crucible",
+        breachPerArmorPiece: 0.2,    // +20% damage per armor piece the victim wears
+    },
+
+    // ---- Moonstone Spear ----------------------------------------------------
+    spear: {
+        item: "Moonstone Spear",
+        name: "Moonstone Spear",
+        durability: 300,
+
+        lungeForce: 16,
+        lungeUp: 3,
+        lungeCooldownMs: 3500,
+        lungeWindowMs: 1200,
+        lungeBonusDamage: 14,
+        lungeDurabilityCost: 2,
+
+        recipe: [
+            { items: ["Moonstone"], amt: 4 },
+            { items: ["Stick"], amt: 2 },
+        ],
+    },
+
+    // ---- Moonstone Dagger -----------------------------------------------------
+    dagger: {
+        item: "Moonstone Dagger",
+        name: "Moonstone Dagger",
+        poisonMs: 4000,
+        recipe: [
+            { items: ["Rotten Flesh"], amt: 5 },
+            { items: ["Moonstone"], amt: 90 },
+            { items: ["Stick"], amt: 4 },
+        ],
+    },
+
+    // ---- Plain maces (no smash ability, just durability) ---------------------
+    plainMaces: {
+        enabled: true,
+        tiers: [
+            { item: "Wood Mace", recipe: [{ items: ["Maple Wood Planks"], amt: 80 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Stone Mace", recipe: [{ items: ["Stone"], amt: 120 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Iron Mace", recipe: [{ items: ["Iron Bar"], amt: 150 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Gold Mace", recipe: [{ items: ["Gold Bar"], amt: 180 }, { items: ["Stick"], amt: 20 }] },
+            { item: "Diamond Mace", recipe: [{ items: ["Diamond"], amt: 200 }, { items: ["Stick"], amt: 20 }] },
+        ],
+    },
+
+    // ---- Plain daggers (no poison, just durability) --------------------------
+    plainDaggers: {
+        enabled: true,
+        tiers: [
+            { item: "Wood Dagger", recipe: [{ items: ["Maple Wood Planks"], amt: 40 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Stone Dagger", recipe: [{ items: ["Stone"], amt: 60 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Iron Dagger", recipe: [{ items: ["Iron Bar"], amt: 75 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Gold Dagger", recipe: [{ items: ["Gold Bar"], amt: 90 }, { items: ["Stick"], amt: 10 }] },
+            { item: "Diamond Dagger", recipe: [{ items: ["Diamond"], amt: 100 }, { items: ["Stick"], amt: 10 }] },
+        ],
+    },
+
+    // ---- Wind Charge (Iron Fragment): launches you and knocks back nearby players ----
+    windCharge: {
+        enabled: true,
+        item: "Iron Fragment",
+        name: "Wind Charge",
+        upwardImpulse: 9,
+        forwardImpulse: 4,
+        cooldownMs: 2000,
+        knockbackRadius: 5,
+        knockbackForce: 10,
+        knockbackUp: 5,
+        recipe: [
+            { items: ["Mango"], amt: 1 },
+            { items: ["Iron Fragment"], amt: 1 },
+        ],
+        produces: 4,
+    },
+
+    // ---- Mending ---------------------------------------------------------------
+    mending: {
+        enabled: true,
+        item: "Aura XP Potion",
+        splashItem: "Splash Aura XP Potion",
+        costPerMend: 1,
+        restoreFraction: 0.35,
+    },
+
+    // ---- Durability --------------------------------------------------------
+    durability: {
+        enabled: true,
+        materials: {
+            Wood: 60, Fur: 80, Gold: 90, Paint: 120, Stone: 130, Iron: 250,
+            Spiked: 400, Mining: 500, Artisan: 1200, Diamond: 1560,
+            Knight: 2000, Golem: 2200, Moonstone: 2400, Amethite: 2400,
+        },
+        kinds: {
+            Sword: 1, Dagger: 0.9, Club: 1, Mace: 1.1, Spear: 1, Whip: 0.9,
+            Boomerang: 0.9, Axe: 1, Pickaxe: 1,
+            Spade: 0.9, Shovel: 0.9, Hoe: 0.8, Bow: 1.2, Crossbow: 1.2, Shield: 1.5,
+            Helmet: 0.8, Chestplate: 1.3, Leggings: 1.2, Boots: 0.9, Gauntlets: 0.8,
+            Glider: 1.6,
+        },
+        defaultMaterialUses: 200,
+        overrides: {},
+
+        warnAtFraction: 0.1,
+        costPerHit: 1,
+        costPerBlockBroken: 1,
+    },
+};
+
+// ---- Inventory helpers ------------------------------------------------------
+function heldSlot(playerId) {
+    const index = api.getSelectedInventorySlotI(playerId);
+    const item = api.getItemSlot(playerId, index);
+    return item ? { index: index, item: item } : null;
+}
+
+// A fixed backpack slot used as the "off-hand" - only needed if you also use
+// mendOffhandItem below.
+const OFFHAND_SLOT_INDEX = 44;
+function offhandSlot(playerId) {
+    const item = api.getItemSlot(playerId, OFFHAND_SLOT_INDEX);
+    return item ? { index: OFFHAND_SLOT_INDEX, item: item } : null;
+}
+
+function writeSlot(playerId, index, item, amount, attributes) {
+    if (amount != null && amount <= 0) {
+        api.setItemSlot(playerId, index, "Air", null, undefined, true);
+        return;
+    }
+    api.setItemSlot(playerId, index, item.name, amount, attributes, true);
+}
+
+function customAttrs(invenItem) {
+    if (!invenItem || !invenItem.attributes) {
+        return {};
+    }
+    return invenItem.attributes.customAttributes || {};
+}
+
+function displayName(item) {
+    if (item.attributes && item.attributes.customDisplayName) {
+        return item.attributes.customDisplayName;
+    }
+    return item.name;
+}
+
+function countItem(playerId, itemName) {
+    const amount = api.getInventoryItemAmount(playerId, itemName);
+    return amount < 0 ? Infinity : amount;
+}
+
+/** Removes `amount` of an item, across however many stacks it is spread over. */
+function consumeItems(playerId, itemName, amount) {
+    if (countItem(playerId, itemName) < amount) {
+        return false;
+    }
+    let left = amount;
+    for (let guard = 0; guard < 64 && left > 0; guard++) {
+        const index = api.findItem(playerId, itemName);
+        if (index == null) {
+            break;
+        }
+        const slot = api.getItemSlot(playerId, index);
+        if (!slot) {
+            break;
+        }
+        const have = slot.amount == null ? 1 : slot.amount;
+        const take = Math.min(have, left);
+        writeSlot(playerId, index, slot, have - take, slot.attributes);
+        left -= take;
+    }
+    return left <= 0;
+}
+
+// ---- Durability bar text -----------------------------------------------------
+function blockBar(left, max, segments) {
+    const filled = Math.max(0, Math.min(segments, Math.round((left / max) * segments)));
+    let bar = "";
+    for (let i = 0; i < segments; i++) {
+        bar += i < filled ? "▰" : "▱";
+    }
+    return bar;
+}
+
+function durabilityBar(left, max) {
+    const percent = Math.round((left / max) * 100);
+    return blockBar(left, max, 12) + "  " + left + " / " + max + "  (" + percent + "%)";
+}
+
+// ---- Item-attribute builders -------------------------------------------------
+function maceAttributes(durabilityLeft) {
+    const max = CONFIG.mace.durability;
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    const lines = [];
+    if (CONFIG.mace.windBurstLevel > 0) {
+        lines.push("Wind Burst " + CONFIG.mace.windBurstLevel + " - smash launches you skyward.");
+    }
+    if (CONFIG.mace.densityLevel > 0) {
+        lines.push("Density " + CONFIG.mace.densityLevel + " - the further you fall, the harder it hits.");
+    }
+    lines.push("Works on players and mobs.");
+    lines.push("Right click in mid-air to wind charge.");
+    lines.push(durabilityBar(left, max));
+
+    return {
+        customDisplayName: CONFIG.mace.name,
+        customDescription: lines.join("\n"),
+        customAttributes: { [ATTR_MACE]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function spearAttributes(durabilityLeft) {
+    const max = CONFIG.spear.durability;
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDisplayName: CONFIG.spear.name,
+        customDescription:
+            "Right click to lunge forward.\n" +
+            "Hits during a lunge deal +" + CONFIG.spear.lungeBonusDamage + " damage.\n" +
+            durabilityBar(left, max),
+        customAttributes: { [ATTR_SPEAR]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+function windChargeAttributes() {
+    const wc = CONFIG.windCharge;
+    return {
+        customDisplayName: wc.name,
+        customDescription: "Right click to launch yourself and blow nearby players away. Consumed on use.",
+        customAttributes: { [ATTR_WINDCHARGE]: true },
+    };
+}
+
+function daggerAttributes(durabilityLeft) {
+    const d = CONFIG.dagger;
+    const max = durabilityForName(d.item);
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDisplayName: d.name,
+        customDescription: "Poisons whatever it hits for "
+            + Math.round(d.poisonMs / 1000) + "s.\n" + durabilityBar(left, max),
+        customAttributes: { [ATTR_DAGGER]: true, [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+/** A plain weapon with nothing but a name and a durability bar - no special ability. */
+function plainDurableAttributes(itemName, durabilityLeft) {
+    const max = durabilityForName(itemName);
+    const left = durabilityLeft == null ? max : durabilityLeft;
+    return {
+        customDescription: durabilityBar(left, max),
+        customAttributes: { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max },
+    };
+}
+
+/** Plain durability plus extra attributes (display name, enchantments...) for kit items. */
+function durableOpts(itemName, extra) {
+    const base = plainDurableAttributes(itemName);
+    const opts = {
+        customDescription: base.customDescription,
+        customAttributes: Object.assign({}, base.customAttributes, (extra && extra.customAttributes) || {}),
+    };
+    if (extra && extra.customDisplayName) {
+        opts.customDisplayName = extra.customDisplayName;
+    }
+    return opts;
+}
+
+/** Crucible: a Moonstone Mace with a durability bar and Breach. */
+function crucibleAttributes() {
+    const max = durabilityForName(CONFIG.mace.item);
+    return {
+        customDisplayName: CONFIG.crucible.name,
+        customDescription: "Breach - ignores part of your target's armor.\n" + durabilityBar(max, max),
+        customAttributes: { [ATTR_DUR]: max, [ATTR_DUR_MAX]: max },
+    };
+}
+
+// ---- Durability core ---------------------------------------------------------
+const durabilityCache = {};
+
+/** Works out how many uses an item name is worth, e.g. "Diamond Pickaxe" -> 1560. */
+function durabilityForName(itemName) {
+    if (durabilityCache[itemName] !== undefined) {
+        return durabilityCache[itemName];
+    }
+    const d = CONFIG.durability;
+    let uses;
+
+    if (typeof d.overrides[itemName] === "number") {
+        uses = d.overrides[itemName];
+    } else {
+        const words = String(itemName).split(" ");
+        const kind = d.kinds[words[words.length - 1]];
+        if (kind == null) {
+            uses = 0;   // not a tool, weapon or piece of armour
+        } else {
+            let base = 0;
+            for (let i = 0; i < words.length - 1; i++) {
+                if (typeof d.materials[words[i]] === "number") {
+                    base = d.materials[words[i]];
+                    break;
+                }
+            }
+            uses = Math.round((base || d.defaultMaterialUses) * kind);
+        }
+    }
+
+    durabilityCache[itemName] = uses;
+    return uses;
+}
+
+function maxDurabilityFor(item) {
+    const custom = customAttrs(item);
+    if (typeof custom[ATTR_DUR_MAX] === "number") {
+        return custom[ATTR_DUR_MAX];
+    }
+    return durabilityForName(item.name);
+}
+
+/**
+ * Rebuilds an item's attributes at a new durability, keeping the mace/spear's
+ * own special tooltip in sync rather than falling back to a bare wear bar.
+ */
+function withDurability(item, custom, left, max) {
+    if (custom[ATTR_MACE]) {
+        return maceAttributes(left);
+    }
+    if (custom[ATTR_SPEAR]) {
+        return spearAttributes(left);
+    }
+    return {
+        customDisplayName: item.attributes && item.attributes.customDisplayName,
+        customDescription: durabilityBar(left, max),
+        customAttributes: Object.assign({}, custom, { [ATTR_DUR]: left, [ATTR_DUR_MAX]: max }),
+    };
+}
+
+/** Spends durability on whatever is in the given slot. Breaks the item at 0. */
+function spendDurability(playerId, slot, cost) {
+    if (!CONFIG.durability.enabled || !slot || cost <= 0) {
+        return;
+    }
+    const item = slot.item;
+    const max = maxDurabilityFor(item);
+    if (max <= 0) {
+        return;   // not a durable item
+    }
+
+    const custom = customAttrs(item);
+    const before = typeof custom[ATTR_DUR] === "number" ? custom[ATTR_DUR] : max;
+    const left = before - cost;
+
+    if (left <= 0) {
+        api.setItemSlot(playerId, slot.index, "Air", null, undefined, true);
+        api.playSound(playerId, "hit3", 0.9, 0.7);
+        api.sendFlyingMiddleMessage(playerId, "Your " + displayName(item) + " broke!", 0, 1500);
+        return;
+    }
+
+    writeSlot(playerId, slot.index, item, item.amount, withDurability(item, custom, left, max));
+
+    const wasAbove = before > max * CONFIG.durability.warnAtFraction;
+    if (wasAbove && left <= max * CONFIG.durability.warnAtFraction) {
+        api.queueCrosshairText(playerId, displayName(item) + " is almost broken", 2000);
+    }
+}
+
+// ---- Mending -------------------------------------------------------------
+function mendSlot(playerId, slot, quiet) {
+    const m = CONFIG.mending;
+    if (!slot) {
+        if (!quiet) {
+            tell(playerId, "Nothing there to mend.", "#ff4757");
+        }
+        return false;
+    }
+
+    const max = maxDurabilityFor(slot.item);
+    if (max <= 0) {
+        if (!quiet) {
+            tell(playerId, displayName(slot.item) + " has no durability to mend.", "#ff4757");
+        }
+        return false;
+    }
+
+    const custom = customAttrs(slot.item);
+    const before = typeof custom[ATTR_DUR] === "number" ? custom[ATTR_DUR] : max;
+    if (before >= max) {
+        if (!quiet) {
+            tell(playerId, displayName(slot.item) + " is already at full durability.", "#ffa502");
+        }
+        return false;
+    }
+
+    if (countItem(playerId, m.item) < m.costPerMend) {
+        if (!quiet) {
+            tell(playerId, "You need " + m.costPerMend + " " + m.item + "(s) to mend anything.", "#ff4757");
+        }
+        return false;
+    }
+    consumeItems(playerId, m.item, m.costPerMend);
+
+    const left = Math.min(max, before + Math.round(max * m.restoreFraction));
+    writeSlot(playerId, slot.index, slot.item, slot.item.amount,
+        withDurability(slot.item, custom, left, max));
+
+    tell(playerId, "Mended " + displayName(slot.item) + ".", "#7bed9f");
+    api.playSound(playerId, "levelup", 0.8, 1.1);
+    return true;
+}
+
+function mendHeldItem(playerId) {
+    return mendSlot(playerId, heldSlot(playerId), false);
+}
+
+function mendOffhandItem(playerId) {
+    return mendSlot(playerId, offhandSlot(playerId), true);
+}
+
+// ---- Crafting: registers every recipe above (called from onPlayerJoin) -------
+function registerRecipes(playerId) {
+    api.editItemCraftingRecipes(playerId, CONFIG.mace.item, [{
+        requires: CONFIG.mace.recipe,
+        produces: 1,
+        attributes: maceAttributes(CONFIG.mace.durability),
+    }]);
+
+    api.editItemCraftingRecipes(playerId, CONFIG.spear.item, [{
+        requires: CONFIG.spear.recipe,
+        produces: 1,
+        attributes: spearAttributes(CONFIG.spear.durability),
+    }]);
+
+    if (CONFIG.windCharge.enabled) {
+        api.editItemCraftingRecipes(playerId, CONFIG.windCharge.item, [{
+            requires: CONFIG.windCharge.recipe,
+            produces: CONFIG.windCharge.produces,
+            attributes: windChargeAttributes(),
+        }]);
+    }
+
+    api.editItemCraftingRecipes(playerId, CONFIG.dagger.item, [{
+        requires: CONFIG.dagger.recipe,
+        produces: 1,
+        attributes: daggerAttributes(),
+    }]);
+
+    if (CONFIG.plainMaces.enabled) {
+        for (let i = 0; i < CONFIG.plainMaces.tiers.length; i++) {
+            const tier = CONFIG.plainMaces.tiers[i];
+            api.editItemCraftingRecipes(playerId, tier.item, [{
+                requires: tier.recipe,
+                produces: 1,
+                attributes: plainDurableAttributes(tier.item),
+            }]);
+        }
+    }
+
+    if (CONFIG.plainDaggers.enabled) {
+        for (let i = 0; i < CONFIG.plainDaggers.tiers.length; i++) {
+            const tier = CONFIG.plainDaggers.tiers[i];
+            api.editItemCraftingRecipes(playerId, tier.item, [{
+                requires: tier.recipe,
+                produces: 1,
+                attributes: plainDurableAttributes(tier.item),
+            }]);
+        }
+    }
+}
+
+// ---- Mace ability: smash, wind charge, knockback -----------------------------
+function windCharge(playerId, slot) {
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = CONFIG.mace.chargeCooldownMs - (now - state.lastCharge);
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Wind charge: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+
+    state.lastCharge = now;
+    api.applyImpulse(playerId, 0, CONFIG.mace.chargeUpwardImpulse, 0);
+    api.preventFallDamageNextGrounding(playerId);
+    spendDurability(playerId, slot, CONFIG.mace.chargeDurabilityCost);
+
+    const pos = api.getPosition(playerId);
+    api.broadcastSound("magicAccent4", 0.7, 1.4, { playerIdOrPos: pos, maxHearDist: 25 });
+    api.playParticleEffect({
+        presetId: "stomp",
+        pos1: [pos[0] - 1, pos[1], pos[2] - 1],
+        pos2: [pos[0] + 1, pos[1] + 0.5, pos[2] + 1],
+    });
+}
+
+/** Turns a mace hit into a smash when the attacker is falling. Returns the damage the hit should deal. */
+function maceSmash(attacker, targetId, baseDamage, slot) {
+    const state = stateOf(attacker);
+    const fell = state.fallDistance;
+
+    spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+
+    if (fell < CONFIG.mace.minSmashFall) {
+        return baseDamage;
+    }
+
+    let bonus = Math.min(CONFIG.mace.maxSmashDamage, fell * CONFIG.mace.damagePerBlockFallen);
+    if (CONFIG.mace.densityLevel > 0) {
+        bonus += CONFIG.mace.densityLevel * CONFIG.mace.densityPerLevel * fell;
+    }
+
+    const centre = api.getPosition(targetId);
+
+    if (CONFIG.mace.windBurstLevel > 0) {
+        const lift = CONFIG.mace.windBurstLevel * CONFIG.mace.windBurstPerLevel;
+        api.applyImpulse(attacker, 0, lift, 0);
+        api.preventFallDamageNextGrounding(attacker);
+    }
+    state.fallDistance = 0;
+
+    if (centre) {
+        knockbackAround(centre, attacker, targetId, CONFIG.mace);
+        api.broadcastSound("ominousBellHit", 0.9, 1.0, { playerIdOrPos: centre, maxHearDist: 40 });
+        api.playParticleEffect({
+            presetId: "stomp",
+            pos1: [centre[0] - 2, centre[1], centre[2] - 2],
+            pos2: [centre[0] + 2, centre[1] + 1, centre[2] + 2],
+        });
+    }
+    if (isPlayer(targetId)) {
+        api.shakePlayerCamera(targetId, 0.6, 400);
+    }
+
+    return Math.round(baseDamage + bonus);
+}
+
+/** Pushes players (and optionally mobs) near `centre` away from it. `cfg` has knockbackRadius/Force/Up. */
+function knockbackAround(centre, attacker, alreadyHit, cfg) {
+    const radius = cfg.knockbackRadius;
+    let targets = api.getPlayerIds();
+    if (cfg.knockbackHitsMobs) {
+        targets = targets.concat(api.getMobIds());
+    }
+
+    for (let i = 0; i < targets.length; i++) {
+        const other = targets[i];
+        if (other === attacker || other === alreadyHit) {
+            continue;
+        }
+        const pos = api.getPosition(other);
+        if (!pos) {
+            continue;
+        }
+        const dx = pos[0] - centre[0];
+        const dy = pos[1] - centre[1];
+        const dz = pos[2] - centre[2];
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance > radius) {
+            continue;
+        }
+
+        const strength = (1 - distance / radius) * cfg.knockbackForce;
+        const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
+        api.applyImpulse(other, (dx / length) * strength, cfg.knockbackUp, (dz / length) * strength);
+    }
+}
+
+// ---- Spear ability: lunge -----------------------------------------------------
+function spearLunge(playerId, slot) {
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = CONFIG.spear.lungeCooldownMs - (now - state.lastLunge);
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Lunge: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+
+    const facing = api.getPlayerFacingInfo(playerId);
+    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
+    const length = Math.max(0.001, Math.sqrt(dir[0] * dir[0] + dir[2] * dir[2]));
+
+    state.lastLunge = now;
+    api.applyImpulse(
+        playerId,
+        (dir[0] / length) * CONFIG.spear.lungeForce,
+        CONFIG.spear.lungeUp,
+        (dir[2] / length) * CONFIG.spear.lungeForce
+    );
+    api.preventFallDamageNextGrounding(playerId);
+    spendDurability(playerId, slot, CONFIG.spear.lungeDurabilityCost);
+
+    const pos = api.getPosition(playerId);
+    api.broadcastSound("magicAccent3", 0.6, 1.2, { playerIdOrPos: pos, maxHearDist: 20 });
+}
+
+function isLunging(playerId) {
+    return api.now() - stateOf(playerId).lastLunge <= CONFIG.spear.lungeWindowMs;
+}
+
+// ---- Wind Charge item (Iron Fragment): launch + knock back nearby players ----
+function useWindChargeItem(playerId, slot) {
+    const wc = CONFIG.windCharge;
+    const state = stateOf(playerId);
+    const now = api.now();
+    const remaining = wc.cooldownMs - (now - (state.lastWindCharge || 0));
+    if (remaining > 0) {
+        api.queueCrosshairText(playerId, "Wind Charge: " + Math.ceil(remaining / 1000) + "s", 800);
+        return;
+    }
+    state.lastWindCharge = now;
+
+    const facing = api.getPlayerFacingInfo(playerId);
+    const dir = facing && facing.dir ? facing.dir : [0, 0, 1];
+    const length = Math.max(0.001, Math.sqrt(dir[0] * dir[0] + dir[2] * dir[2]));
+
+    api.applyImpulse(
+        playerId,
+        (dir[0] / length) * wc.forwardImpulse,
+        wc.upwardImpulse,
+        (dir[2] / length) * wc.forwardImpulse
+    );
+    api.preventFallDamageNextGrounding(playerId);
+
+    const amount = slot.item.amount == null ? 1 : slot.item.amount;
+    writeSlot(playerId, slot.index, slot.item, amount - 1, slot.item.attributes);
+
+    const pos = api.getPosition(playerId);
+    knockbackAround(pos, playerId, null, wc);
+    api.broadcastSound("magicAccent4", 0.8, 1.3, { playerIdOrPos: pos, maxHearDist: 25 });
+    api.playParticleEffect({
+        presetId: "stomp",
+        pos1: [pos[0] - 1, pos[1], pos[2] - 1],
+        pos2: [pos[0] + 1, pos[1] + 0.5, pos[2] + 1],
+    });
+}
+
+// ---- Right-click dispatch -----------------------------------------------------
+function onPlayerAltAction(playerId) {
+    const slot = heldSlot(playerId);
+    if (!slot) {
+        return;
+    }
+    const custom = customAttrs(slot.item);
+
+    if (custom[ATTR_MACE]) {
+        windCharge(playerId, slot);
+    } else if (custom[ATTR_SPEAR]) {
+        spearLunge(playerId, slot);
+    } else if (custom[ATTR_WINDCHARGE]) {
+        useWindChargeItem(playerId, slot);
+    }
+}
+
+// ---- Breach (Crucible): armor is partly ignored --------------------------------
+function countArmorPieces(playerId) {
+  try {
+    return api.getArmorItems(playerId).filter(Boolean).length;
+  } catch (e) {
+    return 4; // can't read armor: assume a full set
+  }
+}
+
+// ---- Hit dispatch ---------------------------------------------------------------
+function cartBonus(targetId) {
+    return 0;   // stub - wire up your own boat-eject bonus here if you use one
+}
+
+function computeWeaponDamage(attacker, targetId, damageDealt) {
+    const slot = heldSlot(attacker);
+    if (!slot) {
+        return;
+    }
+    const custom = customAttrs(slot.item);
+    const cart = cartBonus(targetId);
+
+    if (custom[ATTR_MACE]) {
+        return maceSmash(attacker, targetId, damageDealt + cart, slot);
+    }
+
+    if (custom[ATTR_SPEAR]) {
+        spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+        if (isLunging(attacker)) {
+            stateOf(attacker).lastLunge = 0;   // the bonus lands once per lunge
+            return Math.round(damageDealt + cart + CONFIG.spear.lungeBonusDamage);
+        }
+        return cart > 0 ? Math.round(damageDealt + cart) : undefined;
+    }
+
+    if (custom[ATTR_DAGGER]) {
+        spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+        if (isAlive(targetId)) {
+            api.applyEffect(targetId, "Poisoned", CONFIG.dagger.poisonMs);
+        }
+        return cart > 0 ? Math.round(damageDealt + cart) : undefined;
+    }
+
+    const isCrucible = slot.item.attributes && slot.item.attributes.customDisplayName === CONFIG.crucible.name;
+    spendDurability(attacker, slot, CONFIG.durability.costPerHit);
+    if (isCrucible && isPlayer(targetId)) {
+        const breach = damageDealt * CONFIG.crucible.breachPerArmorPiece * countArmorPieces(targetId);
+        return Math.round(damageDealt + cart + breach);
+    }
+    return cart > 0 ? Math.round(damageDealt + cart) : undefined;
+}
+
+function onPlayerDamagingMob(playerId, mobId, damageDealt) {
+    return computeWeaponDamage(playerId, mobId, damageDealt);
+}
+
+// ---- Give helpers (also used by the kit) ---------------------------------------
+function giveMace(playerId) {
+    api.giveItem(playerId, CONFIG.mace.item, 1, maceAttributes(CONFIG.mace.durability));
+}
+function giveSpear(playerId) {
+    api.giveItem(playerId, CONFIG.spear.item, 1, spearAttributes(CONFIG.spear.durability));
+}
+function giveDagger(playerId) {
+    api.giveItem(playerId, CONFIG.dagger.item, 1, daggerAttributes());
+}
+
+
+// ================= Wemmbu kit =================
 // The "golden apple" is a normal Apple renamed and given the Tier 5 enchant tier.
 const GOLDEN_APPLE_OPTS = {customDisplayName: "Golden Apple", customAttributes: {enchantmentTier: "Tier 5"}};
 
@@ -31,39 +827,35 @@ function give(playerId, name, amount, opts) {
   return false;
 }
 
-// Tries each name in turn and stops at the first one the game accepts.
-function giveAny(playerId, names, amount, opts) {
-  return names.some(n => give(playerId, n, amount, opts));
+// Built when the kit is requested (CONFIG and the attribute builders must exist by then).
+function buildKit() {
+  return [
+    ["Kingly Amethite Helmet", 1, durableOpts("Kingly Amethite Helmet", {customAttributes: {enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}})],
+    ["Kingly Amethite Chestplate", 1, durableOpts("Kingly Amethite Chestplate", {customAttributes: {enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}})],
+    ["Kingly Amethite Leggings", 1, durableOpts("Kingly Amethite Leggings", {customAttributes: {enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}})],
+    ["Kingly Amethite Boots", 1, durableOpts("Kingly Amethite Boots", {customAttributes: {enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}})],
+    ["Diamond Sword", 1, durableOpts("Diamond Sword", {customDisplayName: "Sanguine Sword", customAttributes: {enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}})],
+    ["Diamond Axe", 1, durableOpts("Diamond Axe")],
+    [CONFIG.mace.item, 1, maceAttributes(CONFIG.mace.durability)],        // Gambit (Windburst + Density)
+    [CONFIG.mace.item, 1, crucibleAttributes()],                          // Crucible (Breach)
+    [CONFIG.windCharge.item, 999, windChargeAttributes()],                // Wind Charge
+    ["Strength Potion", 1],
+    ["Splash Strength Potion", 5],
+    ["Speed Potion", 1],
+    ["Splash Speed Potion", 5],
+    ["Apple", 64, GOLDEN_APPLE_OPTS],
+    ["Cornbread", 64],
+    ["Cobweb", 999],
+    ["Moonstone Orb", 999],
+    ["Moonstone Chest", 999, {customDisplayName: "Ender Chets"}],
+  ];
 }
-
-const KIT = [
-  ["Kingly Amethite Helmet", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}}],
-  ["Kingly Amethite Chestplate", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}}],
-  ["Kingly Amethite Leggings", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}}],
-  ["Kingly Amethite Boots", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}}],
-  ["Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {durability: DURABILITY, enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}}],
-  ["Diamond Axe", 1, {customAttributes: {durability: DURABILITY}}],
-  ["Moonstone Mace", 1, {customDisplayName: "Gambit", customAttributes: {durability: DURABILITY, enchantments: {"Windburst": 1, "Density": 1}}}],
-  ["Moonstone Mace", 1, {customDisplayName: "Crucible", customAttributes: {durability: DURABILITY, enchantments: {"Breach": 1}}}],
-  ["Strength Potion", 1],
-  ["Splash Strength Potion", 5],
-  ["Speed Potion", 1],
-  ["Splash Speed Potion", 5],
-  ["Apple", 64, GOLDEN_APPLE_OPTS],
-  ["Cornbread", 64],
-  ["Cobweb", 999],
-  ["Moonstone Orb", 999],
-  ["Moonstone Chest", 999, {customDisplayName: "Ender Chets"}],
-];
 
 function onPlayerChat(playerId, msg) {
   if (msg.startsWith("!Wemmbukit") || msg.startsWith("!wemmbukit")) {
     const failed = [];
-    for (const [name, amount, opts] of KIT) {
+    for (const [name, amount, opts] of buildKit()) {
       if (!give(playerId, name, amount, opts)) failed.push(name);
-    }
-    if (!giveAny(playerId, WIND_ITEM_NAMES, 999, {customDisplayName: "Wind Charge"})) {
-      failed.push("Wind Charge (Iron Fragments)");
     }
     api.sendMessage(playerId, "Successfully received Wemmbu kit.", {color: "Yellow"});
     if (failed.length > 0) {
@@ -93,57 +885,32 @@ function applyGoldenAppleEffects(playerId) {
       api.applyEffect(playerId, effect, APPLE_EFFECT_SECONDS * 1000, {inbuiltLevel: level});
     } catch (e) {}
   }
+  api.playSound(playerId, "levelup", 0.8, 1.2);
 }
 
-// Eating tracking: a right-click on a Golden Apple starts a "eating" entry.
-// tick() watches that slot; once the apple is used up the player has fully
-// eaten it and gets the effects. Switching slots or waiting too long cancels.
-const APPLE_EAT_TIMEOUT_MS = 4000;
-const eating = {};
+// Every Apple in this world is a golden apple. Eating is detected from the
+// inventory: if the apple stack in the selected slot shrinks (or vanishes),
+// the player finished eating it. Cancelling the eat leaves the stack alone,
+// so no effects. Needs no click event.
+const lastApple = {};
 
-function isGoldenApple(item) {
-  return !!item && item.name === "Apple" && item.attributes?.customDisplayName === "Golden Apple";
-}
+function checkApple(id) {
+  const slot = api.getSelectedInventorySlotI(id);
+  const item = api.getItemSlot(id, slot);
+  const now = item && item.name === "Apple" ? (item.amount == null ? 1 : item.amount) : 0;
 
-function checkEating(id) {
-  const e = eating[id];
-  if (!e) return;
-  if (api.now() - e.start > APPLE_EAT_TIMEOUT_MS || api.getSelectedInventorySlotI(id) !== e.slot) {
-    delete eating[id]; // cancelled
-    return;
-  }
-  const held = api.getHeldItem(id);
-  if (!isGoldenApple(held) || held.amount < e.amount) {
-    delete eating[id];
+  const prev = lastApple[id];
+  if (prev && prev.slot === slot && now < prev.amount) {
     applyGoldenAppleEffects(id); // fully eaten
   }
+  lastApple[id] = now > 0 ? {slot: slot, amount: now} : null;
 }
 
-// ================= Iron Fragments = wind charge =================
-// Right-click: boosts you in the direction you're facing and knocks back
-// every other player within WIND_RADIUS, away from you.
-const WIND_RADIUS = 7;
-const WIND_SELF_POWER = 13;
-const WIND_KNOCKBACK = 16;
-
-function useWindCharge(playerId, held) {
-  api.removeItemName(playerId, held.name, 1);
-
-  const dir = api.getPlayerFacingInfo(playerId).dir;
-  api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 9, dir[2] * WIND_SELF_POWER);
-
-  const origin = api.getPosition(playerId);
-  for (const otherId of api.getPlayerIds()) {
-    if (otherId === playerId) continue;
-    const pos = api.getPosition(otherId);
-    const dx = pos[0] - origin[0];
-    const dy = pos[1] - origin[1];
-    const dz = pos[2] - origin[2];
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (dist > WIND_RADIUS || dist === 0) continue;
-    // Closer players get pushed harder.
-    const strength = WIND_KNOCKBACK * (1 - dist / WIND_RADIUS);
-    api.applyImpulse(otherId, (dx / dist) * strength, 6 + strength * 0.4, (dz / dist) * strength);
+// ================= Tick =================
+function tick() {
+  for (const id of api.getPlayerIds()) {
+    trackFall(id);
+    checkApple(id);
   }
 }
 
@@ -245,28 +1012,13 @@ function useSonicBoom(id) {
     })
 }
 
-// ================= Click handler (Sonic Boom + Golden Apple + Wind Charge) =================
-function onPlayerClick(id, wasAltClick) {
+// ================= Click handler (Sonic Boom) =================
+// Wind Charge, Gambit/Crucible and the spear are handled by onPlayerAltAction
+// and the damage handlers in the weapons section above.
+function onPlayerClick(id) {
     let held = api.getHeldItem(id);
-    if (!held) return;
-    let name = held.attributes?.customDisplayName;
-
-    if (name == "Sonic Boom") {
+    if (held?.attributes?.customDisplayName == "Sonic Boom") {
         useSonicBoom(id);
-        return;
-    }
-
-    if (!wasAltClick) return;
-
-    if (isGoldenApple(held)) {
-        if (!eating[id]) {
-            eating[id] = {start: api.now(), slot: api.getSelectedInventorySlotI(id), amount: held.amount};
-        }
-        return;
-    }
-
-    if (WIND_ITEM_NAMES.includes(held.name)) {
-        useWindCharge(id, held);
     }
 }
 
@@ -278,61 +1030,6 @@ function onPlayerOpenedChest(playerId, x, y, z, isMoonstoneChest) {
     } catch (err) {
         // lỗi sẽ bị bỏ qua
     }
-}
-
-// ================= Mace: Windburst + Density + Breach =================
-// Windburst: hitting a player with Gambit launches you (and a bit of them) upward.
-// Density: bonus damage per block the attacker has fallen before the hit.
-const WINDBURST_SELF_LAUNCH = 16;   // launches you (the mace user)
-const WINDBURST_VICTIM_LAUNCH = 10;  // launches the player you hit (set 0 to disable)
-const DENSITY_PER_BLOCK = 1.5;
-const DENSITY_MAX_BONUS = 30;
-
-const lastY = {};
-const peakY = {};
-
-function tick() {
-  for (const id of api.getPlayerIds()) {
-    const y = api.getPosition(id)[1];
-    // Not falling (standing or rising): peak follows the player.
-    // Falling: peak stays at the top of the fall.
-    if (lastY[id] === undefined || y >= lastY[id]) peakY[id] = y;
-    lastY[id] = y;
-    checkEating(id);
-  }
-}
-
-// Breach: armor is partly ignored. Each worn armor piece would normally
-// soak up damage, so we give that damage back: +BREACH_PER_PIECE of the
-// hit per armor piece the victim wears.
-const BREACH_PER_PIECE = 0.2;
-
-function countArmorPieces(playerId) {
-  try {
-    return api.getArmorItems(playerId).filter(Boolean).length;
-  } catch (e) {
-    return 4; // can't read armor: assume a full set
-  }
-}
-
-// Extra damage (and Windburst launch) for Gambit / Crucible hits.
-function maceBonus(attackerId, victimId, damage, withItem) {
-  const name = api.getHeldItem(attackerId)?.attributes?.customDisplayName;
-
-  if (name === "Gambit") {
-    // Density
-    const fallen = Math.max(0, (peakY[attackerId] || 0) - api.getPosition(attackerId)[1]);
-    peakY[attackerId] = api.getPosition(attackerId)[1];
-    // Windburst
-    api.applyImpulse(attackerId, 0, WINDBURST_SELF_LAUNCH, 0);
-    if (WINDBURST_VICTIM_LAUNCH > 0) api.applyImpulse(victimId, 0, WINDBURST_VICTIM_LAUNCH, 0);
-    return Math.min(fallen * DENSITY_PER_BLOCK, DENSITY_MAX_BONUS);
-  }
-  if (name === "Crucible") {
-    // Breach
-    return damage * BREACH_PER_PIECE * countArmorPieces(victimId);
-  }
-  return 0;
 }
 
 // ================= Kills / Deaths / Ranks =================
@@ -438,6 +1135,8 @@ function onPlayerJoin(playerId) {
   updateRank(playerId)
   updateKD(playerId)
 
+  registerRecipes(playerId)
+
   api.sendMessage(playerId, "Type !wemmbukit for Wemmbu's kit.", {color: "Yellow"})
 }
 
@@ -535,14 +1234,15 @@ function tryTotem(victim, dmg) {
   }
 }
 
-function onPlayerDamagingOtherPlayer(attacker, victim, dmg, withItem) {
-  // Mace effects first, so the totem sees the real (boosted) damage.
-  const bonus = maceBonus(attacker, victim, dmg, withItem);
-  const finalDmg = dmg + bonus;
+function onPlayerDamagingOtherPlayer(attacker, victim, dmg) {
+  // Weapon effects first (mace smash, spear lunge, dagger poison, Breach, durability),
+  // so the totem sees the real damage.
+  const weaponDmg = computeWeaponDamage(attacker, victim, dmg);
+  const finalDmg = weaponDmg === undefined ? dmg : weaponDmg;
 
   tryTotem(victim, finalDmg);
 
-  if (bonus > 0) return finalDmg;
+  if (weaponDmg !== undefined) return weaponDmg;
 }
 
 function onMobDamagingPlayer(attacker, victim, dmg) {
