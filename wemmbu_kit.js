@@ -31,9 +31,9 @@ function onPlayerChat(playerId, msg) {
 // ---- Iron Fragments = wind charge ----
 // Right-click: boosts you in the direction you're facing and knocks back
 // every other player within WIND_RADIUS, away from you.
-const WIND_RADIUS = 6;
-const WIND_SELF_POWER = 12;
-const WIND_KNOCKBACK = 14;
+const WIND_RADIUS = 9;
+const WIND_SELF_POWER = 22;
+const WIND_KNOCKBACK = 28;
 
 function onPlayerClick(playerId, wasAltClick) {
   if (!wasAltClick) return;
@@ -43,7 +43,7 @@ function onPlayerClick(playerId, wasAltClick) {
   api.removeItemName(playerId, "Iron Fragments", 1);
 
   const dir = api.getPlayerFacingInfo(playerId).dir;
-  api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 8, dir[2] * WIND_SELF_POWER);
+  api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 14, dir[2] * WIND_SELF_POWER);
 
   const origin = api.getPosition(playerId);
   for (const otherId of api.getPlayerIds()) {
@@ -56,7 +56,7 @@ function onPlayerClick(playerId, wasAltClick) {
     if (dist > WIND_RADIUS || dist === 0) continue;
     // Closer players get pushed harder.
     const strength = WIND_KNOCKBACK * (1 - dist / WIND_RADIUS);
-    api.applyImpulse(otherId, (dx / dist) * strength, 6 + strength * 0.4, (dz / dist) * strength);
+    api.applyImpulse(otherId, (dx / dist) * strength, 10 + strength * 0.5, (dz / dist) * strength);
   }
 }
 
