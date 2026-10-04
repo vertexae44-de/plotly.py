@@ -28,6 +28,9 @@ function give(playerId, name, amount, opts) {
   return false;
 }
 
+// The "golden apple" is a normal Apple renamed and given the Tier 5 enchant tier.
+const GOLDEN_APPLE_OPTS = {customDisplayName: "Golden Apple", customAttributes: {enchantmentTier: "Tier 5"}};
+
 const KIT = [
   ["Kingly Amethite Helmet", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}}],
   ["Kingly Amethite Chestplate", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}}],
@@ -41,7 +44,7 @@ const KIT = [
   ["Splash Strength Potion", 5],
   ["Speed Potion", 1],
   ["Splash Speed Potion", 5],
-  ["Gold Apple", 64],
+  ["Apple", 64, GOLDEN_APPLE_OPTS],
   ["Cornbread", 64],
   ["Cobweb", 999],
   ["Moonstone Orb", 999],
@@ -78,6 +81,27 @@ function onPlayerChat(playerId, msg) {
   }
 }
 
+// ---- Golden Apple: effects for a few seconds ----
+// Each entry is [possible effect names, level]; the first name the game accepts is used.
+const APPLE_EFFECT_SECONDS = 8;
+const APPLE_EFFECTS = [
+  [["Damage Reduction"], 2],
+  [["Speed"], 2],
+  [["Health Regen", "Regeneration"], 2],
+  [["Damage", "Strength"], 1],
+];
+
+function applyGoldenAppleEffects(playerId) {
+  for (const [names, level] of APPLE_EFFECTS) {
+    for (const effect of names) {
+      try {
+        api.applyEffect(playerId, effect, APPLE_EFFECT_SECONDS * 1000, {inbuiltLevel: level});
+        break;
+      } catch (e) {}
+    }
+  }
+}
+
 // ---- Iron Fragments = wind charge ----
 // Right-click: boosts you in the direction you're facing and knocks back
 // every other player within WIND_RADIUS, away from you.
@@ -88,7 +112,14 @@ const WIND_KNOCKBACK = 28;
 function onPlayerClick(playerId, wasAltClick) {
   if (!wasAltClick) return;
   const held = api.getHeldItem(playerId);
-  if (!held || !WIND_ITEM_NAMES.includes(held.name)) return;
+  if (!held) return;
+
+  if (held.name === "Apple" && held.attributes && held.attributes.customDisplayName === "Golden Apple") {
+    applyGoldenAppleEffects(playerId);
+    return; // the game itself uses up the apple while eating
+  }
+
+  if (!WIND_ITEM_NAMES.includes(held.name)) return;
 
   api.removeItemName(playerId, held.name, 1);
 
@@ -165,7 +196,7 @@ function onPlayerDamagingOtherPlayer(attackerId, victimId, damage, withItem) {
 }
 
 // ---- Shulker (White Paintball -> Iron Chest) ----
-// Placing a White Paintball swaps it for an Iron Chest filled with gold apples.
+// Placing a White Paintball swaps it for an Iron Chest filled with golden apples.
 const SHULKER_SLOTS = 27;
 const SHULKER_APPLES_PER_SLOT = 16;
 
@@ -173,7 +204,7 @@ function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
   if (typeof toBlock !== "string" || !SHULKER_BLOCK_REGEX.test(toBlock)) return;
   api.setBlock(x, y, z, "Iron Chest");
   for (let slot = 0; slot < SHULKER_SLOTS; slot++) {
-    api.setStandardChestItemSlot([x, y, z], slot, "Gold Apple", SHULKER_APPLES_PER_SLOT);
+    api.setStandardChestItemSlot([x, y, z], slot, "Apple", SHULKER_APPLES_PER_SLOT, playerId, GOLDEN_APPLE_OPTS);
   }
 }
 
