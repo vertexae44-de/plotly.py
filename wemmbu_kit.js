@@ -1,13 +1,16 @@
+// Durability given to the armor, sword, axe and maces in the kit.
+const DURABILITY = 5000;
+
 function onPlayerChat(playerId, msg) {
   if (msg.startsWith("!Wemmbukit") || msg.startsWith("!wemmbukit")) {
-    api.giveItem(playerId, "Kingly Amethite Helmet", 1, {customAttributes: {enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Chestplate", 1, {customAttributes: {enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Leggings", 1, {customAttributes: {enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Boots", 1, {customAttributes: {enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Diamond Axe", 1);
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Gambit"});
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Crucible"});
+    api.giveItem(playerId, "Kingly Amethite Helmet", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
+    api.giveItem(playerId, "Kingly Amethite Chestplate", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
+    api.giveItem(playerId, "Kingly Amethite Leggings", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
+    api.giveItem(playerId, "Kingly Amethite Boots", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
+    api.giveItem(playerId, "Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {durability: DURABILITY, enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}});
+    api.giveItem(playerId, "Diamond Axe", 1, {customAttributes: {durability: DURABILITY}});
+    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Gambit", customAttributes: {durability: DURABILITY}});
+    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Crucible", customAttributes: {durability: DURABILITY}});
     api.giveItem(playerId, "Iron Fragments", 999, {customDisplayName: "Wind Charge"});
     api.giveItem(playerId, "Strength Potion", 1);
     api.giveItem(playerId, "Splash Strength Potion", 5);
