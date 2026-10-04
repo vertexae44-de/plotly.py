@@ -6,8 +6,8 @@ function onPlayerChat(playerId, msg) {
     api.giveItem(playerId, "Kingly Amethite Boots", 1, {customAttributes: {enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
     api.giveItem(playerId, "Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}});
     api.giveItem(playerId, "Diamond Axe", 1);
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Gambit", customAttributes: {enchantments: {"Windburst": 1, "Density": 1}}});
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Crucible", customAttributes: {enchantments: {"Breach": 1}}});
+    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Gambit"});
+    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Crucible"});
     api.giveItem(playerId, "Iron Fragments", 999, {customDisplayName: "Wind Charge"});
     api.giveItem(playerId, "Strength Potion", 1);
     api.giveItem(playerId, "Splash Strength Potion", 5);
