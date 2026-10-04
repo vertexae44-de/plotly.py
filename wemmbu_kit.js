@@ -80,6 +80,19 @@ function tick() {
   }
 }
 
+// Breach: armor is partly ignored. Each worn armor piece would normally
+// soak up damage, so we give that damage back: +BREACH_PER_PIECE of the
+// hit per armor piece the victim wears.
+const BREACH_PER_PIECE = 0.2;
+
+function countArmorPieces(playerId) {
+  try {
+    return api.getArmorItems(playerId).filter(Boolean).length;
+  } catch (e) {
+    return 4; // can't read armor: assume a full set
+  }
+}
+
 function onPlayerDamagingOtherPlayer(attackerId, victimId, damage, withItem) {
   if (withItem !== "Moonstone Mace") return;
 
@@ -94,6 +107,9 @@ function onPlayerDamagingOtherPlayer(attackerId, victimId, damage, withItem) {
     peakY[attackerId] = api.getPosition(attackerId)[1];
     // Windburst
     api.applyImpulse(victimId, 0, WINDBURST_LAUNCH, 0);
+  } else if (name === "Crucible") {
+    // Breach
+    bonus = damage * BREACH_PER_PIECE * countArmorPieces(victimId);
   }
   if (bonus > 0) return damage + bonus;
 }
