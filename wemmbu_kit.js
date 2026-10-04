@@ -13,6 +13,7 @@ function onPlayerChat(playerId, msg) {
     api.giveItem(playerId, "Splash Strength Potion", 5);
     api.giveItem(playerId, "Speed Potion", 1);
     api.giveItem(playerId, "Splash Speed Potion", 5);
+    api.giveItem(playerId, "Iron Chest", 5, {customDisplayName: "Shulker"});
     api.giveItem(playerId, "Cornbread", 64);
     api.giveItem(playerId, "Cobweb", 999);
     api.giveItem(playerId, "Moonstone Orb", 999);
@@ -95,6 +96,18 @@ function onPlayerDamagingOtherPlayer(attackerId, victimId, damage, withItem) {
     api.applyImpulse(victimId, 0, WINDBURST_LAUNCH, 0);
   }
   if (bonus > 0) return damage + bonus;
+}
+
+// ---- Shulker (Iron Chest) ----
+// Any Iron Chest placed gets filled with gold apples.
+const SHULKER_SLOTS = 27;
+const SHULKER_APPLES_PER_SLOT = 16;
+
+function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
+  if (toBlock !== "Iron Chest") return;
+  for (let slot = 0; slot < SHULKER_SLOTS; slot++) {
+    api.setStandardChestItemSlot([x, y, z], slot, "Gold Apple", SHULKER_APPLES_PER_SLOT);
+  }
 }
 
 function onPlayerJoin(playerId) {
