@@ -70,6 +70,14 @@ if (wait > 0) {
         return out;
     }
 
+    // ---- Scheduler: try every timer the game might offer ----
+    function later(fn, ms) {
+        if (typeof setTimeout === "function") { setTimeout(fn, ms); return true; }
+        if (typeof api.setCallbackTimeout === "function") { api.setCallbackTimeout(fn, ms); return true; }
+        if (typeof api.setTimeout === "function") { api.setTimeout(fn, ms); return true; }
+        return false;
+    }
+
     // ---- Where the hole forms ----
     const pos = api.getPosition(myId);
     const dir = api.getPlayerFacingInfo(myId).dir;
@@ -113,7 +121,8 @@ if (wait > 0) {
     }
 
     // ---- Pull loop ----
-    function pull() {
+    let reported = false;
+    function pullStep() {
         const now = api.now();
 
         swirl(center, 3, 6, [120, 0, 200, 1], [30, 0, 60, 1]);
@@ -150,9 +159,34 @@ if (wait > 0) {
         if (now >= endsAt) {
             collapse();
         } else {
-            api.setCallbackTimeout(pull, STEP_MS);
+            later(pull, STEP_MS);
         }
     }
 
-    api.setCallbackTimeout(pull, STEP_MS);
+    // Runs one step; any error is shown in chat so we can see what is wrong.
+    function pull() {
+        try {
+            pullStep();
+        } catch (e) {
+            if (!reported) {
+                reported = true;
+                api.sendMessage(myId, "Black hole error: " + e, { color: "red" });
+            }
+        }
+    }
+
+    // No timer available: do the whole thing instantly (pull + blast in one go).
+    if (!later(pull, STEP_MS)) {
+        api.sendMessage(myId, "No timer available here - doing an instant black hole.", { color: "orange" });
+        try {
+            everyoneNear(center, PULL_RADIUS).forEach(t => {
+                const len = Math.max(0.001, t.d);
+                api.applyImpulse(t.id, ((center[0] - t.p[0]) / len) * 6, ((center[1] - t.p[1]) / len) * 4, ((center[2] - t.p[2]) / len) * 6);
+            });
+            swirl(center, 3, 60, [120, 0, 200, 1], [30, 0, 60, 1]);
+            collapse();
+        } catch (e) {
+            api.sendMessage(myId, "Black hole error: " + e, { color: "red" });
+        }
+    }
 }
