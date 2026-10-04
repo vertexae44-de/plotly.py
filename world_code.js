@@ -9,11 +9,6 @@ const DURABILITY = 5000;
 // Names the wind charge item might go by in the game; the first that works is used.
 const WIND_ITEM_NAMES = ["Iron Fragments", "Iron Fragment"];
 
-// The shulker is a White Paintball in your inventory; placing it turns it
-// into an Iron Chest full of golden apples.
-const SHULKER_ITEM_NAMES = ["White Paintball", "White Paint Ball"];
-const SHULKER_BLOCK_REGEX = /white\s*paint\s*ball/i;
-
 // The "golden apple" is a normal Apple renamed and given the Tier 5 enchant tier.
 const GOLDEN_APPLE_OPTS = {customDisplayName: "Golden Apple", customAttributes: {enchantmentTier: "Tier 5"}};
 
@@ -70,9 +65,6 @@ function onPlayerChat(playerId, msg) {
     if (!giveAny(playerId, WIND_ITEM_NAMES, 999, {customDisplayName: "Wind Charge"})) {
       failed.push("Wind Charge (Iron Fragments)");
     }
-    if (!giveAny(playerId, SHULKER_ITEM_NAMES, 5, {customDisplayName: "Shulker"})) {
-      failed.push("Shulker (White Paintball)");
-    }
     api.sendMessage(playerId, "Successfully received Wemmbu kit.", {color: "Yellow"});
     if (failed.length > 0) {
       api.sendMessage(playerId, "Could not give: " + failed.join(", "), {color: "Red"});
@@ -103,18 +95,42 @@ function applyGoldenAppleEffects(playerId) {
   }
 }
 
+// Eating tracking: a right-click on a Golden Apple starts a "eating" entry.
+// tick() watches that slot; once the apple is used up the player has fully
+// eaten it and gets the effects. Switching slots or waiting too long cancels.
+const APPLE_EAT_TIMEOUT_MS = 4000;
+const eating = {};
+
+function isGoldenApple(item) {
+  return !!item && item.name === "Apple" && item.attributes?.customDisplayName === "Golden Apple";
+}
+
+function checkEating(id) {
+  const e = eating[id];
+  if (!e) return;
+  if (api.now() - e.start > APPLE_EAT_TIMEOUT_MS || api.getSelectedInventorySlotI(id) !== e.slot) {
+    delete eating[id]; // cancelled
+    return;
+  }
+  const held = api.getHeldItem(id);
+  if (!isGoldenApple(held) || held.amount < e.amount) {
+    delete eating[id];
+    applyGoldenAppleEffects(id); // fully eaten
+  }
+}
+
 // ================= Iron Fragments = wind charge =================
 // Right-click: boosts you in the direction you're facing and knocks back
 // every other player within WIND_RADIUS, away from you.
-const WIND_RADIUS = 9;
-const WIND_SELF_POWER = 22;
-const WIND_KNOCKBACK = 28;
+const WIND_RADIUS = 7;
+const WIND_SELF_POWER = 13;
+const WIND_KNOCKBACK = 16;
 
 function useWindCharge(playerId, held) {
   api.removeItemName(playerId, held.name, 1);
 
   const dir = api.getPlayerFacingInfo(playerId).dir;
-  api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 14, dir[2] * WIND_SELF_POWER);
+  api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 9, dir[2] * WIND_SELF_POWER);
 
   const origin = api.getPosition(playerId);
   for (const otherId of api.getPlayerIds()) {
@@ -127,7 +143,7 @@ function useWindCharge(playerId, held) {
     if (dist > WIND_RADIUS || dist === 0) continue;
     // Closer players get pushed harder.
     const strength = WIND_KNOCKBACK * (1 - dist / WIND_RADIUS);
-    api.applyImpulse(otherId, (dx / dist) * strength, 10 + strength * 0.5, (dz / dist) * strength);
+    api.applyImpulse(otherId, (dx / dist) * strength, 6 + strength * 0.4, (dz / dist) * strength);
   }
 }
 
@@ -242,8 +258,10 @@ function onPlayerClick(id, wasAltClick) {
 
     if (!wasAltClick) return;
 
-    if (held.name === "Apple" && name === "Golden Apple") {
-        applyGoldenAppleEffects(id); // the game itself uses up the apple while eating
+    if (isGoldenApple(held)) {
+        if (!eating[id]) {
+            eating[id] = {start: api.now(), slot: api.getSelectedInventorySlotI(id), amount: held.amount};
+        }
         return;
     }
 
@@ -263,9 +281,10 @@ function onPlayerOpenedChest(playerId, x, y, z, isMoonstoneChest) {
 }
 
 // ================= Mace: Windburst + Density + Breach =================
-// Windburst: hitting a player with a mace launches them upward.
+// Windburst: hitting a player with Gambit launches you (and a bit of them) upward.
 // Density: bonus damage per block the attacker has fallen before the hit.
-const WINDBURST_LAUNCH = 18;
+const WINDBURST_SELF_LAUNCH = 16;   // launches you (the mace user)
+const WINDBURST_VICTIM_LAUNCH = 10;  // launches the player you hit (set 0 to disable)
 const DENSITY_PER_BLOCK = 1.5;
 const DENSITY_MAX_BONUS = 30;
 
@@ -279,6 +298,7 @@ function tick() {
     // Falling: peak stays at the top of the fall.
     if (lastY[id] === undefined || y >= lastY[id]) peakY[id] = y;
     lastY[id] = y;
+    checkEating(id);
   }
 }
 
@@ -297,8 +317,6 @@ function countArmorPieces(playerId) {
 
 // Extra damage (and Windburst launch) for Gambit / Crucible hits.
 function maceBonus(attackerId, victimId, damage, withItem) {
-  if (withItem !== "Moonstone Mace") return 0;
-
   const name = api.getHeldItem(attackerId)?.attributes?.customDisplayName;
 
   if (name === "Gambit") {
@@ -306,7 +324,8 @@ function maceBonus(attackerId, victimId, damage, withItem) {
     const fallen = Math.max(0, (peakY[attackerId] || 0) - api.getPosition(attackerId)[1]);
     peakY[attackerId] = api.getPosition(attackerId)[1];
     // Windburst
-    api.applyImpulse(victimId, 0, WINDBURST_LAUNCH, 0);
+    api.applyImpulse(attackerId, 0, WINDBURST_SELF_LAUNCH, 0);
+    if (WINDBURST_VICTIM_LAUNCH > 0) api.applyImpulse(victimId, 0, WINDBURST_VICTIM_LAUNCH, 0);
     return Math.min(fallen * DENSITY_PER_BLOCK, DENSITY_MAX_BONUS);
   }
   if (name === "Crucible") {
@@ -314,19 +333,6 @@ function maceBonus(attackerId, victimId, damage, withItem) {
     return damage * BREACH_PER_PIECE * countArmorPieces(victimId);
   }
   return 0;
-}
-
-// ================= Shulker (White Paintball -> Iron Chest) =================
-// Placing a White Paintball swaps it for an Iron Chest filled with golden apples.
-const SHULKER_SLOTS = 27;
-const SHULKER_APPLES_PER_SLOT = 16;
-
-function onPlayerChangeBlock(playerId, x, y, z, fromBlock, toBlock) {
-  if (typeof toBlock !== "string" || !SHULKER_BLOCK_REGEX.test(toBlock)) return;
-  api.setBlock(x, y, z, "Iron Chest");
-  for (let slot = 0; slot < SHULKER_SLOTS; slot++) {
-    api.setStandardChestItemSlot([x, y, z], slot, "Apple", SHULKER_APPLES_PER_SLOT, playerId, GOLDEN_APPLE_OPTS);
-  }
 }
 
 // ================= Kills / Deaths / Ranks =================
