@@ -1,27 +1,61 @@
 // Durability given to the armor, sword, axe and maces in the kit.
 const DURABILITY = 5000;
 
+// Names the wind charge item might go by in the game; the first that works is used.
+const WIND_ITEM_NAMES = ["Iron Fragments", "Iron Fragment"];
+
+// Gives an item. If the game rejects the options (e.g. an unknown attribute),
+// retries with just the display name, then with no options, so one bad
+// attribute never stops the rest of the kit. Returns true on success.
+function give(playerId, name, amount, opts) {
+  const attempts = [opts];
+  if (opts && opts.customAttributes) {
+    attempts.push(opts.customDisplayName ? {customDisplayName: opts.customDisplayName} : undefined);
+  }
+  if (opts) attempts.push(undefined);
+  for (const o of attempts) {
+    try {
+      if (o) api.giveItem(playerId, name, amount, o);
+      else api.giveItem(playerId, name, amount);
+      return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
+const KIT = [
+  ["Kingly Amethite Helmet", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}}],
+  ["Kingly Amethite Chestplate", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}}],
+  ["Kingly Amethite Leggings", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}}],
+  ["Kingly Amethite Boots", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}}],
+  ["Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {durability: DURABILITY, enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}}],
+  ["Diamond Axe", 1, {customAttributes: {durability: DURABILITY}}],
+  ["Moonstone Mace", 1, {customDisplayName: "Gambit", customAttributes: {durability: DURABILITY, enchantments: {"Windburst": 1, "Density": 1}}}],
+  ["Moonstone Mace", 1, {customDisplayName: "Crucible", customAttributes: {durability: DURABILITY, enchantments: {"Breach": 1}}}],
+  ["Strength Potion", 1],
+  ["Splash Strength Potion", 5],
+  ["Speed Potion", 1],
+  ["Splash Speed Potion", 5],
+  ["Iron Chest", 5, {customDisplayName: "Shulker"}],
+  ["Cornbread", 64],
+  ["Cobweb", 999],
+  ["Moonstone Orb", 999],
+  ["Moonstone Chest", 999, {customDisplayName: "Ender Chets"}],
+];
+
 function onPlayerChat(playerId, msg) {
   if (msg.startsWith("!Wemmbukit") || msg.startsWith("!wemmbukit")) {
-    api.giveItem(playerId, "Kingly Amethite Helmet", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Chestplate", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Leggings", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Kingly Amethite Boots", 1, {customAttributes: {durability: DURABILITY, enchantments: {"Protection": 3, "Health Regen": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Diamond Sword", 1, {customDisplayName: "Sanguine Sword", customAttributes: {durability: DURABILITY, enchantments: {"Damage": 3, "Attack Speed": 2}, enchantmentTier: "Tier 5"}});
-    api.giveItem(playerId, "Diamond Axe", 1, {customAttributes: {durability: DURABILITY}});
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Gambit", customAttributes: {durability: DURABILITY}});
-    api.giveItem(playerId, "Moonstone Mace", 1, {customDisplayName: "Crucible", customAttributes: {durability: DURABILITY}});
-    api.giveItem(playerId, "Iron Fragments", 999, {customDisplayName: "Wind Charge"});
-    api.giveItem(playerId, "Strength Potion", 1);
-    api.giveItem(playerId, "Splash Strength Potion", 5);
-    api.giveItem(playerId, "Speed Potion", 1);
-    api.giveItem(playerId, "Splash Speed Potion", 5);
-    api.giveItem(playerId, "Iron Chest", 5, {customDisplayName: "Shulker"});
-    api.giveItem(playerId, "Cornbread", 64);
-    api.giveItem(playerId, "Cobweb", 999);
-    api.giveItem(playerId, "Moonstone Orb", 999);
-    api.giveItem(playerId, "Moonstone Chest", 999, {customDisplayName: "Ender Chets"});
+    const failed = [];
+    for (const [name, amount, opts] of KIT) {
+      if (!give(playerId, name, amount, opts)) failed.push(name);
+    }
+    if (!WIND_ITEM_NAMES.some(n => give(playerId, n, 999, {customDisplayName: "Wind Charge"}))) {
+      failed.push("Wind Charge (Iron Fragments)");
+    }
     api.sendMessage(playerId, "Successfully received Wemmbu kit.", {color: "Yellow"});
+    if (failed.length > 0) {
+      api.sendMessage(playerId, "Could not give: " + failed.join(", "), {color: "Red"});
+    }
     return false;
   }
 
@@ -41,9 +75,9 @@ const WIND_KNOCKBACK = 28;
 function onPlayerClick(playerId, wasAltClick) {
   if (!wasAltClick) return;
   const held = api.getHeldItem(playerId);
-  if (!held || held.name !== "Iron Fragments") return;
+  if (!held || !WIND_ITEM_NAMES.includes(held.name)) return;
 
-  api.removeItemName(playerId, "Iron Fragments", 1);
+  api.removeItemName(playerId, held.name, 1);
 
   const dir = api.getPlayerFacingInfo(playerId).dir;
   api.applyImpulse(playerId, dir[0] * WIND_SELF_POWER, Math.max(dir[1] * WIND_SELF_POWER, 0) + 14, dir[2] * WIND_SELF_POWER);
