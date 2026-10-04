@@ -37,6 +37,7 @@ const KIT = [
   ["Speed Potion", 1],
   ["Splash Speed Potion", 5],
   ["Iron Chest", 5, {customDisplayName: "Shulker"}],
+  ["Gold Apple", 64],
   ["Cornbread", 64],
   ["Cobweb", 999],
   ["Moonstone Orb", 999],
