@@ -22,6 +22,10 @@ const BLAST_FORCE = 22;
 const BLAST_DAMAGE = 25;
 const IMMUNE_TO_OWN_HOLE = true;             // the summoner isn't pulled or hurt
 
+// A real, visible black sphere made of blocks at the core (removed when it collapses).
+const CORE_BLOCKS = ["Obsidian", "Black Concrete", "Coal Block"];   // first one that places is used
+const CORE_BLOCK_RADIUS = 2;
+
 // ---- State -------------------------------------------------------------------
 const holes = [];            // { pos, owner, endsAt, nextDamage }
 const lastUse = {};          // playerId -> ms
@@ -67,6 +71,35 @@ function everyoneNear(pos, radius, ignore) {
   return out;
 }
 
+// ---- Block core ----------------------------------------------------------------
+function buildCore(center) {
+  const cx = Math.round(center[0]), cy = Math.round(center[1]), cz = Math.round(center[2]);
+  const placed = [];
+  for (const name of CORE_BLOCKS) {
+    for (let dx = -CORE_BLOCK_RADIUS; dx <= CORE_BLOCK_RADIUS; dx++) {
+      for (let dy = -CORE_BLOCK_RADIUS; dy <= CORE_BLOCK_RADIUS; dy++) {
+        for (let dz = -CORE_BLOCK_RADIUS; dz <= CORE_BLOCK_RADIUS; dz++) {
+          if (dx * dx + dy * dy + dz * dz > CORE_BLOCK_RADIUS * CORE_BLOCK_RADIUS + 1) continue;
+          const x = cx + dx, y = cy + dy, z = cz + dz;
+          try {
+            if (api.getBlock(x, y, z) !== "Air") continue;   // never overwrite real blocks
+            api.setBlock(x, y, z, name);
+            placed.push([x, y, z]);
+          } catch (e) {}
+        }
+      }
+    }
+    if (placed.length > 0) break;
+  }
+  return placed;
+}
+
+function removeCore(blocks) {
+  for (const b of blocks) {
+    try { api.setBlock(b[0], b[1], b[2], "Air"); } catch (e) {}
+  }
+}
+
 // ---- Create a black hole ------------------------------------------------------
 function openBlackHole(playerId) {
   const pos = api.getPosition(playerId);
@@ -82,6 +115,7 @@ function openBlackHole(playerId) {
     owner: playerId,
     endsAt: api.now() + HOLE_DURATION_MS,
     nextDamage: api.now() + 1000,
+    blocks: buildCore(center),
   });
 
   api.broadcastSound("ominousBellHit", 1, 0.5, { playerIdOrPos: center, maxHearDist: 50 });
@@ -137,6 +171,7 @@ function updateHoles() {
 }
 
 function collapse(h) {
+  removeCore(h.blocks || []);
   swirl(h.pos, 5, 150, [255, 255, 255, 1], [160, 60, 255, 1]);
   api.broadcastSound("cannonFire1", 1, 0.4, { playerIdOrPos: h.pos, maxHearDist: 60 });
 
@@ -168,8 +203,7 @@ function tick() {
   updateHoles();
 }
 
-function onPlayerClick(playerId, wasAltClick) {
-  if (!wasAltClick) return;
+function onPlayerClick(playerId) {
   const held = api.getHeldItem(playerId);
   if (!held || held.name !== ORB_ITEM || held.attributes?.customDisplayName !== ORB_NAME) return;
 
