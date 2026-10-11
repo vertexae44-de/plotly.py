@@ -11,7 +11,7 @@
 //
 //  Commands: !kits  !buy <kit|item>  !equip <kit>  !shop  !enchant
 //            !top [kills|coins|streak]  !stats  !help
-//            !arenas  !arena <n|name>  !join <player>  !lobby
+//            !arenas  !arena <n|name>  !join <player>  !lobby  !guide [1-5]
 // =====================================================================
 
 // ---------------------------------------------------------------------
@@ -212,7 +212,7 @@ function sendSafe(fn) { try { fn(); } catch (e) {} }
 const P = {};   // playerId -> data
 
 function defaults() {
-  return { kills: 0, deaths: 0, coins: START_COINS, streak: 0, best: 0, owned: [FIRST_KIT], kit: FIRST_KIT, enchants: 0, crucible: false };
+  return { kills: 0, deaths: 0, coins: START_COINS, streak: 0, best: 0, owned: [FIRST_KIT], kit: FIRST_KIT, enchants: 0, crucible: false, guide: false };
 }
 
 function saveData(id) {
@@ -483,7 +483,7 @@ function showHelp(id) {
   [["!kits", "open the kit menu (14 kits)"], ["!buy <kit|item>", "buy a kit or shop item"], ["!equip <kit>", "switch kit (applies now)"],
    ["!shop", "Crucible, Wind Charges, Golden Apples"], ["!enchant", "enchant the item in your hand"],
    ["!top [kills|coins|streak]", "live leaderboard"], ["!stats", "show your stats"],
-   ["!arenas", "pick from 10 arena types"], ["!arena <n|name>", "build your own arena"], ["!join <player>", "visit a friend's arena"], ["!lobby", "leave the arena"]].forEach(c => {
+   ["!guide [1-5]", "step-by-step instructions"], ["!arenas", "pick from 10 arena types"], ["!arena <n|name>", "build your own arena"], ["!join <player>", "visit a friend's arena"], ["!lobby", "leave the arena"]].forEach(c => {
     tell(id, [seg(" " + c[0], "#7dd3ff", BOLD), seg("  " + c[1], "#9aa0b4", ITALIC)]);
   });
   tell(id, [seg(" Fall onto players with a mace to SMASH. Streaks of " + BOUNTY_STREAK + "+ put a bounty on your head!", "#ffe600", ITALIC)]);
@@ -502,6 +502,67 @@ function showStats(id) {
   tell(id, [lab(" Coins ")].concat(gseg("$" + d.coins, "gold"),
     [lab("   Best streak ")], gseg(d.best, "orange"),
     [lab("   Enchants ")], gseg(d.enchants, "purple")));
+  tell(id, line());
+}
+
+// ---------------------------------------------------------------------
+//  PART 2 - IN-GAME INSTRUCTIONS  (!guide, shown automatically to new players)
+// ---------------------------------------------------------------------
+const GUIDE_PAGES = [
+  { title: "Getting Started", c1: [255, 80, 200], c2: [255, 190, 120], lines: [
+    ["Welcome to ", "✦ ARENA PVP ✦", " - fight, earn coins, climb the ranks."],
+    ["1. ", "Fight players", " to earn coins ($30 + a streak bonus per kill)."],
+    ["2. ", "!kits", " shows 14 kits. Buy better armour and weapons with your coins."],
+    ["3. ", "!equip <kit>", " puts a kit on right away. You keep it after dying."],
+    ["4. ", "!arena", " builds a private arena - friends can come in with !join."],
+    ["Tip: ", "!help", " lists every command, !guide <1-5> pages through this guide."],
+  ] },
+  { title: "Kits & Shop", c1: [255, 215, 0], c2: [255, 140, 40], lines: [
+    ["Kits go from ", "Wood", " (free) up to Amethite, Rubellite, Magmasteel and Serpentite."],
+    ["Every kit is a full set: ", "5 armour pieces", ", Sword, Axe, Pickaxe, Spade and a Mace."],
+    ["!buy <kit> ", "buys it once", " and it is yours forever (saved between sessions)."],
+    ["!shop ", "sells extras", ": the Crucible mace, Wind Charges and Golden Apples."],
+    ["!enchant ", "upgrades the item in your hand", " up to Tier 5 (Tier 1 = $250, Tier 5 = $1250)."],
+    ["Armour gets ", "Protection + Health", ", weapons get Damage + Attack Speed."],
+  ] },
+  { title: "Combat & Maces", c1: [255, 120, 0], c2: [255, 230, 60], lines: [
+    ["Maces: ", "fall onto a player", " (1.5+ blocks) and hit them for a SMASH."],
+    ["A smash adds ", "Density damage", " per block fallen, launches YOU upward (Windburst) and knocks back everyone near."],
+    ["Right-click a mace: ", "launch yourself", " into the air (4 second cooldown)."],
+    ["Crucible: ", "Breach", " - deals extra damage for every armour piece your target wears."],
+    ["Wind Charge: ", "right-click", " to launch yourself and blast nearby players away."],
+    ["Golden Apple: ", "eat it fully", " for 8 seconds of Speed, Strength, Resistance and Regen."],
+  ] },
+  { title: "Arenas", c1: [120, 220, 255], c2: [190, 255, 220], lines: [
+    ["!arenas ", "lists 10 arena types", ": Colosseum, Sky Islands, Lava Pit, Frozen Lake, Desert Ruins,"],
+    ["Glass Cage, Nether Fortress, Pillar Forest, King's Pit and Smash Towers.", "", ""],
+    ["!arena <number or name> ", "builds YOUR arena", " and teleports you in when it is ready."],
+    ["!join <player> ", "visits a friend's arena", " - everyone inside can fight."],
+    ["!lobby ", "takes you back", " to where you were. Dying inside an arena respawns you there."],
+    ["Pick ", "a new arena any time", " - it rebuilds in the same spot."],
+  ] },
+  { title: "Ranks & Leaderboards", c1: [190, 90, 255], c2: [255, 150, 235], lines: [
+    ["Kills raise your ", "rank", ": Bronze, Silver, Gold, Diamond, Sapphire, Ruby, Elite, Champion, Mythic, LEGEND."],
+    ["Every rank-up pays a ", "$200 bonus", " and is announced to the whole server."],
+    ["Streaks of ", "5+ kills", " put a BOUNTY on your head - whoever ends your streak gets paid."],
+    ["!top ", "[kills|coins|streak]", " shows the live leaderboard of everyone online."],
+    ["The ", "sidebar", " shows your rank, stats, kit, arena and the top 3 killers."],
+    ["Your coins, kills, kits and enchants ", "are saved", " - they are still there next time you join."],
+  ] },
+];
+
+function showGuide(id, arg) {
+  let n = parseInt((arg || "1").trim(), 10);
+  if (isNaN(n)) n = 1;
+  n = Math.max(1, Math.min(GUIDE_PAGES.length, n));
+  const page = GUIDE_PAGES[n - 1];
+
+  tell(id, line());
+  tell(id, gradient("  ✦ GUIDE ✦  " + page.title + "  (" + n + "/" + GUIDE_PAGES.length + ")", page.c1, page.c2, BOLD_ITALIC));
+  page.lines.forEach(l => {
+    tell(id, [seg(" " + l[0], "#9aa0b4", ITALIC), seg(l[1], "#7dd3ff", BOLD), seg(l[2], "#9aa0b4", ITALIC)]);
+  });
+  tell(id, [seg(n < GUIDE_PAGES.length ? " Next page: !guide " + (n + 1) : " That is everything - good luck out there!", "#6f7690", ITALIC)]);
   tell(id, line());
 }
 
@@ -1116,7 +1177,12 @@ function onPlayerJoin(id) {
   updateNameTag(id);
   updateLobbyBoard(id);
   updateSidebar(id);
-  tell(id, [seg("Welcome to ", "#9aa0b4", ITALIC)].concat(arenaTitle(), [seg("  -  type !help", "#9aa0b4", ITALIC)]));
+  tell(id, [seg("Welcome to ", "#9aa0b4", ITALIC)].concat(arenaTitle(), [seg("  -  type !help or !guide", "#9aa0b4", ITALIC)]));
+  if (!P[id].guide) {            // first time here: show the instructions once
+    P[id].guide = true;
+    saveData(id);
+    showGuide(id, "1");
+  }
 }
 
 function onPlayerLeave(id) {
@@ -1247,6 +1313,7 @@ function onPlayerChat(id, msg) {
   }
   else if (cmd === "!join") joinArena(id, arg);
   else if (cmd === "!lobby" || cmd === "!leave") leaveToLobby(id);
+  else if (cmd === "!guide" || cmd === "!howto" || cmd === "!tutorial") showGuide(id, arg);
   else if (cmd === "!help") showHelp(id);
   else return;
   return false;
