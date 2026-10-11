@@ -7,9 +7,11 @@
 //  • Shop: Crucible mace (Breach), Wind Charges, Golden Apples
 //  • Enchanting, 28 kill ranks, kill streaks, bounties, coins
 //  • Lobby leaderboard + live top-3 in a styled gradient sidebar
+//  • 10 generated arena types - build your own, friends !join it
 //
 //  Commands: !kits  !buy <kit|item>  !equip <kit>  !shop  !enchant
 //            !top [kills|coins|streak]  !stats  !help
+//            !arenas  !arena <n|name>  !join <player>  !lobby
 // =====================================================================
 
 // ---------------------------------------------------------------------
@@ -350,6 +352,9 @@ function updateSidebar(id) {
   segs.push(seg("Kit ", "#9aa0b4", ITALIC));
   segs = segs.concat(kitName(d.kit, BOLD_ITALIC));
   segs.push(seg("\n", "#ffffff"));
+  const where = inArena[id] !== undefined && arenas[inArena[id]] ? arenas[inArena[id]].type : -1;
+  segs.push(seg("Arena ", "#9aa0b4", ITALIC));
+  segs = segs.concat(where >= 0 ? arenaTitleName(where, BOLD_ITALIC) : [seg("Lobby", "#9aa0b4", BOLD_ITALIC)], [seg("\n", "#ffffff")]);
   if (next) segs.push(seg("Next: " + next.name + " in " + next.need + "\n", "#6f7690", ITALIC));
 
   segs = segs.concat(gradient("— TOP KILLERS —", [255, 215, 0], [255, 140, 60], BOLD));
@@ -477,7 +482,8 @@ function showHelp(id) {
   tell(id, arenaTitle("  "));
   [["!kits", "open the kit menu (14 kits)"], ["!buy <kit|item>", "buy a kit or shop item"], ["!equip <kit>", "switch kit (applies now)"],
    ["!shop", "Crucible, Wind Charges, Golden Apples"], ["!enchant", "enchant the item in your hand"],
-   ["!top [kills|coins|streak]", "live leaderboard"], ["!stats", "show your stats"]].forEach(c => {
+   ["!top [kills|coins|streak]", "live leaderboard"], ["!stats", "show your stats"],
+   ["!arenas", "pick from 10 arena types"], ["!arena <n|name>", "build your own arena"], ["!join <player>", "visit a friend's arena"], ["!lobby", "leave the arena"]].forEach(c => {
     tell(id, [seg(" " + c[0], "#7dd3ff", BOLD), seg("  " + c[1], "#9aa0b4", ITALIC)]);
   });
   tell(id, [seg(" Fall onto players with a mace to SMASH. Streaks of " + BOUNTY_STREAK + "+ put a bounty on your head!", "#ffe600", ITALIC)]);
@@ -775,6 +781,331 @@ function checkApple(id) {
 }
 
 // ---------------------------------------------------------------------
+//  ARENAS - every player can generate their own arena (10 types) and
+//  invite others with !join. Arenas are built from blocks in a queue
+//  (a few operations per tick) so the server never freezes.
+// ---------------------------------------------------------------------
+const ARENA_BASE = [0, 150, 0];    // x, floor-level y, z of arena slot 0 - pick open sky/void space in your world
+const ARENA_SPACING = 70;          // distance between players' arenas (along x)
+const ARENA_R = 16;                // arena radius (arena is 33 x 33)
+const OPS_PER_TICK = 6;            // block-rectangle operations per tick
+const BLOCKS_PER_TICK = 4000;      // fallback: single blocks per tick when setBlockRect is missing
+
+// Block names to try, in order, for each material (the first the game accepts is used).
+const B = {
+  air:        ["Air"],
+  stone:      ["Stone"],
+  stoneBrick: ["Stone Bricks", "Stone Brick", "Stone"],
+  planks:     ["Maple Wood Planks", "Wood Planks", "Planks", "Stone"],
+  lava:       ["Lava"],
+  ice:        ["Ice", "Snow", "Stone"],
+  snow:       ["Snow", "Ice", "Stone"],
+  sand:       ["Sand", "Sandstone", "Stone"],
+  sandstone:  ["Sandstone", "Sand", "Stone"],
+  glass:      ["Glass", "Stone"],
+  obsidian:   ["Obsidian", "Stone"],
+  grass:      ["Grass Block", "Grass", "Dirt", "Stone"],
+  gold:       ["Gold Block", "Gold", "Stone"],
+};
+
+// Each type draws with add(x1,y1,z1, x2,y2,z2, material) in coordinates relative to
+// the arena centre: y = -1 is the top floor layer, y = 0 is where players stand.
+const ARENA_TYPES = [
+  { key: "colosseum", title: "Colosseum", c1: [255, 200, 120], c2: [255, 110, 80], spawn: [0, 1, 0],
+    desc: "Walled stone ring with pillars - classic duels.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "stoneBrick");
+      add(-R, 0, -R, R, 7, -R + 1, "stone"); add(-R, 0, R - 1, R, 7, R, "stone");
+      add(-R, 0, -R, -R + 1, 7, R, "stone"); add(R - 1, 0, -R, R, 7, R, "stone");
+      [[-8, -8], [-8, 8], [8, -8], [8, 8], [0, -12], [0, 12], [-12, 0], [12, 0]].forEach(q => add(q[0], 0, q[1], q[0], 6, q[1], "stoneBrick"));
+      add(-3, 0, -3, 3, 0, 3, "gold");
+    } },
+  { key: "skyislands", title: "Sky Islands", c1: [120, 220, 255], c2: [190, 255, 220], spawn: [0, 1, 0],
+    desc: "Floating islands over the void - knock them off!",
+    build: (add) => {
+      add(-6, -2, -6, 6, -1, 6, "planks");
+      [[14, 0], [-14, 0], [0, 14], [0, -14]].forEach(q => add(q[0] - 4, -2, q[1] - 4, q[0] + 4, -1, q[1] + 4, "stone"));
+      add(6, -2, -1, 10, -1, 1, "planks"); add(-10, -2, -1, -6, -1, 1, "planks");
+      add(-1, -2, 6, 1, -1, 10, "planks"); add(-1, -2, -10, 1, -1, -6, "planks");
+    } },
+  { key: "lavapit", title: "Lava Pit", c1: [255, 90, 0], c2: [255, 220, 60], spawn: [-12, 1, 0],
+    desc: "A lava lake with a stone cross bridge in the middle.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "stone");
+      add(-7, -2, -7, 7, -1, 7, "lava");
+      add(-7, -2, -1, 7, -1, 1, "stoneBrick"); add(-1, -2, -7, 1, -1, 7, "stoneBrick");
+      add(-2, -2, -2, 2, 0, 2, "stoneBrick");
+      add(-R, 0, -R, R, 3, -R, "stone"); add(-R, 0, R, R, 3, R, "stone");
+      add(-R, 0, -R, -R, 3, R, "stone"); add(R, 0, -R, R, 3, R, "stone");
+    } },
+  { key: "frozenlake", title: "Frozen Lake", c1: [150, 230, 255], c2: [255, 255, 255], spawn: [0, 1, 0],
+    desc: "Slippery ice floor with snow mounds for cover.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "ice");
+      add(-R, 0, -R, R, 4, -R, "snow"); add(-R, 0, R, R, 4, R, "snow");
+      add(-R, 0, -R, -R, 4, R, "snow"); add(R, 0, -R, R, 4, R, "snow");
+      [[6, 6], [-6, 6], [6, -6], [-6, -6]].forEach(q => add(q[0] - 1, 0, q[1] - 1, q[0] + 1, 1, q[1] + 1, "snow"));
+    } },
+  { key: "desertruins", title: "Desert Ruins", c1: [255, 200, 110], c2: [215, 140, 70], spawn: [0, 1, 0],
+    desc: "Sand, broken walls and sandstone pillars.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "sand");
+      add(-R, 0, -R, R, 2, -R, "sandstone"); add(-R, 0, R, R, 2, R, "sandstone");
+      add(-R, 0, -R, -R, 2, R, "sandstone"); add(R, 0, -R, R, 2, R, "sandstone");
+      [[-10, -10, 6], [-10, 10, 4], [10, -10, 5], [10, 10, 7], [0, -9, 3], [0, 9, 3], [-9, 0, 5], [9, 0, 5], [5, 5, 2], [-5, -5, 2]]
+        .forEach(q => add(q[0], 0, q[1], q[0], q[2], q[1], "sandstone"));
+    } },
+  { key: "glasscage", title: "Glass Cage", c1: [200, 240, 255], c2: [140, 180, 255], spawn: [0, 1, 0],
+    desc: "A sealed glass box with stepped platforms.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "planks");
+      add(-R, 0, -R, R, 10, -R, "glass"); add(-R, 0, R, R, 10, R, "glass");
+      add(-R, 0, -R, -R, 10, R, "glass"); add(R, 0, -R, R, 10, R, "glass");
+      add(-R, 11, -R, R, 11, R, "glass");
+      add(-9, 0, -9, -5, 1, -5, "planks"); add(5, 0, 5, 9, 1, 9, "planks");
+      add(-9, 0, 5, -5, 2, 9, "planks"); add(5, 0, -9, 9, 2, -5, "planks");
+    } },
+  { key: "netherfortress", title: "Nether Fortress", c1: [160, 60, 255], c2: [255, 60, 60], spawn: [0, 3, 0],
+    desc: "Obsidian keep, corner towers and a lava moat.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "obsidian");
+      add(-R + 1, -2, -R + 1, R - 1, -1, -R + 3, "lava"); add(-R + 1, -2, R - 3, R - 1, -1, R - 1, "lava");
+      add(-R + 1, -2, -R + 1, -R + 3, -1, R - 1, "lava"); add(R - 3, -2, -R + 1, R - 1, -1, R - 1, "lava");
+      add(-R, 0, -R, R, 8, -R, "obsidian"); add(-R, 0, R, R, 8, R, "obsidian");
+      add(-R, 0, -R, -R, 8, R, "obsidian"); add(R, 0, -R, R, 8, R, "obsidian");
+      add(-5, 0, -5, 5, 2, 5, "obsidian");
+      [[-11, -11], [-11, 11], [11, -11], [11, 11]].forEach(q => add(q[0] - 1, 0, q[1] - 1, q[0] + 1, 9, q[1] + 1, "obsidian"));
+    } },
+  { key: "pillarforest", title: "Pillar Forest", c1: [90, 255, 130], c2: [255, 240, 120], spawn: [0, 1, 0],
+    desc: "Grass field full of stone pillars - perfect for mace smashes.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "grass");
+      add(-R, 0, -R, R, 3, -R, "stone"); add(-R, 0, R, R, 3, R, "stone");
+      add(-R, 0, -R, -R, 3, R, "stone"); add(R, 0, -R, R, 3, R, "stone");
+      const g = [-12, -6, 0, 6, 12];
+      let n = 0;
+      g.forEach(x => g.forEach(z => {
+        n++;
+        if (x === 0 && z === 0) return;
+        add(x, 0, z, x, 3 + ((n * 7) % 6), z, "stone");
+      }));
+    } },
+  { key: "kingspit", title: "King's Pit", c1: [255, 215, 0], c2: [255, 140, 40], spawn: [-15, 1, 0],
+    desc: "Stepped pit - fight your way down to the golden throne.",
+    build: (add, R) => {
+      add(-R, -12, -R, R, -1, R, "stone");
+      for (let i = 1; i <= 4; i++) add(-(R - 3 * i), -i, -(R - 3 * i), R - 3 * i, -1, R - 3 * i, "air");
+      add(-1, -5, -1, 1, -5, 1, "gold");
+      add(-R, 0, -R, R, 5, -R, "stone"); add(-R, 0, R, R, 5, R, "stone");
+      add(-R, 0, -R, -R, 5, R, "stone"); add(R, 0, -R, R, 5, R, "stone");
+    } },
+  { key: "smashtowers", title: "Smash Towers", c1: [255, 120, 200], c2: [120, 200, 255], spawn: [0, 1, -13],
+    desc: "A giant central tower ringed by shorter ones - drop in with a mace.",
+    build: (add, R) => {
+      add(-R, -2, -R, R, -1, R, "stoneBrick");
+      add(-2, 0, -2, 2, 21, 2, "stoneBrick");
+      add(-4, 22, -4, 4, 22, 4, "stoneBrick");
+      [[10, 0], [-10, 0], [0, 10], [0, -10], [7, 7], [-7, 7], [7, -7], [-7, -7]].forEach((q, i) =>
+        add(q[0] - 1, 0, q[1] - 1, q[0] + 1, 9 + i * 2, q[1] + 1, "stone"));
+      add(-R, 0, -R, R, 3, -R, "stone"); add(-R, 0, R, R, 3, R, "stone");
+      add(-R, 0, -R, -R, 3, R, "stone"); add(R, 0, -R, R, 3, R, "stone");
+    } },
+];
+
+const arenas = {};        // ownerId -> { slot, type, center, spawn, ready }
+const inArena = {};       // playerId -> ownerId of the arena they are in
+const lobbyPos = {};      // playerId -> where they were before entering an arena
+const slotBusy = {};      // slot index -> true while used
+const buildJobs = [];     // queued builds
+const resolvedBlock = {}; // material key -> block name that worked
+
+function arenaTypeOf(arg) {
+  const q = (arg || "").toLowerCase().trim();
+  if (!q) return -1;
+  const n = parseInt(q, 10);
+  if (!isNaN(n) && n >= 1 && n <= ARENA_TYPES.length) return n - 1;
+  for (let i = 0; i < ARENA_TYPES.length; i++) {
+    const t = ARENA_TYPES[i];
+    if (t.key === q || t.title.toLowerCase() === q || t.title.toLowerCase().indexOf(q) === 0) return i;
+  }
+  return -1;
+}
+
+function arenaTitleName(i, extra) {
+  const t = ARENA_TYPES[i];
+  return gradient(t.title, t.c1, t.c2, extra || BOLD);
+}
+
+// Picks the first block name from B[key] the game accepts (tested at a probe position).
+function blockFor(key, probe) {
+  if (resolvedBlock[key]) return resolvedBlock[key];
+  const cands = B[key] || B.stone;
+  if (cands.length === 1) return (resolvedBlock[key] = cands[0]);
+  for (const name of cands) {
+    try {
+      api.setBlock(probe[0], probe[1], probe[2], name);
+      if (api.getBlock(probe[0], probe[1], probe[2]) === name) {
+        api.setBlock(probe[0], probe[1], probe[2], "Air");
+        return (resolvedBlock[key] = name);
+      }
+    } catch (e) {}
+  }
+  sendSafe(() => api.setBlock(probe[0], probe[1], probe[2], "Air"));
+  return (resolvedBlock[key] = cands[cands.length - 1]);
+}
+
+function processBuild() {
+  let ops = OPS_PER_TICK, budget = BLOCKS_PER_TICK;
+  const hasRect = typeof api.setBlockRect === "function";
+  while (buildJobs.length > 0 && ops > 0 && budget > 0) {
+    const job = buildJobs[0];
+    if (job.i >= job.ops.length) {
+      buildJobs.shift();
+      sendSafe(() => job.onDone && job.onDone());
+      continue;
+    }
+    const op = job.ops[job.i];
+    const name = blockFor(op.key, job.probe);
+    if (hasRect) {
+      sendSafe(() => api.setBlockRect([op.x1, op.y1, op.z1], [op.x2, op.y2, op.z2], name));
+      job.i++; ops--;
+      continue;
+    }
+    if (!op.cur) op.cur = { x: op.x1, y: op.y1, z: op.z1 };
+    const c = op.cur;
+    while (budget > 0 && !op.done) {
+      sendSafe(() => api.setBlock(c.x, c.y, c.z, name));
+      budget--;
+      c.z++;
+      if (c.z > op.z2) { c.z = op.z1; c.y++; if (c.y > op.y2) { c.y = op.y1; c.x++; if (c.x > op.x2) op.done = true; } }
+    }
+    if (op.done) { job.i++; ops--; }
+  }
+}
+
+function freeSlot() {
+  for (let i = 0; i < 200; i++) if (!slotBusy[i]) return i;
+  return -1;
+}
+
+function makeOps(center, typeIndex) {
+  const ops = [];
+  const add = (x1, y1, z1, x2, y2, z2, key) => ops.push({
+    x1: center[0] + Math.min(x1, x2), x2: center[0] + Math.max(x1, x2),
+    y1: center[1] + Math.min(y1, y2), y2: center[1] + Math.max(y1, y2),
+    z1: center[2] + Math.min(z1, z2), z2: center[2] + Math.max(z1, z2),
+    key: key,
+  });
+  add(-ARENA_R - 2, -14, -ARENA_R - 2, ARENA_R + 2, 34, ARENA_R + 2, "air");   // clear the whole volume first
+  if (typeIndex >= 0) ARENA_TYPES[typeIndex].build(add, ARENA_R);
+  return ops;
+}
+
+function sendToLobby(id) {
+  const lp = lobbyPos[id];
+  delete inArena[id];
+  if (lp) sendSafe(() => api.setPosition(id, lp[0], lp[1], lp[2]));
+}
+
+// Players standing in an arena that is about to be rebuilt/removed are sent back.
+function evacuate(owner) {
+  for (const pid of api.getPlayerIds()) {
+    if (pid !== owner && inArena[pid] === owner) {
+      sendToLobby(pid);
+      tell(pid, [seg("The arena owner is rebuilding - you were sent back to the lobby.", "#ffa502", ITALIC)]);
+    }
+  }
+}
+
+function enterArena(id, owner) {
+  const a = arenas[owner];
+  if (!a || !a.ready) return false;
+  if (!inArena[id]) {
+    const pos = api.getPosition(id);
+    if (pos) lobbyPos[id] = [pos[0], pos[1], pos[2]];
+  }
+  inArena[id] = owner;
+  const jitter = id === owner ? 0 : (Math.random() - 0.5) * 6;
+  sendSafe(() => api.setPosition(id, a.spawn[0] + jitter, a.spawn[1], a.spawn[2] + jitter));
+  return true;
+}
+
+function startArena(id, typeIndex) {
+  const existing = arenas[id];
+  if (existing && !existing.ready) return tell(id, [seg("Your arena is still being built - one moment!", "#ffa502", ITALIC)]);
+
+  let slot;
+  if (existing) { slot = existing.slot; evacuate(id); }
+  else {
+    slot = freeSlot();
+    if (slot < 0) return tell(id, [seg("All arena slots are in use right now.", "#ff6b6b", ITALIC)]);
+    slotBusy[slot] = true;
+  }
+
+  const t = ARENA_TYPES[typeIndex];
+  const center = [ARENA_BASE[0] + slot * ARENA_SPACING, ARENA_BASE[1], ARENA_BASE[2]];
+  const spawn = [center[0] + t.spawn[0] + 0.5, center[1] + t.spawn[1], center[2] + t.spawn[2] + 0.5];
+  arenas[id] = { slot: slot, type: typeIndex, center: center, spawn: spawn, ready: false };
+
+  tell(id, [seg("Building ", "#9aa0b4", ITALIC)].concat(arenaTitleName(typeIndex, BOLD_ITALIC), [seg(" ...", "#9aa0b4", ITALIC)]));
+  buildJobs.push({
+    ops: makeOps(center, typeIndex), i: 0, probe: [center[0], center[1] - 6, center[2]],
+    onDone: () => {
+      if (!arenas[id]) return;           // owner left while building
+      arenas[id].ready = true;
+      enterArena(id, id);
+      tell(id, [seg("Arena ready: ", "#7dff7d", BOLD)].concat(arenaTitleName(typeIndex, BOLD_ITALIC),
+        [seg("  -  friends can join with !join " + api.getEntityName(id), "#9aa0b4", ITALIC)]));
+      updateSidebar(id);
+    },
+  });
+}
+
+function removeArena(id) {
+  const a = arenas[id];
+  if (!a) return;
+  evacuate(id);
+  delete arenas[id];
+  const probeY = a.center[1] - 6;
+  buildJobs.push({
+    ops: makeOps(a.center, -1), i: 0, probe: [a.center[0], probeY, a.center[2]],
+    onDone: () => { delete slotBusy[a.slot]; },
+  });
+}
+
+function showArenas(id) {
+  tell(id, line());
+  tell(id, gradient("  ✦ ARENAS ✦", TITLE_A, TITLE_B, BOLD_ITALIC));
+  ARENA_TYPES.forEach((t, i) => {
+    tell(id, [seg(" " + (i + 1) + ". ", "#555566", BOLD)].concat(arenaTitleName(i, BOLD_ITALIC), [seg("  " + t.desc, "#6f7690", ITALIC)]));
+  });
+  tell(id, [seg(" !arena <number|name>  builds YOUR arena      !join <player>  visit one      !lobby  go back", "#9aa0b4", ITALIC)]);
+  tell(id, line());
+}
+
+function joinArena(id, arg) {
+  const q = (arg || "").toLowerCase().trim();
+  if (!q) return tell(id, [seg("Usage: !join <player name>", "#ffa502", ITALIC)]);
+  for (const owner of Object.keys(arenas)) {
+    if (api.getEntityName(owner).toLowerCase().indexOf(q) === 0 && arenas[owner].ready) {
+      enterArena(id, owner);
+      tell(id, [seg("Joined ", "#7dff7d", BOLD), seg(api.getEntityName(owner) + "'s ", "#ffffff", BOLD)].concat(arenaTitleName(arenas[owner].type, BOLD_ITALIC)));
+      updateSidebar(id);
+      return;
+    }
+  }
+  tell(id, [seg("No ready arena found for that player.", "#ff6b6b", ITALIC)]);
+}
+
+function leaveToLobby(id) {
+  if (!inArena[id]) return tell(id, [seg("You are not in an arena.", "#ffa502", ITALIC)]);
+  if (!lobbyPos[id]) return tell(id, [seg("No lobby position saved.", "#ff6b6b", ITALIC)]);
+  sendToLobby(id);
+  tell(id, [seg("Back to the lobby.", "#7dff7d", BOLD)]);
+  updateSidebar(id);
+}
+
+// ---------------------------------------------------------------------
 //  Callbacks
 // ---------------------------------------------------------------------
 function onPlayerJoin(id) {
@@ -790,6 +1121,9 @@ function onPlayerJoin(id) {
 
 function onPlayerLeave(id) {
   saveData(id);
+  removeArena(id);
+  delete inArena[id];
+  delete lobbyPos[id];
   delete P[id];
   delete S[id];
   delete lastApple[id];
@@ -799,6 +1133,8 @@ function onPlayerRespawn(id) {
   if (!P[id]) loadData(id);
   giveKit(id);
   stateOf(id).fall = 0;
+  const owner = inArena[id];
+  if (owner !== undefined && arenas[owner] && arenas[owner].ready) enterArena(id, owner);
   sendSafe(() => api.applyEffect(id, "Damage Reduction", SPAWN_PROTECTION_MS, { inbuiltLevel: 3 }));
   updateSidebar(id);
 }
@@ -874,6 +1210,7 @@ function onPlayerDamagingOtherPlayer(attacker, victim, dmg) {
 
 let lastSidebar = 0;
 function tick() {
+  processBuild();
   const ids = api.getPlayerIds();
   for (const id of ids) {
     trackFall(id);
@@ -901,6 +1238,15 @@ function onPlayerChat(id, msg) {
   else if (cmd === "!enchant") enchantHeld(id);
   else if (cmd === "!top" || cmd === "!lb" || cmd === "!leaderboard") showTop(id, arg);
   else if (cmd === "!stats") showStats(id);
+  else if (cmd === "!arenas") showArenas(id);
+  else if (cmd === "!arena") {
+    const idx = arenaTypeOf(arg);
+    if (!arg) showArenas(id);
+    else if (idx < 0) tell(id, [seg("Unknown arena. Type !arenas to see all 10.", "#ff6b6b", ITALIC)]);
+    else startArena(id, idx);
+  }
+  else if (cmd === "!join") joinArena(id, arg);
+  else if (cmd === "!lobby" || cmd === "!leave") leaveToLobby(id);
   else if (cmd === "!help") showHelp(id);
   else return;
   return false;
