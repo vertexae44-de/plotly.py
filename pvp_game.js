@@ -1,17 +1,17 @@
 // =====================================================================
-//  ✦ ARENA PVP ✦  -  world code  (v2)
+//  ✦ ARENA PVP ✦  -  world code  (v3)
+//  Written against the official Bloxd code-api docs (github.com/Bloxdy/code-api).
 //
-//  • 14 buyable kits: Wood, Fur, Stone, Iron, Gold, Spiked, Diamond, Knight,
-//    Golem, Moonstone, Amethite, Rubellite, Magmasteel, Serpentite
-//    (full armour + tools + a MACE with Windburst & Density)
-//  • Shop: Crucible mace (Breach), Wind Charges, Golden Apples
-//  • Enchanting, 28 kill ranks, kill streaks, bounties, coins
-//  • Lobby leaderboard + live top-3 in a styled gradient sidebar
-//  • 10 generated arena types - build your own, friends !join it
+//  • KIT MENU: a real in-game shop window (!kits) where players see, buy and
+//    equip 14 kits - plus Extras, Enchant, Arenas and Profile tabs
+//  • SIDEBAR: kills, deaths, K/D, balance, rank, streak, kit, arena and the top
+//    killers, in gradient colours
+//  • Maces (Windburst / Density / Stomp), Crucible (Breach), Wind Charges
+//  • 10 generated arenas per player, ranks, bounties, lobby leaderboard
 //
-//  Commands: !kits  !buy <kit|item>  !equip <kit>  !shop  !enchant
-//            !top [kills|coins|streak]  !stats  !help
-//            !arenas  !arena <n|name>  !join <player>  !lobby  !guide [1-5]
+//  Commands: !kits  !shop  !buy <kit|item>  !equip <kit>  !enchant  !kitlist
+//            !top [kills|coins|streak]  !stats  !help  !guide [1-5]
+//            !arenas  !arena <n|name>  !join <player>  !lobby
 // =====================================================================
 
 // ---------------------------------------------------------------------
@@ -26,38 +26,49 @@ const BOUNTY_PER_STREAK = 15;        // coins per streak step paid to whoever ki
 const ENCHANT_COST_PER_TIER = 250;   // tier 1 = 250 ... tier 5 = 1250
 const MAX_ENCHANT_TIER = 5;
 const SPAWN_PROTECTION_MS = 4000;
+const RESPAWN_KIT_DELAY_MS = 600;    // kit is handed out this long after respawning
 const SIDEBAR_REFRESH_MS = 1000;
 const SAVE_SLOT = 21;                // moonstone chest slot used for saving
+const LOBBY_SPAWN = null;            // [x, y, z] to respawn at in the lobby, or null for the game's default
 
 const ARMOR_PIECES = ["Helmet", "Chestplate", "Gauntlets", "Leggings", "Boots"];
 const TOOL_PIECES = ["Sword", "Axe", "Pickaxe", "Spade"];
+const WEAPON_WORDS = ["Sword", "Axe", "Mace", "Spear", "Dagger", "Club", "Whip"];
 
-// Each kit: item-name prefixes to try in order, mace names to try, price,
-// and the two colours of its gradient. Cheapest first = progression order.
+// ---------------------------------------------------------------------
+//  Kits. For every piece the game tries "<prefix> <Piece>" for each prefix in
+//  order and gives the first one that exists. That is how hybrid kits work
+//  (e.g. Fur Chestplate + Wood everything else) and why the new-ore kits fall
+//  back to Diamond / Moonstone gear if the game has no such item.
+// ---------------------------------------------------------------------
+function kitDef(title, price, c1, c2, icon, armour, tools, mace, extra, desc, tint) {
+  return { title: title, price: price, c1: c1, c2: c2, icon: icon, armour: armour, tools: tools, mace: mace, extra: extra, desc: desc, tint: tint };
+}
+
 const KITS = {
-  wood:       { title: "Wood",       prefixes: ["Wood"],                       maces: ["Wood Mace"],                      price: 0,     c1: [170, 120, 60],  c2: [225, 185, 115] },
-  fur:        { title: "Fur",        prefixes: ["Fur"],                        maces: ["Wood Mace"],                      price: 150,   c1: [190, 150, 110], c2: [245, 230, 205] },
-  stone:      { title: "Stone",      prefixes: ["Stone"],                      maces: ["Stone Mace"],                     price: 300,   c1: [135, 140, 150], c2: [205, 210, 220] },
-  iron:       { title: "Iron",       prefixes: ["Iron"],                       maces: ["Iron Mace", "Stone Mace"],        price: 500,   c1: [215, 215, 225], c2: [120, 130, 150] },
-  gold:       { title: "Gold",       prefixes: ["Gold"],                       maces: ["Gold Mace"],                      price: 800,   c1: [255, 200, 0],   c2: [255, 240, 130] },
-  spiked:     { title: "Spiked",     prefixes: ["Spiked"],                     maces: ["Iron Mace"],                      price: 1100,  c1: [170, 170, 185], c2: [255, 80, 80] },
-  diamond:    { title: "Diamond",    prefixes: ["Diamond"],                    maces: ["Diamond Mace"],                   price: 1600,  c1: [60, 220, 255],  c2: [175, 255, 255] },
-  knight:     { title: "Knight",     prefixes: ["Knight"],                     maces: ["Diamond Mace"],                   price: 2300,  c1: [110, 135, 205], c2: [215, 225, 255] },
-  golem:      { title: "Golem",      prefixes: ["Golem"],                      maces: ["Diamond Mace"],                   price: 3200,  c1: [185, 120, 70],  c2: [120, 205, 125] },
-  moonstone:  { title: "Moonstone",  prefixes: ["Moonstone"],                  maces: ["Moonstone Mace"],                 price: 4500,  c1: [150, 130, 255], c2: [230, 220, 255] },
-  amethite:   { title: "Amethite",   prefixes: ["Kingly Amethite", "Amethite"], maces: ["Moonstone Mace", "Diamond Mace"], price: 6000,  c1: [190, 90, 255],  c2: [255, 150, 235] },
-  rubellite:  { title: "Rubellite",  prefixes: ["Rubellite", "Kingly Rubellite"], maces: ["Moonstone Mace", "Diamond Mace"], price: 8000, c1: [255, 50, 90],   c2: [255, 165, 135] },
-  magmasteel: { title: "Magmasteel", prefixes: ["Magmasteel", "Kingly Magmasteel"], maces: ["Moonstone Mace", "Diamond Mace"], price: 11000, c1: [255, 110, 0], c2: [255, 230, 60] },
-  serpentite: { title: "Serpentite", prefixes: ["Serpentite", "Serpentine", "Kingly Serpentite"], maces: ["Moonstone Mace", "Diamond Mace"], price: 15000, c1: [40, 255, 150], c2: [40, 190, 255] },
+  wood:       kitDef("Wood",       0,     [170, 120, 60],  [225, 185, 115], "Wood Chestplate",    ["Wood"],                                 ["Wood"],                           ["Wood"],                        ["Wood"],       "Full Wood armour, tools, mace, spear and dagger."),
+  fur:        kitDef("Fur",        150,   [190, 150, 110], [245, 230, 205], "Fur Chestplate",     ["Fur", "Wood"],                          ["Stone"],                          ["Stone"],                       ["Stone"],      "Fur chestplate over Wood armour, with Stone weapons."),
+  stone:      kitDef("Stone",      300,   [135, 140, 150], [205, 210, 220], "Stone Sword",        ["Stone", "Wood"],                        ["Stone"],                          ["Stone"],                       ["Stone"],      "Stone tools, mace, spear and dagger."),
+  iron:       kitDef("Iron",       500,   [215, 215, 225], [120, 130, 150], "Iron Chestplate",    ["Iron"],                                 ["Iron"],                           ["Iron"],                        ["Iron"],       "Full Iron armour, tools and weapons."),
+  gold:       kitDef("Gold",       800,   [255, 200, 0],   [255, 240, 130], "Gold Chestplate",    ["Gold"],                                 ["Gold"],                           ["Gold"],                        ["Gold"],       "Full Gold armour, tools and weapons."),
+  spiked:     kitDef("Spiked",     1100,  [170, 170, 185], [255, 80, 80],   "Spiked Boots",       ["Spiked", "Iron"],                       ["Iron"],                           ["Iron"],                        ["Iron"],       "Iron armour with Spiked Boots, Iron weapons."),
+  diamond:    kitDef("Diamond",    1600,  [60, 220, 255],  [175, 255, 255], "Diamond Chestplate", ["Diamond"],                              ["Diamond"],                        ["Diamond"],                     ["Diamond"],    "Full Diamond armour, tools and weapons."),
+  knight:     kitDef("Knight",     2300,  [110, 135, 205], [215, 225, 255], "Knight Sword",       ["Knight", "Diamond"],                    ["Knight", "Diamond"],              ["Diamond"],                     ["Diamond"],    "Diamond armour with the Knight Sword and Diamond mace."),
+  golem:      kitDef("Golem",      3200,  [185, 120, 70],  [120, 205, 125], "Golem Pickaxe",      ["Golem", "Diamond"],                     ["Golem", "Diamond"],               ["Diamond"],                     ["Diamond"],    "Diamond armour with the Golem Pickaxe and Diamond mace."),
+  moonstone:  kitDef("Moonstone",  4500,  [150, 130, 255], [230, 220, 255], "Moonstone Mace",     ["Moonstone", "Diamond"],                 ["Moonstone", "Diamond"],           ["Moonstone"],                   ["Moonstone"],  "Diamond armour with a Moonstone mace, spear and tools."),
+  amethite:   kitDef("Amethite",   6000,  [190, 90, 255],  [255, 150, 235], "Diamond Chestplate", ["Kingly Amethite", "Amethite", "Diamond"],["Amethite", "Moonstone", "Diamond"],["Amethite", "Moonstone"],      ["Amethite", "Moonstone"],  "New ore: Amethite gear (Diamond / Moonstone if the game lacks it).", "#c78bff"),
+  rubellite:  kitDef("Rubellite",  8000,  [255, 50, 90],   [255, 165, 135], "Diamond Chestplate", ["Kingly Rubellite", "Rubellite", "Diamond"],["Rubellite", "Moonstone", "Diamond"],["Rubellite", "Moonstone"],    ["Rubellite", "Moonstone"], "New ore: Rubellite gear (Diamond / Moonstone if the game lacks it).", "#ff6b86"),
+  magmasteel: kitDef("Magmasteel", 11000, [255, 110, 0],   [255, 230, 60],  "Diamond Chestplate", ["Kingly Magmasteel", "Magmasteel", "Diamond"],["Magmasteel", "Moonstone", "Diamond"],["Magmasteel", "Moonstone"],["Magmasteel", "Moonstone"], "New ore: Magmasteel gear (Diamond / Moonstone if the game lacks it).", "#ff9a3c"),
+  serpentite: kitDef("Serpentite", 15000, [40, 255, 150],  [40, 190, 255],  "Diamond Chestplate", ["Kingly Serpentite", "Serpentite", "Serpentine", "Diamond"],["Serpentite", "Serpentine", "Moonstone", "Diamond"],["Serpentite", "Serpentine", "Moonstone"],["Serpentite", "Serpentine", "Moonstone"], "New ore: Serpentite gear (Diamond / Moonstone if the game lacks it).", "#3dffa8"),
 };
 const KIT_ORDER = ["wood", "fur", "stone", "iron", "gold", "spiked", "diamond", "knight", "golem", "moonstone", "amethite", "rubellite", "magmasteel", "serpentite"];
 const FIRST_KIT = "wood";
 
 // Shop extras
 const SHOP = {
-  crucible:   { title: "Crucible Mace", price: 2500, once: true,  desc: "Breach mace - ignores armour. Given every spawn.", c1: [255, 70, 70], c2: [255, 190, 90] },
-  windcharge: { title: "Wind Charges",  price: 150,  once: false, desc: "x8 - right-click to launch yourself and blast foes away.", c1: [120, 230, 255], c2: [190, 255, 220] },
-  apples:     { title: "Golden Apples", price: 100,  once: false, desc: "x16 - eat for a burst of Speed, Strength and Resistance.", c1: [255, 215, 0], c2: [255, 160, 40] },
+  crucible:   { title: "Crucible Mace", price: 2500, once: true,  icon: "Moonstone Mace", desc: "Breach mace - hits harder through armour. Given every spawn.", c1: [255, 70, 70], c2: [255, 190, 90] },
+  windcharge: { title: "Wind Charges",  price: 150,  once: false, icon: "Iron Fragment",  desc: "x8 - right-click to launch yourself and blast foes away.", c1: [120, 230, 255], c2: [190, 255, 220] },
+  apples:     { title: "Golden Apples", price: 100,  once: false, icon: "Apple",          desc: "x16 - eat for a burst of Speed, Strength and Resistance.", c1: [255, 215, 0], c2: [255, 160, 40] },
 };
 const SHOP_ORDER = ["crucible", "windcharge", "apples"];
 
@@ -75,12 +86,12 @@ const MACE = {
   kbRadius: 4.5,
   kbForce: 9,
   kbUp: 5,
-  breachPerPiece: 0.2,     // Crucible: +20% damage per armour piece the victim wears
+  breachBonus: 0.5,        // Crucible: +50% damage (Bloxd has no way to read a player's armour)
 };
 
 // Wind charge item tuning
 const WIND = {
-  items: ["Iron Fragment", "Iron Fragments"],
+  items: ["Iron Fragment"],
   up: 9,
   forward: 4,
   cooldownMs: 2000,
@@ -119,7 +130,7 @@ const RANK_TIERS = {
   LEGEND:   [[255, 60, 0],    [255, 235, 0]],
 };
 
-// Gradient colour pairs for stat values and labels
+// Gradient colour pairs for stat values
 const GRAD = {
   green:  [[80, 255, 120],  [195, 255, 150]],
   red:    [[255, 70, 70],   [255, 155, 120]],
@@ -141,12 +152,23 @@ function mix(c1, c2, t) {
   return "#" + toHex(c1[0] + (c2[0] - c1[0]) * t) + toHex(c1[1] + (c2[1] - c1[1]) * t) + toHex(c1[2] + (c2[2] - c1[2]) * t);
 }
 
-// One coloured segment per character, fading from c1 to c2.
+// One coloured segment per character, fading from c1 to c2 (use for SHORT text in chat).
 function gradient(text, c1, c2, extra) {
   const out = [];
   const n = Math.max(1, text.length - 1);
   for (let i = 0; i < text.length; i++) {
     out.push({ str: text[i], style: Object.assign({ color: mix(c1, c2, i / n) }, extra || {}) });
+  }
+  return out;
+}
+
+// Gradient with only a few colour steps - keeps big payloads (sidebar, shop) small.
+function coarse(text, c1, c2, extra, steps) {
+  const n = Math.max(1, Math.min(steps || 3, text.length));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * text.length / n), b = Math.floor((i + 1) * text.length / n);
+    out.push({ str: text.slice(a, b), style: Object.assign({ color: mix(c1, c2, n === 1 ? 0 : i / (n - 1)) }, extra || {}) });
   }
   return out;
 }
@@ -165,47 +187,33 @@ function plain(segs) {
   return segs.map(s => s.str).join("");
 }
 
-// Sends styled text; falls back to plain text if the game rejects the array form.
+function stripItalic(segs) {
+  return segs.map(s => {
+    if (!s.style || !s.style.fontStyle) return s;
+    const st = Object.assign({}, s.style);
+    delete st.fontStyle;
+    return { str: s.str, style: st };
+  });
+}
+
+// Chat message: styled -> styled without italics -> plain text.
 function tell(playerId, segs) {
-  try {
-    api.sendMessage(playerId, segs);
-  } catch (e) {
-    try { api.sendMessage(playerId, plain(segs), { color: "white" }); } catch (e2) {}
-  }
+  try { api.sendMessage(playerId, segs); return; } catch (e) {}
+  try { api.sendMessage(playerId, stripItalic(segs)); return; } catch (e) {}
+  try { api.sendMessage(playerId, plain(segs), { color: "white" }); } catch (e) {}
 }
 
 function shout(segs) {
-  try {
-    api.broadcastMessage(segs);
-  } catch (e) {
-    try { api.broadcastMessage(plain(segs), { color: "white" }); } catch (e2) {}
-  }
+  try { api.broadcastMessage(segs); return; } catch (e) {}
+  try { api.broadcastMessage(stripItalic(segs)); return; } catch (e) {}
+  try { api.broadcastMessage(plain(segs), { color: "white" }); } catch (e) {}
 }
 
-function kitName(key, extra) {
-  const k = KITS[key];
-  return gradient(k.title, k.c1, k.c2, extra || BOLD);
-}
-
-function shopName(key, extra) {
-  const s = SHOP[key];
-  return gradient(s.title, s.c1, s.c2, extra || BOLD);
-}
-
-// Gradient text from a named pair in GRAD (bold by default)
-function gseg(text, key, extra) {
-  const pair = GRAD[key] || GRAD.white;
-  return gradient(String(text), pair[0], pair[1], extra || BOLD);
-}
-
-// Gradient with only a few colour steps - keeps big payloads (the sidebar) small.
-function coarse(text, c1, c2, extra, steps) {
-  const n = Math.max(1, Math.min(steps || 3, text.length));
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const a = Math.floor(i * text.length / n), b = Math.floor((i + 1) * text.length / n);
-    out.push({ str: text.slice(a, b), style: Object.assign({ color: mix(c1, c2, n === 1 ? 0 : i / (n - 1)) }, extra || {}) });
-  }
+// Appends a newline to the last segment (keeps the segment count low).
+function withNl(segs) {
+  const out = segs.slice();
+  const last = out[out.length - 1];
+  out[out.length - 1] = { str: last.str + "\n", style: last.style };
   return out;
 }
 
@@ -216,6 +224,20 @@ function arenaTitle(prefix) {
 }
 
 function sendSafe(fn) { try { fn(); } catch (e) {} }
+
+// Reports a failure ONCE per player and tag (so a bad API call is visible, not silent).
+const reported = {};
+function reportOnce(id, tag, e) {
+  const key = id + ":" + tag;
+  if (reported[key]) return;
+  reported[key] = true;
+  sendSafe(() => api.sendMessage(id, "[ARENA] " + tag + " failed: " + e, { color: "#ff6b6b" }));
+  sendSafe(() => api.log("[ARENA] " + tag + " failed: " + e));
+}
+
+function moneySegs(amount) {
+  return coarse("$" + amount, GRAD.gold[0], GRAD.gold[1], BOLD, 3);
+}
 
 // ---------------------------------------------------------------------
 //  Player data (saved in the player's moonstone chest, like a profile)
@@ -242,7 +264,7 @@ function loadData(id) {
       for (const key of Object.keys(d)) {
         if (s[key] !== undefined && typeof s[key] === typeof d[key]) d[key] = s[key];
       }
-      // keep only kits that still exist; old "starter" becomes the first kit
+      // keep only kits that still exist; the old "starter" becomes the first kit
       d.owned = (Array.isArray(d.owned) ? d.owned : []).map(k => (k === "starter" ? FIRST_KIT : k)).filter(k => KITS[k]);
       if (d.owned.indexOf(FIRST_KIT) === -1) d.owned.unshift(FIRST_KIT);
       if (d.kit === "starter") d.kit = FIRST_KIT;
@@ -265,8 +287,8 @@ function rankFor(kills) {
   return { name: r[1], c1: tier[0], c2: tier[1] };
 }
 
-function rankSegs(rank, extra) {
-  return gradient(rank.name, rank.c1, rank.c2, extra || BOLD);
+function rankSegs(rank, extra, steps) {
+  return steps ? coarse(rank.name, rank.c1, rank.c2, extra || BOLD, steps) : gradient(rank.name, rank.c1, rank.c2, extra || BOLD);
 }
 
 function nextRankInfo(kills) {
@@ -274,6 +296,15 @@ function nextRankInfo(kills) {
     if (kills < entry[0]) return { name: entry[1], need: entry[0] - kills };
   }
   return null;
+}
+
+function kitName(key, extra, steps) {
+  const k = KITS[key];
+  return steps ? coarse(k.title, k.c1, k.c2, extra || BOLD, steps) : gradient(k.title, k.c1, k.c2, extra || BOLD);
+}
+
+function kdOf(d) {
+  return d.deaths > 0 ? (d.kills / d.deaths).toFixed(2) : d.kills.toFixed(2);
 }
 
 function updateNameTag(id) {
@@ -284,10 +315,6 @@ function updateNameTag(id) {
     content: gradient(api.getEntityName(id), [80, 220, 255], [185, 140, 255], BOLD),
     subtitle: [seg("[", "#6f7690", BOLD)].concat(rankSegs(rank, BOLD), [seg("]", "#6f7690", BOLD)]),
   }, true));
-}
-
-function kdOf(d) {
-  return d.deaths > 0 ? (d.kills / d.deaths).toFixed(2) : d.kills.toFixed(2);
 }
 
 // Built-in lobby leaderboard (Kills / Deaths / K/D)
@@ -332,19 +359,18 @@ function showTop(id, arg) {
   rows.forEach((r, i) => {
     tell(id, [seg(" #" + (i + 1) + " ", PODIUM[i], BOLD)].concat(
       gradient(r.name, [255, 255, 255], [185, 195, 230], BOLD_ITALIC),
-      [seg("  ", "#ffffff")], gseg(r.value, i === 0 ? "gold" : "white")));
+      [seg("  ", "#ffffff")], coarse(String(r.value), GRAD.gold[0], GRAD.gold[1], BOLD, 2)));
   });
   tell(id, line());
 }
 
 // ---------------------------------------------------------------------
-//  Sidebar
+//  SIDEBAR  (RightInfoText)
+//  Sent every second, so it is kept small: gradients use a few colour steps
+//  instead of one segment per letter, and it is only re-sent when it changed.
 // ---------------------------------------------------------------------
-// The sidebar is sent every second, so it must stay small: only a handful of
-// segments (gradients use a few colour steps, not one segment per letter), and it
-// is only re-sent when its content actually changed.
-function sideStat(label, value, color) {
-  return [seg(label + " ", "#9aa0b4", ITALIC), seg(String(value) + "\n", color, BOLD)];
+function sideLine(label, valueSegs) {
+  return [seg(label + " ", "#9aa0b4")].concat(valueSegs);
 }
 
 const lastSideKey = {};
@@ -355,28 +381,19 @@ function updateSidebar(id) {
   const rank = rankFor(d.kills);
   const next = nextRankInfo(d.kills);
   const k = KITS[d.kit];
-  const where = inArena[id] !== undefined && arenas[inArena[id]] ? arenas[inArena[id]].type : -1;
+  const arena = inArena[id] !== undefined && arenas[inArena[id]] ? ARENA_TYPES[arenas[inArena[id]].type] : null;
 
   let segs = [];
-  segs = segs.concat(coarse("✦ ARENA PVP ✦", TITLE_A, TITLE_B, BOLD_ITALIC, 5), [seg("\n", "#ffffff")]);
-  segs.push(seg("Rank ", "#9aa0b4", ITALIC));
-  segs = segs.concat(coarse(rank.name, rank.c1, rank.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
-  segs = segs.concat(sideStat("Kills", d.kills, "#7dff7d"));
-  segs = segs.concat(sideStat("Deaths", d.deaths, "#ff7d7d"));
-  segs = segs.concat(sideStat("K/D", kdOf(d), "#ffd27d"));
-  segs = segs.concat(sideStat("Streak", d.streak + " (best " + d.best + ")", "#ff9a3c"));
-  segs = segs.concat(sideStat("Coins", "$" + d.coins, "#ffe600"));
-  segs.push(seg("Kit ", "#9aa0b4", ITALIC));
-  segs = segs.concat(coarse(k.title, k.c1, k.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
-  segs.push(seg("Arena ", "#9aa0b4", ITALIC));
-  if (where >= 0) {
-    const t = ARENA_TYPES[where];
-    segs = segs.concat(coarse(t.title, t.c1, t.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
-  } else {
-    segs.push(seg("Lobby\n", "#9aa0b4", BOLD_ITALIC));
-  }
-  if (next) segs.push(seg("Next: " + next.name + " in " + next.need + "\n", "#6f7690", ITALIC));
-
+  segs = segs.concat(withNl(coarse("✦ ARENA PVP ✦", TITLE_A, TITLE_B, BOLD, 4)));
+  segs = segs.concat(sideLine("Rank", withNl(rankSegs(rank, BOLD, 2))));
+  segs = segs.concat(sideLine("Kills", [seg(d.kills + "\n", "#7dff7d", BOLD)]));
+  segs = segs.concat(sideLine("Deaths", [seg(d.deaths + "\n", "#ff7d7d", BOLD)]));
+  segs = segs.concat(sideLine("K/D", [seg(kdOf(d) + "\n", "#ffd27d", BOLD)]));
+  segs = segs.concat(sideLine("Balance", withNl(coarse("$" + d.coins, GRAD.gold[0], GRAD.gold[1], BOLD, 2))));
+  segs = segs.concat(sideLine("Streak", [seg(d.streak + " (best " + d.best + ")\n", "#ff9a3c", BOLD)]));
+  segs = segs.concat(sideLine("Kit", withNl(coarse(k.title, k.c1, k.c2, BOLD, 2))));
+  segs = segs.concat(sideLine("Arena", arena ? withNl(coarse(arena.title, arena.c1, arena.c2, BOLD, 2)) : [seg("Lobby\n", "#9aa0b4", BOLD)]));
+  if (next) segs.push(seg("Next " + next.name + " in " + next.need + "\n", "#6f7690"));
   segs.push(seg("— TOP KILLERS —\n", "#ffb02e", BOLD));
   topBy("kills", 3).forEach((r, i) => {
     segs.push(seg("#" + (i + 1) + " " + r.name + " " + r.value + "\n", PODIUM[i], BOLD));
@@ -385,58 +402,35 @@ function updateSidebar(id) {
   const key = JSON.stringify(segs);
   if (lastSideKey[id] === key) return;       // nothing changed - don't resend
   lastSideKey[id] = key;
-  sendSafe(() => api.setClientOption(id, "RightInfoText", segs));
+  try {
+    api.setClientOption(id, "RightInfoText", segs);
+  } catch (e) {
+    reportOnce(id, "sidebar", e);
+    // fall back to a plain, unstyled sidebar so the stats are still visible
+    sendSafe(() => api.setClientOption(id, "RightInfoText", plain(segs)));
+  }
 }
 
 // ---------------------------------------------------------------------
-//  Kits and items
+//  Giving kits and items
 // ---------------------------------------------------------------------
-// Tries every name until the game accepts one. Returns true on success.
+// Tries every name until the game gives one. Returns true on success.
 function giveFirst(id, names, amount, attrs) {
   for (const name of names) {
     try {
-      api.giveItem(id, name, amount, attrs);
-      return true;
+      const given = attrs ? api.giveItem(id, name, amount, attrs) : api.giveItem(id, name, amount);
+      if (typeof given !== "number" || given > 0) return true;
     } catch (e) {}
   }
   return false;
 }
 
-function giveKit(id) {
-  const d = P[id];
-  if (!d) return;
-  sendSafe(() => api.clearInventory(id));
-  const k = KITS[d.kit];
-  const failed = [];
-
-  ARMOR_PIECES.concat(TOOL_PIECES).forEach(piece => {
-    const names = k.prefixes.map(p => p + " " + piece);
-    if (!giveFirst(id, names, 1, { customDisplayName: "✦ " + k.title + " " + piece })) failed.push(piece);
+function giveCrucible(id) {
+  return giveFirst(id, ["Moonstone Mace", "Diamond Mace"], 1, {
+    customDisplayName: "Crucible",
+    customDescription: "Breach - hits harder through armour. Right-click to launch.",
+    customAttributes: { arenaCrucible: true },
   });
-
-  // The kit mace: Windburst + Density
-  if (!giveFirst(id, k.maces, 1, {
-    customDisplayName: "✦ " + k.title + " Mace",
-    customDescription: "Windburst + Density. Smash from above. Right-click to launch.",
-    customAttributes: { arenaMace: true },
-  })) failed.push("Mace");
-
-  // Bought Crucible
-  if (d.crucible) {
-    if (!giveFirst(id, ["Moonstone Mace", "Diamond Mace"], 1, {
-      customDisplayName: "Crucible",
-      customDescription: "Breach - ignores armour. Right-click to launch.",
-      customAttributes: { arenaCrucible: true },
-    })) failed.push("Crucible");
-  }
-
-  giveWindCharges(id, 4);
-  giveApples(id, 8);
-  sendSafe(() => api.giveItem(id, "Cornbread", 32));
-
-  if (failed.length > 0) {
-    tell(id, [seg("Could not give: " + failed.join(", ") + " (item name not recognised).", "#ff6b6b", ITALIC)]);
-  }
 }
 
 function giveWindCharges(id, amount) {
@@ -451,6 +445,40 @@ function giveApples(id, amount) {
   return giveFirst(id, ["Apple"], amount, { customDisplayName: "Golden Apple", customAttributes: { enchantmentTier: "Tier 5" } });
 }
 
+function giveKit(id) {
+  const d = P[id];
+  if (!d) return;
+  sendSafe(() => api.clearInventory(id));
+  const k = KITS[d.kit];
+  const failed = [];
+
+  ARMOR_PIECES.forEach(piece => {
+    if (!giveFirst(id, k.armour.map(p => p + " " + piece), 1)) failed.push(piece);
+  });
+  TOOL_PIECES.forEach(piece => {
+    if (!giveFirst(id, k.tools.map(p => p + " " + piece), 1)) failed.push(piece);
+  });
+
+  // The kit mace: Windburst + Density
+  if (!giveFirst(id, k.mace.map(p => p + " Mace"), 1, {
+    customDisplayName: "✦ " + k.title + " Mace",
+    customDescription: "Windburst + Density. Smash from above. Right-click to launch.",
+    customAttributes: { arenaMace: true },
+  })) failed.push("Mace");
+
+  giveFirst(id, k.extra.map(p => p + " Spear"), 1);
+  giveFirst(id, k.extra.map(p => p + " Dagger"), 1);
+  if (d.crucible && !giveCrucible(id)) failed.push("Crucible");
+
+  giveWindCharges(id, 4);
+  giveApples(id, 8);
+  sendSafe(() => api.giveItem(id, "Cornbread", 32));
+
+  if (failed.length > 0) {
+    tell(id, [seg("Could not give: " + failed.join(", ") + " (item not found).", "#ff6b6b", ITALIC)]);
+  }
+}
+
 function resolveKey(arg, order, table) {
   const q = (arg || "").toLowerCase().trim();
   if (!q) return null;
@@ -462,133 +490,7 @@ function resolveKey(arg, order, table) {
 }
 
 // ---------------------------------------------------------------------
-//  Menus (chat)
-// ---------------------------------------------------------------------
-function showKits(id) {
-  const d = P[id];
-  tell(id, line());
-  tell(id, gradient("  ✦ KIT MENU ✦", TITLE_A, TITLE_B, BOLD_ITALIC));
-  KIT_ORDER.forEach(key => {
-    const k = KITS[key];
-    const owned = d.owned.indexOf(key) !== -1;
-    const status = d.kit === key ? seg("  ● EQUIPPED", "#7dff7d", BOLD)
-      : owned ? seg("  ✔ owned  (!equip " + key + ")", "#9aa0b4", ITALIC)
-      : seg("  $" + k.price + "  (!buy " + key + ")", d.coins >= k.price ? "#ffe600" : "#ff6b6b", BOLD);
-    tell(id, [seg(" • ", "#555566")].concat(kitName(key, BOLD_ITALIC), [status]));
-  });
-  tell(id, [seg(" Coins: ", "#9aa0b4", ITALIC), seg("$" + d.coins, "#ffe600", BOLD),
-            seg("   |   !shop for extras, !enchant to enchant your held item", "#6f7690", ITALIC)]);
-  tell(id, line());
-}
-
-function showShop(id) {
-  const d = P[id];
-  tell(id, line());
-  tell(id, gradient("  ✦ SHOP ✦", TITLE_A, TITLE_B, BOLD_ITALIC));
-  SHOP_ORDER.forEach(key => {
-    const s = SHOP[key];
-    const have = s.once && d[key];
-    const status = have ? seg("  ✔ owned", "#7dff7d", BOLD)
-      : seg("  $" + s.price + "  (!buy " + key + ")", d.coins >= s.price ? "#ffe600" : "#ff6b6b", BOLD);
-    tell(id, [seg(" • ", "#555566")].concat(shopName(key, BOLD_ITALIC), [status]));
-    tell(id, [seg("     " + s.desc, "#6f7690", ITALIC)]);
-  });
-  tell(id, line());
-}
-
-function showHelp(id) {
-  tell(id, line());
-  tell(id, arenaTitle("  "));
-  [["!kits", "open the kit menu (14 kits)"], ["!buy <kit|item>", "buy a kit or shop item"], ["!equip <kit>", "switch kit (applies now)"],
-   ["!shop", "Crucible, Wind Charges, Golden Apples"], ["!enchant", "enchant the item in your hand"],
-   ["!top [kills|coins|streak]", "live leaderboard"], ["!stats", "show your stats"],
-   ["!guide [1-5]", "step-by-step instructions"], ["!arenas", "pick from 10 arena types"], ["!arena <n|name>", "build your own arena"], ["!join <player>", "visit a friend's arena"], ["!lobby", "leave the arena"]].forEach(c => {
-    tell(id, [seg(" " + c[0], "#7dd3ff", BOLD), seg("  " + c[1], "#9aa0b4", ITALIC)]);
-  });
-  tell(id, [seg(" Fall onto players with a mace to SMASH. Streaks of " + BOUNTY_STREAK + "+ put a bounty on your head!", "#ffe600", ITALIC)]);
-  tell(id, line());
-}
-
-function showStats(id) {
-  const d = P[id];
-  const rank = rankFor(d.kills);
-  const lab = t => seg(t, "#9aa0b4", ITALIC);
-  tell(id, line());
-  tell(id, [lab(" Rank ")].concat(rankSegs(rank, BOLD_ITALIC),
-    [lab("   Kills ")], gseg(d.kills, "green"),
-    [lab("   Deaths ")], gseg(d.deaths, "red"),
-    [lab("   K/D ")], gseg(kdOf(d), "orange")));
-  tell(id, [lab(" Coins ")].concat(gseg("$" + d.coins, "gold"),
-    [lab("   Best streak ")], gseg(d.best, "orange"),
-    [lab("   Enchants ")], gseg(d.enchants, "purple")));
-  tell(id, line());
-}
-
-// ---------------------------------------------------------------------
-//  PART 2 - IN-GAME INSTRUCTIONS  (!guide, shown automatically to new players)
-// ---------------------------------------------------------------------
-const GUIDE_PAGES = [
-  { title: "Getting Started", c1: [255, 80, 200], c2: [255, 190, 120], lines: [
-    ["Welcome to ", "✦ ARENA PVP ✦", " - fight, earn coins, climb the ranks."],
-    ["1. ", "Fight players", " to earn coins ($30 + a streak bonus per kill)."],
-    ["2. ", "!kits", " shows 14 kits. Buy better armour and weapons with your coins."],
-    ["3. ", "!equip <kit>", " puts a kit on right away. You keep it after dying."],
-    ["4. ", "!arena", " builds a private arena - friends can come in with !join."],
-    ["Tip: ", "!help", " lists every command, !guide <1-5> pages through this guide."],
-  ] },
-  { title: "Kits & Shop", c1: [255, 215, 0], c2: [255, 140, 40], lines: [
-    ["Kits go from ", "Wood", " (free) up to Amethite, Rubellite, Magmasteel and Serpentite."],
-    ["Every kit is a full set: ", "5 armour pieces", ", Sword, Axe, Pickaxe, Spade and a Mace."],
-    ["!buy <kit> ", "buys it once", " and it is yours forever (saved between sessions)."],
-    ["!shop ", "sells extras", ": the Crucible mace, Wind Charges and Golden Apples."],
-    ["!enchant ", "upgrades the item in your hand", " up to Tier 5 (Tier 1 = $250, Tier 5 = $1250)."],
-    ["Armour gets ", "Protection + Health", ", weapons get Damage + Attack Speed."],
-  ] },
-  { title: "Combat & Maces", c1: [255, 120, 0], c2: [255, 230, 60], lines: [
-    ["Maces: ", "fall onto a player", " (1.5+ blocks) and hit them for a SMASH."],
-    ["A smash adds ", "Density damage", " per block fallen, launches YOU upward (Windburst) and knocks back everyone near."],
-    ["Right-click a mace: ", "launch yourself", " into the air (4 second cooldown)."],
-    ["Crucible: ", "Breach", " - deals extra damage for every armour piece your target wears."],
-    ["Wind Charge: ", "right-click", " to launch yourself and blast nearby players away."],
-    ["Golden Apple: ", "eat it fully", " for 8 seconds of Speed, Strength, Resistance and Regen."],
-  ] },
-  { title: "Arenas", c1: [120, 220, 255], c2: [190, 255, 220], lines: [
-    ["!arenas ", "lists 10 arena types", ": Colosseum, Sky Islands, Lava Pit, Frozen Lake, Desert Ruins,"],
-    ["Glass Cage, Nether Fortress, Pillar Forest, King's Pit and Smash Towers.", "", ""],
-    ["!arena <number or name> ", "builds YOUR arena", " and teleports you in when it is ready."],
-    ["!join <player> ", "visits a friend's arena", " - everyone inside can fight."],
-    ["!lobby ", "takes you back", " to where you were. Dying inside an arena respawns you there."],
-    ["Pick ", "a new arena any time", " - it rebuilds in the same spot."],
-  ] },
-  { title: "Ranks & Leaderboards", c1: [190, 90, 255], c2: [255, 150, 235], lines: [
-    ["Kills raise your ", "rank", ": Bronze, Silver, Gold, Diamond, Sapphire, Ruby, Elite, Champion, Mythic, LEGEND."],
-    ["Every rank-up pays a ", "$200 bonus", " and is announced to the whole server."],
-    ["Streaks of ", "5+ kills", " put a BOUNTY on your head - whoever ends your streak gets paid."],
-    ["!top ", "[kills|coins|streak]", " shows the live leaderboard of everyone online."],
-    ["The ", "sidebar", " shows your rank, stats, kit, arena and the top 3 killers."],
-    ["Your coins, kills, kits and enchants ", "are saved", " - they are still there next time you join."],
-  ] },
-];
-
-const GUIDE_PAGES_RETURNING = 1;   // pages shown on every later join (set to 5 to always show everything)
-
-function showGuide(id, arg) {
-  let n = parseInt((arg || "1").trim(), 10);
-  if (isNaN(n)) n = 1;
-  n = Math.max(1, Math.min(GUIDE_PAGES.length, n));
-  const page = GUIDE_PAGES[n - 1];
-
-  tell(id, line());
-  tell(id, gradient("  ✦ GUIDE ✦  " + page.title + "  (" + n + "/" + GUIDE_PAGES.length + ")", page.c1, page.c2, BOLD_ITALIC));
-  page.lines.forEach(l => {
-    tell(id, [seg(" " + l[0], "#9aa0b4", ITALIC), seg(l[1], "#7dd3ff", BOLD), seg(l[2], "#9aa0b4", ITALIC)]);
-  });
-  tell(id, [seg(n < GUIDE_PAGES.length ? " Next page: !guide " + (n + 1) : " That is everything - good luck out there!", "#6f7690", ITALIC)]);
-  tell(id, line());
-}
-
-// ---------------------------------------------------------------------
-//  Buy / equip / enchant
+//  Buying, equipping, enchanting (used by BOTH the shop menu and chat commands)
 // ---------------------------------------------------------------------
 function spend(id, price) {
   const d = P[id];
@@ -606,49 +508,8 @@ function bought(id) {
   sendSafe(() => api.playSound(id, "cashRegister", 1, 1));
 }
 
-function buy(id, arg) {
+function equipKit(id, key) {
   const d = P[id];
-  const kitKey = resolveKey(arg, KIT_ORDER, KITS);
-  const itemKey = resolveKey(arg, SHOP_ORDER, SHOP);
-
-  if (kitKey) {
-    if (d.owned.indexOf(kitKey) !== -1) return tell(id, [seg("You already own that kit - use !equip " + kitKey + ".", "#ffa502", ITALIC)]);
-    if (!spend(id, KITS[kitKey].price)) return;
-    d.owned.push(kitKey);
-    bought(id);
-    return tell(id, [seg("Bought ", "#7dff7d", BOLD)].concat(kitName(kitKey, BOLD_ITALIC), [seg("!  Use !equip " + kitKey + " to wear it.", "#7dff7d", BOLD)]));
-  }
-
-  if (itemKey) {
-    const s = SHOP[itemKey];
-    if (s.once && d[itemKey]) return tell(id, [seg("You already own that.", "#ffa502", ITALIC)]);
-    if (!spend(id, s.price)) return;
-
-    if (itemKey === "crucible") {
-      d.crucible = true;
-      giveFirst(id, ["Moonstone Mace", "Diamond Mace"], 1, {
-        customDisplayName: "Crucible",
-        customDescription: "Breach - ignores armour. Right-click to launch.",
-        customAttributes: { arenaCrucible: true },
-      });
-    } else if (itemKey === "windcharge") {
-      giveWindCharges(id, 8);
-    } else if (itemKey === "apples") {
-      giveApples(id, 16);
-    }
-    bought(id);
-    return tell(id, [seg("Bought ", "#7dff7d", BOLD)].concat(shopName(itemKey, BOLD_ITALIC), [seg("!", "#7dff7d", BOLD)]));
-  }
-
-  tell(id, [seg("Unknown kit or item. Try !kits or !shop.", "#ff6b6b", ITALIC)]);
-}
-
-function equipKit(id, arg) {
-  const d = P[id];
-  const key = resolveKey(arg, KIT_ORDER, KITS);
-  if (!key) return tell(id, [seg("Unknown kit. Type !kits to see the menu.", "#ff6b6b", ITALIC)]);
-  if (d.owned.indexOf(key) === -1) return tell(id, [seg("You don't own that kit yet - !buy " + key, "#ff6b6b", ITALIC)]);
-
   d.kit = key;
   saveData(id);
   giveKit(id);
@@ -656,56 +517,406 @@ function equipKit(id, arg) {
   tell(id, [seg("Equipped ", "#7dff7d", BOLD)].concat(kitName(key, BOLD_ITALIC), [seg(".", "#7dff7d", BOLD)]));
 }
 
+// Owned kit -> equip it. Not owned -> buy it (and equip it right away).
+function buyOrEquipKit(id, key) {
+  const d = P[id];
+  const k = KITS[key];
+  if (!k) return;
+  if (d.owned.indexOf(key) === -1) {
+    if (!spend(id, k.price)) return;
+    d.owned.push(key);
+    bought(id);
+    tell(id, [seg("Bought ", "#7dff7d", BOLD)].concat(kitName(key, BOLD_ITALIC), [seg("!", "#7dff7d", BOLD)]));
+  }
+  if (d.kit !== key) equipKit(id, key);
+}
+
+function buyExtra(id, key) {
+  const d = P[id];
+  const s = SHOP[key];
+  if (!s) return;
+  if (s.once && d[key]) return tell(id, [seg("You already own that.", "#ffa502", ITALIC)]);
+  if (!spend(id, s.price)) return;
+
+  if (key === "crucible") {
+    d[key] = true;
+    giveCrucible(id);
+  } else if (key === "windcharge") {
+    giveWindCharges(id, 8);
+  } else if (key === "apples") {
+    giveApples(id, 16);
+  }
+  bought(id);
+  tell(id, [seg("Bought ", "#7dff7d", BOLD)].concat(gradient(s.title, s.c1, s.c2, BOLD_ITALIC), [seg("!", "#7dff7d", BOLD)]));
+}
+
 function itemClass(itemName) {
   const last = itemName.split(" ").pop();
   if (ARMOR_PIECES.indexOf(last) !== -1) return "armor";
-  if (last === "Sword" || last === "Axe" || last === "Mace") return "weapon";
+  if (last === "Mace") return "mace";
+  if (WEAPON_WORDS.indexOf(last) !== -1) return "weapon";
   return null;
+}
+
+// What enchanting the held item would do (or why it cannot be done).
+function enchantInfo(id) {
+  const d = P[id];
+  const slot = api.getSelectedInventorySlotI(id);
+  const item = api.getItemSlot(id, slot);
+  if (!item) return { ok: false, reason: "Hold an armour piece or weapon first." };
+  const cls = itemClass(item.name);
+  if (!cls) return { ok: false, reason: "Only armour, swords, axes, maces, spears and daggers can be enchanted." };
+  const attrs = (item.attributes && item.attributes.customAttributes) || {};
+  const m = /Tier (\d+)/.exec(attrs.enchantmentTier || "");
+  const current = m ? parseInt(m[1], 10) : 0;
+  if (current >= MAX_ENCHANT_TIER) return { ok: false, reason: "That item is already max tier!" };
+  const next = current + 1;
+  return { ok: true, slot: slot, item: item, cls: cls, attrs: attrs, current: current, next: next, cost: ENCHANT_COST_PER_TIER * next, afford: d.coins >= ENCHANT_COST_PER_TIER * next };
 }
 
 function enchantHeld(id) {
   const d = P[id];
-  const slot = api.getSelectedInventorySlotI(id);
-  const item = api.getItemSlot(id, slot);
-  if (!item) return tell(id, [seg("Hold the armour piece or weapon you want to enchant.", "#ffa502", ITALIC)]);
+  const info = enchantInfo(id);
+  if (!info.ok) return tell(id, [seg(info.reason, "#ffa502", ITALIC)]);
+  if (!info.afford) return tell(id, [seg("Enchanting to Tier " + info.next + " costs $" + info.cost + " - you have $" + d.coins + ".", "#ff6b6b", BOLD)]);
 
-  const cls = itemClass(item.name);
-  if (!cls) return tell(id, [seg("You can only enchant armour, swords, axes and maces.", "#ff6b6b", ITALIC)]);
-
-  const attrs = (item.attributes && item.attributes.customAttributes) || {};
-  const m = /Tier (\d+)/.exec(attrs.enchantmentTier || "");
-  const current = m ? parseInt(m[1], 10) : 0;
-  if (current >= MAX_ENCHANT_TIER) return tell(id, [seg("That item is already max tier!", "#c58cff", BOLD)]);
-
-  const next = current + 1;
-  const cost = ENCHANT_COST_PER_TIER * next;
-  if (d.coins < cost) return tell(id, [seg("Enchanting to Tier " + next + " costs $" + cost + " - you have $" + d.coins + ".", "#ff6b6b", BOLD)]);
-
-  const enchantments = cls === "armor"
-    ? { "Protection": next, "Health": next }
-    : { "Damage": next, "Attack Speed": next };
+  const enchantments = info.cls === "armor" ? { "Protection": info.next, "Health": info.next }
+    : info.cls === "mace" ? { "Stomp Damage": info.next, "Damage": info.next }
+    : { "Damage": info.next, "Attack Speed": info.next };
 
   // Keep the item's own tags (arenaMace etc.) and just add the enchant.
   const newAttrs = {
-    customDisplayName: item.attributes && item.attributes.customDisplayName,
-    customDescription: item.attributes && item.attributes.customDescription,
-    customAttributes: Object.assign({}, attrs, { enchantments: enchantments, enchantmentTier: "Tier " + next }),
+    customDisplayName: info.item.attributes && info.item.attributes.customDisplayName,
+    customDescription: info.item.attributes && info.item.attributes.customDescription,
+    customAttributes: Object.assign({}, info.attrs, { enchantments: enchantments, enchantmentTier: "Tier " + info.next }),
   };
 
-  d.coins -= cost;
+  d.coins -= info.cost;
   d.enchants += 1;
   try {
-    api.setItemSlot(id, slot, item.name, item.amount, newAttrs, true);
+    api.setItemSlot(id, info.slot, info.item.name, info.item.amount, newAttrs, true);
   } catch (e) {
-    d.coins += cost;
+    d.coins += info.cost;
     d.enchants -= 1;
     return tell(id, [seg("The game rejected that enchant, you were not charged.", "#ff6b6b", ITALIC)]);
   }
   saveData(id);
   updateSidebar(id);
-  tell(id, [seg("Enchanted to ", "#c58cff", BOLD)].concat(gradient("Tier " + next, [190, 90, 255], [255, 150, 235], BOLD_ITALIC),
-            [seg(" for $" + cost + "!", "#c58cff", BOLD)]));
+  tell(id, [seg("Enchanted to ", "#c58cff", BOLD)].concat(gradient("Tier " + info.next, [190, 90, 255], [255, 150, 235], BOLD_ITALIC),
+            [seg(" for $" + info.cost + "!", "#c58cff", BOLD)]));
   sendSafe(() => api.playSound(id, "levelup", 1, 1.2));
+}
+
+// ---------------------------------------------------------------------
+//  KIT MENU - the in-game shop window (api.createShopItemForPlayer / openShop)
+//  Tabs: Kits, Extras, Enchant, Arenas, Profile. Prices are paid from the
+//  player's own coin balance, so items are created without a "cost" and the
+//  Buy button text carries the price; onPlayerBoughtShopItem does the rest.
+// ---------------------------------------------------------------------
+const CAT = { kits: "Kits", extras: "Extras", enchant: "Enchant", arenas: "Arenas", profile: "Profile" };
+const CAT_PRIORITY = { Kits: 50, Extras: 40, Enchant: 30, Arenas: 20, Profile: 10 };
+
+function putItem(id, cat, key, item) {
+  try {
+    api.createShopItemForPlayer(id, cat, key, item);
+  } catch (e) {
+    reportOnce(id, "kit menu", e);
+  }
+}
+
+function kitItem(id, key, index) {
+  const d = P[id];
+  const k = KITS[key];
+  const owned = d.owned.indexOf(key) !== -1;
+  const equipped = d.kit === key;
+  const afford = d.coins >= k.price;
+
+  let desc = [seg(k.desc + "\n", "#c9cde0")];
+  desc = desc.concat(owned ? [seg(equipped ? "● Equipped" : "✔ Owned", "#7dff7d", BOLD)]
+    : [seg("Price ", "#9aa0b4")].concat(moneySegs(k.price)));
+  desc = desc.concat([seg("   Balance ", "#6f7690")], moneySegs(d.coins));
+
+  const item = {
+    image: k.icon,
+    customTitle: coarse(k.title, k.c1, k.c2, BOLD, 4),
+    description: desc,
+    canBuy: !equipped && (owned || afford),
+    isSelected: equipped,
+    buyButtonText: equipped ? "Equipped" : owned ? "Equip" : "Buy  $" + k.price,
+    redDot: !owned && afford && k.price > 0,
+    sortPriority: 1000 - index,
+  };
+  if (k.tint) item.imageColour = k.tint;
+  return item;
+}
+
+function extraItem(id, key, index) {
+  const d = P[id];
+  const s = SHOP[key];
+  const have = s.once && d[key];
+  const afford = d.coins >= s.price;
+  return {
+    image: s.icon,
+    customTitle: coarse(s.title, s.c1, s.c2, BOLD, 4),
+    description: [seg(s.desc + "\n", "#c9cde0"), seg(have ? "✔ Owned" : "Price ", have ? "#7dff7d" : "#9aa0b4", have ? BOLD : undefined)]
+      .concat(have ? [] : moneySegs(s.price), [seg("   Balance ", "#6f7690")], moneySegs(d.coins)),
+    canBuy: !have && afford,
+    buyButtonText: have ? "Owned" : "Buy  $" + s.price,
+    redDot: !have && afford,
+    sortPriority: 1000 - index,
+  };
+}
+
+function enchantItem(id) {
+  const d = P[id];
+  const info = enchantInfo(id);
+  let desc;
+  if (!info.ok) {
+    desc = [seg(info.reason + "\n", "#c9cde0"), seg("Balance ", "#6f7690")].concat(moneySegs(d.coins));
+  } else {
+    desc = [seg("Holding ", "#9aa0b4"), seg(info.item.name + "\n", "#ffffff", BOLD),
+            seg("Tier " + info.current + " → Tier " + info.next + "   Cost ", "#9aa0b4")].concat(moneySegs(info.cost),
+            [seg("   Balance ", "#6f7690")], moneySegs(d.coins));
+  }
+  return {
+    image: "Gold Enchanting Table",
+    customTitle: coarse("Enchant Held Item", [190, 90, 255], [255, 150, 235], BOLD, 4),
+    description: desc,
+    canBuy: info.ok && info.afford,
+    buyButtonText: info.ok ? "Enchant  $" + info.cost : "Hold an item",
+    redDot: info.ok && info.afford,
+    sortPriority: 1000,
+  };
+}
+
+const ARENA_ICONS = ["Stone Bricks", "Maple Wood Planks", "Lava", "Ice", "Sandstone", "Glass", "Obsidian", "Grass Block", "Block of Gold", "Stone"];
+
+function arenaItem(id, index) {
+  const t = ARENA_TYPES[index];
+  const mine = arenas[id];
+  const current = !!mine && mine.type === index;
+  const building = !!mine && !mine.ready;
+  return {
+    image: ARENA_ICONS[index],
+    customTitle: coarse(t.title, t.c1, t.c2, BOLD, 4),
+    description: [seg(t.desc + "\n", "#c9cde0"), seg(current ? "● Your arena" : "Free - builds your own copy", current ? "#7dff7d" : "#9aa0b4", current ? BOLD : undefined)],
+    canBuy: !building,
+    isSelected: current,
+    buyButtonText: building ? "Building..." : current ? "Rebuild & go" : "Build & go",
+    sortPriority: 1000 - index,
+  };
+}
+
+function profileItems(id) {
+  const d = P[id];
+  const rank = rankFor(d.kills);
+  const next = nextRankInfo(d.kills);
+  const lab = t => seg(t, "#9aa0b4");
+
+  let stats = [lab("Rank ")].concat(rankSegs(rank, BOLD, 3),
+    [lab("   Kills "), seg(String(d.kills), "#7dff7d", BOLD), lab("   Deaths "), seg(String(d.deaths), "#ff7d7d", BOLD),
+     lab("   K/D "), seg(kdOf(d), "#ffd27d", BOLD), seg("\n", "#ffffff"), lab("Balance ")], moneySegs(d.coins),
+    [lab("   Streak "), seg(d.streak + " (best " + d.best + ")", "#ff9a3c", BOLD), lab("   Enchants "), seg(String(d.enchants), "#c58cff", BOLD)]);
+  if (next) stats = stats.concat([seg("\nNext rank: " + next.name + " in " + next.need + " kills", "#6f7690")]);
+
+  let top = [];
+  topBy("kills", 5).forEach((r, i) => {
+    top.push(seg("#" + (i + 1) + " " + r.name + "  " + r.value + " kills" + (i < 4 ? "\n" : ""), PODIUM[i], BOLD));
+  });
+  if (top.length === 0) top = [seg("Nobody online yet.", "#9aa0b4")];
+
+  return {
+    stats: { image: "Diamond Sword", customTitle: coarse("Your Stats", TITLE_A, TITLE_B, BOLD, 4), description: stats, canBuy: false, buyButtonText: "—", sortPriority: 1000 },
+    top: { image: "Gold Sword", customTitle: coarse("Top Killers (online)", [255, 215, 0], [255, 140, 60], BOLD, 4), description: top, canBuy: false, buyButtonText: "—", sortPriority: 900 },
+  };
+}
+
+function setHeaders(id) {
+  const d = P[id];
+  const text = [seg("Balance ", "#9aa0b4")].concat(moneySegs(d.coins), [seg("   Kit ", "#9aa0b4")], kitName(d.kit, BOLD, 2),
+    [seg("   Rank ", "#9aa0b4")], rankSegs(rankFor(d.kills), BOLD, 2));
+  for (const cat of Object.keys(CAT_PRIORITY)) {
+    try {
+      api.configureShopCategoryForPlayer(id, cat, { sortPriority: CAT_PRIORITY[cat], description: text });
+    } catch (e) {
+      reportOnce(id, "kit menu tabs", e);
+      break;
+    }
+  }
+}
+
+function refreshKits(id) { KIT_ORDER.forEach((key, i) => putItem(id, CAT.kits, key, kitItem(id, key, i))); }
+function refreshExtras(id) { SHOP_ORDER.forEach((key, i) => putItem(id, CAT.extras, key, extraItem(id, key, i))); }
+function refreshEnchant(id) { putItem(id, CAT.enchant, "enchant", enchantItem(id)); }
+function refreshArenas(id) { ARENA_TYPES.forEach((t, i) => putItem(id, CAT.arenas, t.key, arenaItem(id, i))); }
+function refreshProfile(id) {
+  const items = profileItems(id);
+  putItem(id, CAT.profile, "stats", items.stats);
+  putItem(id, CAT.profile, "top", items.top);
+}
+
+// Everything that depends on the coin balance
+function refreshMoney(id) {
+  if (!P[id]) return;
+  refreshKits(id);
+  refreshExtras(id);
+  refreshEnchant(id);
+  refreshProfile(id);
+  setHeaders(id);
+}
+
+function refreshShop(id) {
+  if (!P[id]) return;
+  refreshMoney(id);
+  refreshArenas(id);
+}
+
+// Opens the shop window on a tab; falls back to a chat list if that is not possible.
+function openMenu(id, category) {
+  if (!P[id]) loadData(id);
+  try {
+    api.openShop(id, false, category || CAT.kits);
+  } catch (e) {
+    reportOnce(id, "open kit menu", e);
+    showKitsText(id);
+  }
+}
+
+// The shop window calls this after a successful purchase click.
+function onPlayerBoughtShopItem(id, categoryKey, itemKey) {
+  if (!P[id]) loadData(id);
+  if (categoryKey === CAT.kits) buyOrEquipKit(id, itemKey);
+  else if (categoryKey === CAT.extras) buyExtra(id, itemKey);
+  else if (categoryKey === CAT.enchant) enchantHeld(id);
+  else if (categoryKey === CAT.arenas) {
+    const idx = arenaTypeOf(itemKey);
+    if (idx >= 0) startArena(id, idx);
+  }
+  refreshMoney(id);
+}
+
+function onPlayerToggledShopMenu(id, isOpen) {
+  if (!isOpen || !P[id]) return;
+  refreshEnchant(id);      // depends on what is in your hand right now
+  refreshProfile(id);
+}
+
+// ---------------------------------------------------------------------
+//  Chat versions of the menus (used when the shop window is unavailable)
+// ---------------------------------------------------------------------
+function showKitsText(id) {
+  const d = P[id];
+  tell(id, line());
+  tell(id, gradient("  ✦ KIT MENU ✦", TITLE_A, TITLE_B, BOLD_ITALIC));
+  KIT_ORDER.forEach(key => {
+    const k = KITS[key];
+    const owned = d.owned.indexOf(key) !== -1;
+    const status = d.kit === key ? seg("  ● EQUIPPED", "#7dff7d", BOLD)
+      : owned ? seg("  ✔ owned  (!equip " + key + ")", "#9aa0b4", ITALIC)
+      : seg("  $" + k.price + "  (!buy " + key + ")", d.coins >= k.price ? "#ffe600" : "#ff6b6b", BOLD);
+    tell(id, [seg(" • ", "#555566")].concat(kitName(key, BOLD_ITALIC), [status]));
+  });
+  SHOP_ORDER.forEach(key => {
+    const s = SHOP[key];
+    const have = s.once && d[key];
+    tell(id, [seg(" • ", "#555566")].concat(gradient(s.title, s.c1, s.c2, BOLD_ITALIC),
+      [have ? seg("  ✔ owned", "#7dff7d", BOLD) : seg("  $" + s.price + "  (!buy " + key + ")", d.coins >= s.price ? "#ffe600" : "#ff6b6b", BOLD)]));
+  });
+  tell(id, [seg(" Balance: ", "#9aa0b4", ITALIC), seg("$" + d.coins, "#ffe600", BOLD)]);
+  tell(id, line());
+}
+
+function showHelp(id) {
+  tell(id, line());
+  tell(id, arenaTitle("  "));
+  [["!kits", "open the KIT MENU (buy and equip kits)"], ["!shop", "menu: Crucible, Wind Charges, Golden Apples"],
+   ["!buy <kit|item>", "buy by name instead of the menu"], ["!equip <kit>", "switch to a kit you own"],
+   ["!enchant", "enchant the item in your hand"], ["!kitlist", "kit list in chat"],
+   ["!top [kills|coins|streak]", "live leaderboard"], ["!stats", "your stats"],
+   ["!guide [1-5]", "step-by-step instructions"], ["!arenas", "pick from 10 arena types"], ["!arena <n|name>", "build your own arena"],
+   ["!join <player>", "visit a friend's arena"], ["!lobby", "leave the arena"]].forEach(c => {
+    tell(id, [seg(" " + c[0], "#7dd3ff", BOLD), seg("  " + c[1], "#9aa0b4", ITALIC)]);
+  });
+  tell(id, [seg(" Fall onto players with a mace to SMASH. Streaks of " + BOUNTY_STREAK + "+ put a bounty on your head!", "#ffe600", ITALIC)]);
+  tell(id, line());
+}
+
+function showStats(id) {
+  const d = P[id];
+  const rank = rankFor(d.kills);
+  const lab = t => seg(t, "#9aa0b4", ITALIC);
+  tell(id, line());
+  tell(id, [lab(" Rank ")].concat(rankSegs(rank, BOLD_ITALIC),
+    [lab("   Kills ")], coarse(String(d.kills), GRAD.green[0], GRAD.green[1], BOLD, 2),
+    [lab("   Deaths ")], coarse(String(d.deaths), GRAD.red[0], GRAD.red[1], BOLD, 2),
+    [lab("   K/D ")], coarse(kdOf(d), GRAD.orange[0], GRAD.orange[1], BOLD, 2)));
+  tell(id, [lab(" Balance ")].concat(moneySegs(d.coins),
+    [lab("   Best streak ")], coarse(String(d.best), GRAD.orange[0], GRAD.orange[1], BOLD, 2),
+    [lab("   Enchants ")], coarse(String(d.enchants), GRAD.purple[0], GRAD.purple[1], BOLD, 2)));
+  tell(id, line());
+}
+
+// ---------------------------------------------------------------------
+//  IN-GAME INSTRUCTIONS  (!guide, shown when a player joins)
+// ---------------------------------------------------------------------
+const GUIDE_PAGES = [
+  { title: "Getting Started", c1: [255, 80, 200], c2: [255, 190, 120], lines: [
+    ["Welcome to ", "✦ ARENA PVP ✦", " - fight, earn coins, climb the ranks."],
+    ["1. ", "Fight players", " to earn coins ($30 + a streak bonus per kill)."],
+    ["2. ", "!kits", " opens the KIT MENU: see, buy and equip 14 kits."],
+    ["3. ", "The menu tabs", ": Kits, Extras, Enchant, Arenas and your Profile."],
+    ["4. ", "!arena", " builds a private arena - friends can come in with !join."],
+    ["Tip: ", "!help", " lists every command, !guide <1-5> pages through this guide."],
+  ] },
+  { title: "Kit Menu & Shop", c1: [255, 215, 0], c2: [255, 140, 40], lines: [
+    ["Kits go from ", "Wood", " (free) up to Diamond, Moonstone and the new ores."],
+    ["Every kit is armour, ", "tools, a mace, a spear and a dagger", "."],
+    ["In the menu, ", "Buy", " takes the coins and equips the kit at once; kits you own say Equip."],
+    ["The ", "Extras tab", " sells the Crucible mace, Wind Charges and Golden Apples."],
+    ["The ", "Enchant tab", " upgrades the item in your hand up to Tier 5 ($250 x tier)."],
+    ["Your ", "balance", " is on the sidebar and at the top of every menu tab."],
+  ] },
+  { title: "Combat & Maces", c1: [255, 120, 0], c2: [255, 230, 60], lines: [
+    ["Maces: ", "fall onto a player", " (1.5+ blocks) and hit them for a SMASH."],
+    ["A smash adds ", "Density damage", " per block fallen, launches YOU upward (Windburst) and knocks back everyone near."],
+    ["Right-click a mace: ", "launch yourself", " into the air (4 second cooldown)."],
+    ["Crucible: ", "Breach", " - 50% extra damage that armour does not stop."],
+    ["Wind Charge: ", "right-click", " to launch yourself and blast nearby players away."],
+    ["Golden Apple: ", "eat it fully", " for 8 seconds of Speed, Strength, Resistance and Regen."],
+  ] },
+  { title: "Arenas", c1: [120, 220, 255], c2: [190, 255, 220], lines: [
+    ["The ", "Arenas tab", " (or !arenas) has 10 arena types: Colosseum, Sky Islands, Lava Pit,"],
+    ["Frozen Lake, Desert Ruins, Glass Cage, Nether Fortress, Pillar Forest, King's Pit, Smash Towers.", "", ""],
+    ["!arena <number or name> ", "builds YOUR arena", " and teleports you in when it is ready."],
+    ["!join <player> ", "visits a friend's arena", " - everyone inside can fight."],
+    ["!lobby ", "takes you back", " to where you were. Dying inside an arena respawns you there."],
+    ["Pick ", "a new arena any time", " - it rebuilds in the same spot."],
+  ] },
+  { title: "Ranks & Leaderboards", c1: [190, 90, 255], c2: [255, 150, 235], lines: [
+    ["Kills raise your ", "rank", ": Bronze, Silver, Gold, Diamond, Sapphire, Ruby, Elite, Champion, Mythic, LEGEND."],
+    ["Every rank-up pays a ", "$200 bonus", " and is announced to the whole server."],
+    ["Streaks of ", "5+ kills", " put a BOUNTY on your head - whoever ends your streak gets paid."],
+    ["!top ", "[kills|coins|streak]", " shows the live leaderboard of everyone online."],
+    ["The ", "sidebar", " shows your rank, kills, deaths, balance, kit, arena and the top 3 killers."],
+    ["Your coins, kills, kits and enchants ", "are saved", " - they are still there next time you join."],
+  ] },
+];
+
+const GUIDE_PAGES_RETURNING = 1;   // pages shown on every later join (set to 5 to always show everything)
+
+function showGuide(id, arg) {
+  let n = parseInt((arg || "1").trim(), 10);
+  if (isNaN(n)) n = 1;
+  n = Math.max(1, Math.min(GUIDE_PAGES.length, n));
+  const page = GUIDE_PAGES[n - 1];
+
+  tell(id, line());
+  tell(id, gradient("  ✦ GUIDE ✦  " + page.title + "  (" + n + "/" + GUIDE_PAGES.length + ")", page.c1, page.c2, BOLD_ITALIC));
+  page.lines.forEach(l => {
+    tell(id, [seg(" " + l[0], "#9aa0b4", ITALIC), seg(l[1] || "", "#7dd3ff", BOLD), seg(l[2] || "", "#9aa0b4", ITALIC)]);
+  });
+  tell(id, [seg(n < GUIDE_PAGES.length ? " Next page: !guide " + (n + 1) : " That is everything - good luck out there!", "#6f7690", ITALIC)]);
+  tell(id, line());
 }
 
 // ---------------------------------------------------------------------
@@ -768,14 +979,6 @@ function heldInfo(id) {
   return { item: item, tags: (item.attributes && item.attributes.customAttributes) || {} };
 }
 
-function countArmorPieces(id) {
-  try {
-    return api.getArmorItems(id).filter(Boolean).length;
-  } catch (e) {
-    return 4;   // can't read armour: assume a full set
-  }
-}
-
 // Gambit-style mace: falling smash with Windburst (launches YOU) + Density.
 function maceSmash(attacker, victim, dmg) {
   const s = stateOf(attacker);
@@ -798,9 +1001,9 @@ function maceSmash(attacker, victim, dmg) {
   return Math.round(dmg + bonus);
 }
 
-// Crucible: Breach - each armour piece on the victim gives damage back.
-function crucibleHit(victim, dmg) {
-  return Math.round(dmg + dmg * MACE.breachPerPiece * countArmorPieces(victim));
+// Crucible: Breach - extra damage that armour does not stop.
+function crucibleHit(dmg) {
+  return Math.round(dmg * (1 + MACE.breachBonus));
 }
 
 // Right-click with a mace / Crucible: launch upward (cooldown).
@@ -865,29 +1068,19 @@ function checkApple(id) {
 // ---------------------------------------------------------------------
 //  ARENAS - every player can generate their own arena (10 types) and
 //  invite others with !join. Arenas are built from blocks in a queue
-//  (a few operations per tick) so the server never freezes.
+//  (a few block rectangles per tick) so the server never freezes.
 // ---------------------------------------------------------------------
 const ARENA_BASE = [0, 150, 0];    // x, floor-level y, z of arena slot 0 - pick open sky/void space in your world
 const ARENA_SPACING = 70;          // distance between players' arenas (along x)
 const ARENA_R = 16;                // arena radius (arena is 33 x 33)
-const OPS_PER_TICK = 6;            // block-rectangle operations per tick
-const BLOCKS_PER_TICK = 4000;      // fallback: single blocks per tick when setBlockRect is missing
+const OPS_PER_TICK = 6;            // block rectangles placed per tick
+const MAX_RECT_BLOCKS = 3000;      // bigger rectangles are split into pieces of at most this size
 
-// Block names to try, in order, for each material (the first the game accepts is used).
+// Verified block names (from the official BLOCK_NAMES list)
 const B = {
-  air:        ["Air"],
-  stone:      ["Stone"],
-  stoneBrick: ["Stone Bricks", "Stone Brick", "Stone"],
-  planks:     ["Maple Wood Planks", "Wood Planks", "Planks", "Stone"],
-  lava:       ["Lava"],
-  ice:        ["Ice", "Snow", "Stone"],
-  snow:       ["Snow", "Ice", "Stone"],
-  sand:       ["Sand", "Sandstone", "Stone"],
-  sandstone:  ["Sandstone", "Sand", "Stone"],
-  glass:      ["Glass", "Stone"],
-  obsidian:   ["Obsidian", "Stone"],
-  grass:      ["Grass Block", "Grass", "Dirt", "Stone"],
-  gold:       ["Gold Block", "Gold", "Stone"],
+  air: "Air", stone: "Stone", stoneBrick: "Stone Bricks", planks: "Maple Wood Planks", lava: "Lava",
+  ice: "Ice", snow: "Snow", sand: "Sand", sandstone: "Sandstone", glass: "Glass",
+  obsidian: "Obsidian", grass: "Grass Block", gold: "Block of Gold",
 };
 
 // Each type draws with add(x1,y1,z1, x2,y2,z2, material) in coordinates relative to
@@ -999,7 +1192,6 @@ const inArena = {};       // playerId -> ownerId of the arena they are in
 const lobbyPos = {};      // playerId -> where they were before entering an arena
 const slotBusy = {};      // slot index -> true while used
 const buildJobs = [];     // queued builds
-const resolvedBlock = {}; // material key -> block name that worked
 
 function arenaTypeOf(arg) {
   const q = (arg || "").toLowerCase().trim();
@@ -1018,28 +1210,30 @@ function arenaTitleName(i, extra) {
   return gradient(t.title, t.c1, t.c2, extra || BOLD);
 }
 
-// Picks the first block name from B[key] the game accepts (tested at a probe position).
-function blockFor(key, probe) {
-  if (resolvedBlock[key]) return resolvedBlock[key];
-  const cands = B[key] || B.stone;
-  if (cands.length === 1) return (resolvedBlock[key] = cands[0]);
-  for (const name of cands) {
-    try {
-      api.setBlock(probe[0], probe[1], probe[2], name);
-      if (api.getBlock(probe[0], probe[1], probe[2]) === name) {
-        api.setBlock(probe[0], probe[1], probe[2], "Air");
-        return (resolvedBlock[key] = name);
-      }
-    } catch (e) {}
+// Splits a big rectangle into pieces of at most MAX_RECT_BLOCKS blocks.
+function pushRect(ops, x1, y1, z1, x2, y2, z2, key) {
+  const dx = x2 - x1 + 1, dy = y2 - y1 + 1, dz = z2 - z1 + 1;
+  if (dx * dy * dz <= MAX_RECT_BLOCKS) {
+    ops.push({ x1: x1, y1: y1, z1: z1, x2: x2, y2: y2, z2: z2, key: key });
+  } else if (dx >= dy && dx >= dz) {
+    const m = x1 + Math.floor(dx / 2) - 1;
+    pushRect(ops, x1, y1, z1, m, y2, z2, key);
+    pushRect(ops, m + 1, y1, z1, x2, y2, z2, key);
+  } else if (dy >= dz) {
+    const m = y1 + Math.floor(dy / 2) - 1;
+    pushRect(ops, x1, y1, z1, x2, m, z2, key);
+    pushRect(ops, x1, m + 1, z1, x2, y2, z2, key);
+  } else {
+    const m = z1 + Math.floor(dz / 2) - 1;
+    pushRect(ops, x1, y1, z1, x2, y2, m, key);
+    pushRect(ops, x1, y1, m + 1, x2, y2, z2, key);
   }
-  sendSafe(() => api.setBlock(probe[0], probe[1], probe[2], "Air"));
-  return (resolvedBlock[key] = cands[cands.length - 1]);
 }
 
 function processBuild() {
-  let ops = OPS_PER_TICK, budget = BLOCKS_PER_TICK;
-  const hasRect = typeof api.setBlockRect === "function";
-  while (buildJobs.length > 0 && ops > 0 && budget > 0) {
+  let ops = OPS_PER_TICK;
+  while (buildJobs.length > 0 && ops > 0) {
+    if (typeof api.isNearInterrupt === "function" && api.isNearInterrupt()) return;   // never run out of time budget
     const job = buildJobs[0];
     if (job.i >= job.ops.length) {
       buildJobs.shift();
@@ -1047,21 +1241,9 @@ function processBuild() {
       continue;
     }
     const op = job.ops[job.i];
-    const name = blockFor(op.key, job.probe);
-    if (hasRect) {
-      sendSafe(() => api.setBlockRect([op.x1, op.y1, op.z1], [op.x2, op.y2, op.z2], name));
-      job.i++; ops--;
-      continue;
-    }
-    if (!op.cur) op.cur = { x: op.x1, y: op.y1, z: op.z1 };
-    const c = op.cur;
-    while (budget > 0 && !op.done) {
-      sendSafe(() => api.setBlock(c.x, c.y, c.z, name));
-      budget--;
-      c.z++;
-      if (c.z > op.z2) { c.z = op.z1; c.y++; if (c.y > op.y2) { c.y = op.y1; c.x++; if (c.x > op.x2) op.done = true; } }
-    }
-    if (op.done) { job.i++; ops--; }
+    safeStep("blocks", () => api.setBlockRect([op.x1, op.y1, op.z1], [op.x2, op.y2, op.z2], B[op.key]));
+    job.i++;
+    ops--;
   }
 }
 
@@ -1072,12 +1254,9 @@ function freeSlot() {
 
 function makeOps(center, typeIndex) {
   const ops = [];
-  const add = (x1, y1, z1, x2, y2, z2, key) => ops.push({
-    x1: center[0] + Math.min(x1, x2), x2: center[0] + Math.max(x1, x2),
-    y1: center[1] + Math.min(y1, y2), y2: center[1] + Math.max(y1, y2),
-    z1: center[2] + Math.min(z1, z2), z2: center[2] + Math.max(z1, z2),
-    key: key,
-  });
+  const add = (x1, y1, z1, x2, y2, z2, key) => pushRect(ops,
+    center[0] + Math.min(x1, x2), center[1] + Math.min(y1, y2), center[2] + Math.min(z1, z2),
+    center[0] + Math.max(x1, x2), center[1] + Math.max(y1, y2), center[2] + Math.max(z1, z2), key);
   add(-ARENA_R - 2, -14, -ARENA_R - 2, ARENA_R + 2, 34, ARENA_R + 2, "air");   // clear the whole volume first
   if (typeIndex >= 0) ARENA_TYPES[typeIndex].build(add, ARENA_R);
   return ops;
@@ -1130,14 +1309,16 @@ function startArena(id, typeIndex) {
   arenas[id] = { slot: slot, type: typeIndex, center: center, spawn: spawn, ready: false };
 
   tell(id, [seg("Building ", "#9aa0b4", ITALIC)].concat(arenaTitleName(typeIndex, BOLD_ITALIC), [seg(" ...", "#9aa0b4", ITALIC)]));
+  refreshArenas(id);
   buildJobs.push({
-    ops: makeOps(center, typeIndex), i: 0, probe: [center[0], center[1] - 6, center[2]],
+    ops: makeOps(center, typeIndex), i: 0,
     onDone: () => {
       if (!arenas[id]) return;           // owner left while building
       arenas[id].ready = true;
       enterArena(id, id);
       tell(id, [seg("Arena ready: ", "#7dff7d", BOLD)].concat(arenaTitleName(typeIndex, BOLD_ITALIC),
         [seg("  -  friends can join with !join " + api.getEntityName(id), "#9aa0b4", ITALIC)]));
+      refreshArenas(id);
       updateSidebar(id);
     },
   });
@@ -1148,9 +1329,8 @@ function removeArena(id) {
   if (!a) return;
   evacuate(id);
   delete arenas[id];
-  const probeY = a.center[1] - 6;
   buildJobs.push({
-    ops: makeOps(a.center, -1), i: 0, probe: [a.center[0], probeY, a.center[2]],
+    ops: makeOps(a.center, -1), i: 0,
     onDone: () => { delete slotBusy[a.slot]; },
   });
 }
@@ -1192,13 +1372,13 @@ function leaveToLobby(id) {
 // ---------------------------------------------------------------------
 function onPlayerJoin(id) {
   loadData(id);
-  sendSafe(() => api.setClientOption(id, "skyBox", "space_lightblue"));
   setupLobbyBoard(id);
   giveKit(id);
   updateNameTag(id);
   updateLobbyBoard(id);
   updateSidebar(id);
-  tell(id, [seg("Welcome to ", "#9aa0b4", ITALIC)].concat(arenaTitle(), [seg("  -  type !help or !guide", "#9aa0b4", ITALIC)]));
+  refreshShop(id);
+  tell(id, [seg("Welcome to ", "#9aa0b4", ITALIC)].concat(arenaTitle(), [seg("  -  type !kits to open the kit menu", "#9aa0b4", ITALIC)]));
   // Instructions are shown on every join: the whole guide the first time,
   // then page 1 (the quick start) each time after that.
   const firstTime = !P[id].guide;
@@ -1219,14 +1399,28 @@ function onPlayerLeave(id) {
   delete S[id];
   delete lastApple[id];
   delete lastSideKey[id];
+  delete pendingKit[id];
 }
 
-function onPlayerRespawn(id) {
+// The game asks where to respawn a player: send them back into their arena.
+// (There is no "respawned" callback, so the kit is handed out a moment later from tick.)
+const pendingKit = {};
+function onRespawnRequest(id) {
   if (!P[id]) loadData(id);
-  giveKit(id);
+  pendingKit[id] = api.now() + RESPAWN_KIT_DELAY_MS;
   stateOf(id).fall = 0;
   const owner = inArena[id];
-  if (owner !== undefined && arenas[owner] && arenas[owner].ready) enterArena(id, owner);
+  if (owner !== undefined && arenas[owner] && arenas[owner].ready) return arenas[owner].spawn.slice();
+  if (LOBBY_SPAWN) return LOBBY_SPAWN.slice();
+}
+
+function handlePendingKit(id, now) {
+  if (!pendingKit[id] || now < pendingKit[id]) return;
+  let alive = true;
+  try { alive = api.isAlive(id); } catch (e) {}
+  if (!alive) return;                      // still dead - try again next tick
+  delete pendingKit[id];
+  giveKit(id);
   sendSafe(() => api.applyEffect(id, "Damage Reduction", SPAWN_PROTECTION_MS, { inbuiltLevel: 3 }));
   updateSidebar(id);
 }
@@ -1269,6 +1463,7 @@ function onPlayerKilledOtherPlayer(killer, victim) {
     updateNameTag(killer);
     updateLobbyBoard(killer);
     updateSidebar(killer);
+    refreshMoney(killer);              // new balance -> new prices you can afford in the menu
   }
 
   if (v) {
@@ -1280,7 +1475,9 @@ function onPlayerKilledOtherPlayer(killer, victim) {
     saveData(victim);
     updateLobbyBoard(victim);
     updateSidebar(victim);
+    refreshProfile(victim);
   }
+  return "keepInventory";              // players keep their kit when they die
 }
 
 // Right-click: mace launch / Crucible launch / Wind Charge
@@ -1296,19 +1493,19 @@ function onPlayerDamagingOtherPlayer(attacker, victim, dmg) {
   if (!held) return;
   let result = dmg;
   if (held.tags.arenaMace) result = maceSmash(attacker, victim, dmg);
-  else if (held.tags.arenaCrucible) result = crucibleHit(victim, dmg);
+  else if (held.tags.arenaCrucible) result = crucibleHit(dmg);
   if (result !== dmg) return result;
 }
 
 // Runs one part of the tick; an error in it is reported once (so we can see which
 // part failed) and never stops the other parts.
-const reportedErrors = {};
+const reportedSteps = {};
 function safeStep(name, fn) {
   try {
     fn();
   } catch (e) {
-    if (!reportedErrors[name]) {
-      reportedErrors[name] = true;
+    if (!reportedSteps[name]) {
+      reportedSteps[name] = true;
       sendSafe(() => api.broadcastMessage("[ARENA] tick step '" + name + "' failed: " + e, { color: "#ff6b6b" }));
     }
   }
@@ -1318,11 +1515,12 @@ let lastSidebar = 0;
 function tick() {
   safeStep("build", processBuild);
   const ids = api.getPlayerIds();
+  const now = api.now();
   for (const id of ids) {
     safeStep("fall", () => trackFall(id));
     safeStep("apple", () => checkApple(id));
+    safeStep("respawn", () => handlePendingKit(id, now));
   }
-  const now = api.now();
   if (now - lastSidebar >= SIDEBAR_REFRESH_MS) {
     lastSidebar = now;
     for (const id of ids) safeStep("sidebar", () => updateSidebar(id));
@@ -1330,24 +1528,36 @@ function tick() {
 }
 
 function onPlayerChat(id, msg) {
-  if (!msg.startsWith("!")) return;
+  if (typeof msg !== "string" || !msg.startsWith("!")) return;
   if (!P[id]) loadData(id);
 
   const parts = msg.trim().split(/\s+/);
   const cmd = parts[0].toLowerCase();
   const arg = parts.slice(1).join(" ");
 
-  if (cmd === "!kits" || cmd === "!kit" || cmd === "!menu") showKits(id);
-  else if (cmd === "!shop") showShop(id);
-  else if (cmd === "!buy") buy(id, arg);
-  else if (cmd === "!equip") equipKit(id, arg);
-  else if (cmd === "!enchant") enchantHeld(id);
+  if (cmd === "!kits" || cmd === "!kit" || cmd === "!menu") openMenu(id, CAT.kits);
+  else if (cmd === "!shop") openMenu(id, CAT.extras);
+  else if (cmd === "!kitlist") showKitsText(id);
+  else if (cmd === "!buy") {
+    const kitKey = resolveKey(arg, KIT_ORDER, KITS);
+    const itemKey = resolveKey(arg, SHOP_ORDER, SHOP);
+    if (kitKey) { buyOrEquipKit(id, kitKey); refreshMoney(id); }
+    else if (itemKey) { buyExtra(id, itemKey); refreshMoney(id); }
+    else tell(id, [seg("Unknown kit or item. Open the menu with !kits.", "#ff6b6b", ITALIC)]);
+  }
+  else if (cmd === "!equip") {
+    const key = resolveKey(arg, KIT_ORDER, KITS);
+    if (!key) tell(id, [seg("Unknown kit. Open the menu with !kits.", "#ff6b6b", ITALIC)]);
+    else if (P[id].owned.indexOf(key) === -1) tell(id, [seg("You don't own that kit yet - open !kits to buy it.", "#ff6b6b", ITALIC)]);
+    else { equipKit(id, key); refreshMoney(id); }
+  }
+  else if (cmd === "!enchant") { enchantHeld(id); refreshMoney(id); }
   else if (cmd === "!top" || cmd === "!lb" || cmd === "!leaderboard") showTop(id, arg);
-  else if (cmd === "!stats") showStats(id);
-  else if (cmd === "!arenas") showArenas(id);
+  else if (cmd === "!stats") { showStats(id); }
+  else if (cmd === "!arenas") openMenu(id, CAT.arenas);
   else if (cmd === "!arena") {
     const idx = arenaTypeOf(arg);
-    if (!arg) showArenas(id);
+    if (!arg) openMenu(id, CAT.arenas);
     else if (idx < 0) tell(id, [seg("Unknown arena. Type !arenas to see all 10.", "#ff6b6b", ITALIC)]);
     else startArena(id, idx);
   }
