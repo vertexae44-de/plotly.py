@@ -198,6 +198,17 @@ function gseg(text, key, extra) {
   return gradient(String(text), pair[0], pair[1], extra || BOLD);
 }
 
+// Gradient with only a few colour steps - keeps big payloads (the sidebar) small.
+function coarse(text, c1, c2, extra, steps) {
+  const n = Math.max(1, Math.min(steps || 3, text.length));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * text.length / n), b = Math.floor((i + 1) * text.length / n);
+    out.push({ str: text.slice(a, b), style: Object.assign({ color: mix(c1, c2, n === 1 ? 0 : i / (n - 1)) }, extra || {}) });
+  }
+  return out;
+}
+
 function line() { return [seg("────────────────────────", "#555566")]; }
 
 function arenaTitle(prefix) {
@@ -329,43 +340,51 @@ function showTop(id, arg) {
 // ---------------------------------------------------------------------
 //  Sidebar
 // ---------------------------------------------------------------------
-function statLine(label, value, gradKey) {
-  return [seg(label + " ", "#9aa0b4", ITALIC)].concat(gseg(value, gradKey), [seg("\n", "#ffffff")]);
+// The sidebar is sent every second, so it must stay small: only a handful of
+// segments (gradients use a few colour steps, not one segment per letter), and it
+// is only re-sent when its content actually changed.
+function sideStat(label, value, color) {
+  return [seg(label + " ", "#9aa0b4", ITALIC), seg(String(value) + "\n", color, BOLD)];
 }
+
+const lastSideKey = {};
 
 function updateSidebar(id) {
   const d = P[id];
   if (!d) return;
   const rank = rankFor(d.kills);
   const next = nextRankInfo(d.kills);
+  const k = KITS[d.kit];
+  const where = inArena[id] !== undefined && arenas[inArena[id]] ? arenas[inArena[id]].type : -1;
 
   let segs = [];
-  segs = segs.concat(arenaTitle());
-  segs.push(seg("\n", "#ffffff"));
+  segs = segs.concat(coarse("✦ ARENA PVP ✦", TITLE_A, TITLE_B, BOLD_ITALIC, 5), [seg("\n", "#ffffff")]);
   segs.push(seg("Rank ", "#9aa0b4", ITALIC));
-  segs = segs.concat(rankSegs(rank, BOLD_ITALIC), [seg("\n", "#ffffff")]);
-  segs = segs.concat(statLine("Kills", d.kills, "green"));
-  segs = segs.concat(statLine("Deaths", d.deaths, "red"));
-  segs = segs.concat(statLine("K/D", kdOf(d), "orange"));
-  segs = segs.concat(statLine("Streak", d.streak + " (best " + d.best + ")", "orange"));
-  segs = segs.concat(statLine("Coins", "$" + d.coins, "gold"));
+  segs = segs.concat(coarse(rank.name, rank.c1, rank.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
+  segs = segs.concat(sideStat("Kills", d.kills, "#7dff7d"));
+  segs = segs.concat(sideStat("Deaths", d.deaths, "#ff7d7d"));
+  segs = segs.concat(sideStat("K/D", kdOf(d), "#ffd27d"));
+  segs = segs.concat(sideStat("Streak", d.streak + " (best " + d.best + ")", "#ff9a3c"));
+  segs = segs.concat(sideStat("Coins", "$" + d.coins, "#ffe600"));
   segs.push(seg("Kit ", "#9aa0b4", ITALIC));
-  segs = segs.concat(kitName(d.kit, BOLD_ITALIC));
-  segs.push(seg("\n", "#ffffff"));
-  const where = inArena[id] !== undefined && arenas[inArena[id]] ? arenas[inArena[id]].type : -1;
+  segs = segs.concat(coarse(k.title, k.c1, k.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
   segs.push(seg("Arena ", "#9aa0b4", ITALIC));
-  segs = segs.concat(where >= 0 ? arenaTitleName(where, BOLD_ITALIC) : [seg("Lobby", "#9aa0b4", BOLD_ITALIC)], [seg("\n", "#ffffff")]);
+  if (where >= 0) {
+    const t = ARENA_TYPES[where];
+    segs = segs.concat(coarse(t.title, t.c1, t.c2, BOLD_ITALIC, 3), [seg("\n", "#ffffff")]);
+  } else {
+    segs.push(seg("Lobby\n", "#9aa0b4", BOLD_ITALIC));
+  }
   if (next) segs.push(seg("Next: " + next.name + " in " + next.need + "\n", "#6f7690", ITALIC));
 
-  segs = segs.concat(gradient("— TOP KILLERS —", [255, 215, 0], [255, 140, 60], BOLD));
-  segs.push(seg("\n", "#ffffff"));
+  segs.push(seg("— TOP KILLERS —\n", "#ffb02e", BOLD));
   topBy("kills", 3).forEach((r, i) => {
-    segs.push(seg("#" + (i + 1) + " ", PODIUM[i], BOLD));
-    segs = segs.concat(gradient(r.name, [255, 255, 255], [185, 195, 230], ITALIC));
-    segs.push(seg(" ", "#ffffff"));
-    segs = segs.concat(gseg(r.value, i === 0 ? "gold" : "white"), [seg("\n", "#ffffff")]);
+    segs.push(seg("#" + (i + 1) + " " + r.name + " " + r.value + "\n", PODIUM[i], BOLD));
   });
 
+  const key = JSON.stringify(segs);
+  if (lastSideKey[id] === key) return;       // nothing changed - don't resend
+  lastSideKey[id] = key;
   sendSafe(() => api.setClientOption(id, "RightInfoText", segs));
 }
 
@@ -550,6 +569,8 @@ const GUIDE_PAGES = [
     ["Your coins, kills, kits and enchants ", "are saved", " - they are still there next time you join."],
   ] },
 ];
+
+const GUIDE_PAGES_RETURNING = 1;   // pages shown on every later join (set to 5 to always show everything)
 
 function showGuide(id, arg) {
   let n = parseInt((arg || "1").trim(), 10);
@@ -1178,10 +1199,14 @@ function onPlayerJoin(id) {
   updateLobbyBoard(id);
   updateSidebar(id);
   tell(id, [seg("Welcome to ", "#9aa0b4", ITALIC)].concat(arenaTitle(), [seg("  -  type !help or !guide", "#9aa0b4", ITALIC)]));
-  if (!P[id].guide) {            // first time here: show the instructions once
+  // Instructions are shown on every join: the whole guide the first time,
+  // then page 1 (the quick start) each time after that.
+  const firstTime = !P[id].guide;
+  const pages = firstTime ? GUIDE_PAGES.length : GUIDE_PAGES_RETURNING;
+  for (let n = 1; n <= pages; n++) showGuide(id, String(n));
+  if (firstTime) {
     P[id].guide = true;
     saveData(id);
-    showGuide(id, "1");
   }
 }
 
@@ -1193,6 +1218,7 @@ function onPlayerLeave(id) {
   delete P[id];
   delete S[id];
   delete lastApple[id];
+  delete lastSideKey[id];
 }
 
 function onPlayerRespawn(id) {
@@ -1274,18 +1300,32 @@ function onPlayerDamagingOtherPlayer(attacker, victim, dmg) {
   if (result !== dmg) return result;
 }
 
+// Runs one part of the tick; an error in it is reported once (so we can see which
+// part failed) and never stops the other parts.
+const reportedErrors = {};
+function safeStep(name, fn) {
+  try {
+    fn();
+  } catch (e) {
+    if (!reportedErrors[name]) {
+      reportedErrors[name] = true;
+      sendSafe(() => api.broadcastMessage("[ARENA] tick step '" + name + "' failed: " + e, { color: "#ff6b6b" }));
+    }
+  }
+}
+
 let lastSidebar = 0;
 function tick() {
-  processBuild();
+  safeStep("build", processBuild);
   const ids = api.getPlayerIds();
   for (const id of ids) {
-    trackFall(id);
-    checkApple(id);
+    safeStep("fall", () => trackFall(id));
+    safeStep("apple", () => checkApple(id));
   }
   const now = api.now();
   if (now - lastSidebar >= SIDEBAR_REFRESH_MS) {
     lastSidebar = now;
-    for (const id of ids) updateSidebar(id);
+    for (const id of ids) safeStep("sidebar", () => updateSidebar(id));
   }
 }
 
